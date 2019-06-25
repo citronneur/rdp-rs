@@ -1,0 +1,15 @@
+[package]
+name = "rdp-rs"
+version = "0.1.0"
+authors = ["citronneur <citronneur@gmail.com>"]
+
+[lib]
+name = "rdp"
+path = "src/lib.rs"
+
+[[bin]]
+name = "rdp-rs-client"
+path = "src/bin/client.rs"
+
+[dependencies]
+native-tls = "0.2.3"
