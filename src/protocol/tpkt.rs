@@ -1,25 +1,39 @@
-use core::layer::{Connected, ConnectedEvent};
-use core::event::On;
+use core::transport::{ConnectedEvent};
+use core::model::{On, Message};
+use std::io::Write;
 
 pub enum TpktClientEvent {
     Connect
 }
 
-pub struct Client {
-
+pub struct Client<W: Write> {
+    listener: Box<On<TpktClientEvent, W>>
 }
 
-impl Client {
-    pub fn new () -> Self {
+impl<W: Write> Client<W> {
+    pub fn new (listener: Box<On<TpktClientEvent, W>>) -> Self {
         Client {
+            listener
         }
     }
 }
 
-impl On<ConnectedEvent> for Client {
-    fn on (&self, event: &ConnectedEvent) {
+pub struct FrameBuffer {
+    
+}
+
+impl<W: Write> Message<W> for FrameBuffer {
+    fn write(&self, writer: &mut W) {
+
+    }
+}
+
+impl<W: Write> On<ConnectedEvent, W> for Client<W> {
+    fn on (&self, event: &ConnectedEvent) -> &Message<W> {
         match event {
-            ConnectedEvent::Connect => println!("foo")
+            // No connect step for this layer, forward to next layer
+            ConnectedEvent::Connect => self.listener.on(&TpktClientEvent::Connect),
+            ConnectedEvent::Data(buffer) => &FrameBuffer{}
         }
     }
 }
