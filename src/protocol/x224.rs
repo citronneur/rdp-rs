@@ -1,8 +1,9 @@
 use protocol::tpkt::{TpktClientEvent};
 use core::model::{On, Message};
-use std::io::Write;
-use byteorder::{LittleEndian, WriteBytesExt};
+use std::io::{Write, Seek};
+use byteorder::{WriteBytesExt};
 
+#[derive(Copy, Clone)]
 pub enum MessageType {
     X224TPDUConnectionRequest = 0xE0,
     X224TPDUConnectionConfirm = 0xD0,
@@ -11,21 +12,33 @@ pub enum MessageType {
     X224TPDUError = 0x70
 }
 
-pub struct ClientConnectionRequestPDU {
-    code: MessageType
+pub struct Negotiation {
+    negotiation_type: u8,
+    flag : u8,
+    result : u32
+}
 
+pub struct ClientConnectionRequestPDU {
+    code: MessageType,
+    cookie: String,
+    protocol_neg: Option<Negotiation>
 }
 
 impl ClientConnectionRequestPDU {
-    pub fn new(code: u8) {
-
+    pub fn new(code: MessageType, cookie: String, protocol_neg: Option<Negotiation>) -> Self {
+        ClientConnectionRequestPDU {
+            code,
+            cookie,
+            protocol_neg
+        }
     }
 }
 
-impl<W: Write> Message<W> for ClientConnectionRequestPDU {
-    fn write(&self, writer: &mut W) {
-        writer.write_u8(5).unwrap();
+impl<W: Write + Seek> Message<W> for ClientConnectionRequestPDU {
+    fn write(&self, writer: &mut W) -> u64{
+        writer.write_u8(self.code as u8).unwrap();
         writer.write(&[1,2,3,5,5,5,5,5,5,4,4,4,4,4,4,4,4]).unwrap();
+        return 0;
     }
 }
 
@@ -41,10 +54,17 @@ impl Client {
     }
 }
 
-impl<W: Write> On<TpktClientEvent, W> for Client {
-    fn on (&self, event: &TpktClientEvent) -> &Message<W>{
-        &ClientConnectionRequestPDU{
-            code: MessageType::X224TPDUConnectionRequest
-        }
+impl<W: Write + Seek> On<TpktClientEvent, W> for Client {
+    fn on (&self, event: &TpktClientEvent) -> Box<Message<W>>{
+        Box::new(ClientConnectionRequestPDU::new (
+            MessageType::X224TPDUConnectionRequest,
+                "foo".to_string(),
+                Some(Negotiation {
+                    negotiation_type: 4,
+                    flag: 4,
+                    result: 4
+                })
+            )
+        )
     }
 }

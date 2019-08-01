@@ -1,4 +1,4 @@
-use std::io::{Write};
+use std::io::{Write, Seek};
 
 /// A trait use to create a message from a layer
 /// A message write into a stream as he would like
@@ -6,14 +6,14 @@ use std::io::{Write};
 /// ```no_run
 ///
 /// ```
-pub trait Message<W: Write> {
-    fn write(&self, writer: &mut W);
+pub trait Message<W: Write + Seek> {
+    fn write(&self, writer: &mut W) -> u64;
 }
 
 /// Implement a listener of a particular event
 /// # Examples
 /// ```no_run
 /// ```
-pub trait On<T, W: Write> {
-    fn on(&self, event: &T) -> &Message<W>;
+pub trait On<T, W: Write + Seek> {
+    fn on(&self, event: &T) -> Box<Message<W>>;
 }
