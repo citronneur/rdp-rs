@@ -73,7 +73,6 @@ impl Connected {
                     break;
                 }
             };
-            println!("dknldnvlnslkv");
             message.write(&mut buff);
             tcp_stream.write(buff.get_ref().as_slice());
         }

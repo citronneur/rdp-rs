@@ -24,21 +24,20 @@ pub struct TpktMessage<W: Write> {
 /// Implement the Message Trait
 impl<W: Write + Seek> Message<W> for TpktMessage<W> {
     fn write(&self, writer: &mut W) -> u64 {
+        let start = writer.seek(SeekFrom::Current(0)).unwrap();
         writer.write_u8(self.action as u8).unwrap();
         writer.write_u8(0).unwrap();
 
         // keep place for size
         writer.seek(SeekFrom::Current(2));
 
-        let len_before = writer.seek(SeekFrom::Current(0)).unwrap();
-        self.message.write(writer);
-        let len= writer.seek(SeekFrom::Current(0)).unwrap() - len_before;
+        let message_len = self.message.write(writer);
 
-        writer.seek(SeekFrom::Current(-(len as i64) - 2));
-        writer.write_u16::<BigEndian>(len as u16 + 4).unwrap();
+        writer.seek(SeekFrom::Current(-(message_len as i64) - 2));
+        writer.write_u16::<BigEndian>(message_len as u16 + 4).unwrap();
         writer.seek(SeekFrom::End(0));
 
-        return len + 4;
+        return return writer.seek(SeekFrom::Current(0)).unwrap() - start;;
     }
 }
 

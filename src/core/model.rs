@@ -1,4 +1,4 @@
-use std::io::{Write, Seek};
+use std::io::{Write, Read, Seek};
 
 /// A trait use to create a message from a layer
 /// A message write into a stream as he would like

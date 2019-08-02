@@ -1,7 +1,39 @@
 use protocol::tpkt::{TpktClientEvent};
 use core::model::{On, Message};
-use std::io::{Write, Seek};
-use byteorder::{WriteBytesExt};
+use std::io::{Write, Seek, SeekFrom};
+use byteorder::{WriteBytesExt, LittleEndian};
+
+
+#[derive(Copy, Clone)]
+pub enum NegotiationType {
+    TypeRDPNegReq = 0x01,
+    TypeRDPNegRsp = 0x02,
+    TypeRDPNegFailure = 0x03
+}
+
+#[derive(Copy, Clone)]
+pub enum Protocols {
+    ProtocolRDP = 0x00,
+    ProtocolSSL = 0x01,
+    ProtocolHybrid = 0x02,
+    ProtocolHybridEx = 0x08
+}
+
+pub struct Negotiation {
+    negotiation_type: NegotiationType,
+    result : u32
+}
+
+impl<W: Write + Seek> Message<W> for Negotiation {
+    fn write(&self, writer: &mut W) -> u64{
+        let start = writer.seek(SeekFrom::Current(0)).unwrap();
+        writer.write_u8(self.negotiation_type as u8).unwrap();
+        writer.write_u8(0).unwrap();
+        writer.write_u16::<LittleEndian>(8).unwrap();
+        writer.write_u32::<LittleEndian>(self.result);
+        return writer.seek(SeekFrom::Current(0)).unwrap() - start;
+    }
+}
 
 #[derive(Copy, Clone)]
 pub enum MessageType {
@@ -10,12 +42,6 @@ pub enum MessageType {
     X224TPDUDisconnectRequest = 0x80,
     X224TPDUData = 0xF0,
     X224TPDUError = 0x70
-}
-
-pub struct Negotiation {
-    negotiation_type: u8,
-    flag : u8,
-    result : u32
 }
 
 pub struct ClientConnectionRequestPDU {
@@ -35,10 +61,29 @@ impl ClientConnectionRequestPDU {
 }
 
 impl<W: Write + Seek> Message<W> for ClientConnectionRequestPDU {
-    fn write(&self, writer: &mut W) -> u64{
+    fn write(&self, writer: &mut W) -> u64 {
+        let start = writer.seek(SeekFrom::Current(0)).unwrap();
+
+        // enough place for length
+        let len_marker = writer.seek(SeekFrom::Current(0)).unwrap();
+        writer.seek(SeekFrom::Current(1)).unwrap();
+
         writer.write_u8(self.code as u8).unwrap();
-        writer.write(&[1,2,3,5,5,5,5,5,5,4,4,4,4,4,4,4,4]).unwrap();
-        return 0;
+        // write padding
+        writer.write(&[0, 0, 0, 0, 0]).unwrap();
+        let len_message = match self.protocol_neg {
+            Some(ref message) => message.write(writer),
+            None => 0
+        };
+
+        let len_message = writer.seek(SeekFrom::Current(0)).unwrap() - start;
+
+        // write length
+        writer.seek(SeekFrom::Start(len_marker)).unwrap();
+        writer.write_u8((len_message - 1) as u8).unwrap();
+        writer.seek(SeekFrom::End(0));
+
+        return len_message;
     }
 }
 
@@ -58,11 +103,10 @@ impl<W: Write + Seek> On<TpktClientEvent, W> for Client {
     fn on (&self, event: &TpktClientEvent) -> Box<Message<W>>{
         Box::new(ClientConnectionRequestPDU::new (
             MessageType::X224TPDUConnectionRequest,
-                "foo".to_string(),
+                "".to_string(),
                 Some(Negotiation {
-                    negotiation_type: 4,
-                    flag: 4,
-                    result: 4
+                    negotiation_type: NegotiationType::TypeRDPNegReq,
+                    result: Protocols::ProtocolSSL as u32
                 })
             )
         )
