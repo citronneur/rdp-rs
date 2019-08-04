@@ -1,4 +1,6 @@
-use std::io::{Write, Read, Seek};
+use std::io::{Write, Seek};
+use std::collections::BTreeMap;
+use protocol::x224::MessageType;
 
 /// A trait use to create a message from a layer
 /// A message write into a stream as he would like
@@ -16,4 +18,16 @@ pub trait Message<W: Write + Seek> {
 /// ```
 pub trait On<T, W: Write + Seek> {
     fn on(&self, event: &T) -> Box<Message<W>>;
+}
+
+impl<W: Write + Seek> Message<W> for u8 {
+    fn write(&self, writer: &mut W) -> u64 {
+        0
+    }
+}
+
+impl <W: Write + Seek> Message<W> for BTreeMap<String, Box<Message<W>>> {
+   fn write(&self, writer: &mut W) -> u64 {
+        0
+   }
 }

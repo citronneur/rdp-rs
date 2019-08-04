@@ -1,8 +1,18 @@
 use protocol::tpkt::{TpktClientEvent};
-use core::model::{On, Message};
+use core::model::{Message, On};
 use std::io::{Write, Seek, SeekFrom};
+use std::collections::BTreeMap;
 use byteorder::{WriteBytesExt, LittleEndian};
+use core::model;
 
+#[macro_export]
+macro_rules! message {
+    ($( $key: expr => $val: expr ),*) => {{
+         let mut map = BTreeMap::new();
+         $( map.insert($key.to_string(), Box::new($val) as Box<Message<W>>); )*
+         Box::new(map)
+    }}
+}
 
 #[derive(Copy, Clone)]
 pub enum NegotiationType {
@@ -22,6 +32,12 @@ pub enum Protocols {
 pub struct Negotiation {
     negotiation_type: NegotiationType,
     result : u32
+}
+
+fn negotiation<W: Write + Seek + 'static>() -> Box<Message<W>> {
+    message! [
+        "type" => 0 as u8
+    ]
 }
 
 impl<W: Write + Seek> Message<W> for Negotiation {
