@@ -1,7 +1,7 @@
 use core::transport::{ConnectedEvent};
 use core::model::{On, Message};
-use std::io::{Write, Seek, SeekFrom};
-use byteorder::{BigEndian, WriteBytesExt};
+use std::io::{Write, Seek, SeekFrom, Read};
+use byteorder::{WriteBytesExt};
 
 /// TPKT action heaer
 /// # see : https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-rdpbcgr/b8e7c588-51cb-455b-bb73-92d480903133
@@ -22,8 +22,8 @@ pub struct TpktMessage<W: Write> {
 }
 
 /// Implement the Message Trait
-impl<W: Write + Seek> Message<W> for TpktMessage<W> {
-    fn write(&self, writer: &mut W) -> u64 {
+impl<W: Write + Seek + Read> Message<W> for TpktMessage<W> {
+    fn write(&self, writer: &mut W) {
         let start = writer.seek(SeekFrom::Current(0)).unwrap();
         writer.write_u8(self.action as u8).unwrap();
         writer.write_u8(0).unwrap();
@@ -31,13 +31,19 @@ impl<W: Write + Seek> Message<W> for TpktMessage<W> {
         // keep place for size
         writer.seek(SeekFrom::Current(2));
 
-        let message_len = self.message.write(writer);
+        /*let message_len = self.message.write(writer);
 
         writer.seek(SeekFrom::Current(-(message_len as i64) - 2));
         writer.write_u16::<BigEndian>(message_len as u16 + 4).unwrap();
-        writer.seek(SeekFrom::End(0));
+        writer.seek(SeekFrom::End(0));*/
+    }
 
-        return return writer.seek(SeekFrom::Current(0)).unwrap() - start;;
+    fn length(&self) -> u64 {
+        2
+    }
+
+    fn read(&mut self, reader: &mut W) {
+
     }
 }
 
@@ -69,7 +75,7 @@ impl<W: Write> Client<W> {
 }
 
 /// Implement the On<ConnectedEvent> event for the underlying layer
-impl<W: Write + Seek + 'static> On<ConnectedEvent, W> for Client<W> {
+impl<W: Write + Seek + Read+ 'static> On<ConnectedEvent, W> for Client<W> {
     fn on (&self, event: &ConnectedEvent) -> Box<Message<W>> {
         Box::new(TpktMessage {
             action: Action::FastPathActionX224,

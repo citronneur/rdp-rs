@@ -1,8 +1,9 @@
 use protocol::tpkt::{TpktClientEvent};
-use core::model::{Message, On};
-use std::io::{Write, Seek, SeekFrom};
+use core::model::{Message, On, Check, U16Le, U32Le, Component};
+use std::io::{Write, Seek, SeekFrom, Read};
 use byteorder::{WriteBytesExt, LittleEndian};
 use std::collections::BTreeMap;
+use std::process::Command;
 
 #[derive(Copy, Clone)]
 pub enum NegotiationType {
@@ -19,29 +20,6 @@ pub enum Protocols {
     ProtocolHybridEx = 0x08
 }
 
-pub struct Negotiation {
-    negotiation_type: NegotiationType,
-    result : u32
-}
-
-fn negotiation<W: Write + Seek + 'static>() -> Box<Message<W>> {
-    component! [
-        "type" => 0 as u8,
-
-    ]
-}
-
-impl<W: Write + Seek> Message<W> for Negotiation {
-    fn write(&self, writer: &mut W) -> u64{
-        let start = writer.seek(SeekFrom::Current(0)).unwrap();
-        writer.write_u8(self.negotiation_type as u8).unwrap();
-        writer.write_u8(0).unwrap();
-        writer.write_u16::<LittleEndian>(8).unwrap();
-        writer.write_u32::<LittleEndian>(self.result);
-        return writer.seek(SeekFrom::Current(0)).unwrap() - start;
-    }
-}
-
 #[derive(Copy, Clone)]
 pub enum MessageType {
     X224TPDUConnectionRequest = 0xE0,
@@ -51,47 +29,30 @@ pub enum MessageType {
     X224TPDUError = 0x70
 }
 
-pub struct ClientConnectionRequestPDU {
-    code: MessageType,
-    cookie: String,
-    protocol_neg: Option<Negotiation>
+fn rdp_neg_req<W: Write + Seek + Read + 'static>(negType: NegotiationType, result: Protocols) -> Component<W> {
+    component! [
+        "type" => Check::new(negType as u8),
+        "flag" => 0 as u8,
+        "length" => Check::new(0x0008 as U16Le),
+        "result" => result as U32Le
+    ]
 }
 
-impl ClientConnectionRequestPDU {
-    pub fn new(code: MessageType, cookie: String, protocol_neg: Option<Negotiation>) -> Self {
-        ClientConnectionRequestPDU {
-            code,
-            cookie,
-            protocol_neg
-        }
-    }
+fn x224_crq<W: Write + Seek + Read + 'static>(code: MessageType) -> Component<W> {
+    component! [
+        "len" => 0 as u8,
+        "code" => Check::new(code as u8),
+        "padding" => trame! [0 as U16Le, 0 as U16Le, 0 as u8]
+    ]
 }
 
-impl<W: Write + Seek> Message<W> for ClientConnectionRequestPDU {
-    fn write(&self, writer: &mut W) -> u64 {
-        let start = writer.seek(SeekFrom::Current(0)).unwrap();
+fn write_client_x224_connection_request_pdu<W: Write + Seek + Read + 'static>() -> Box<Message<W>> {
+    let mut packet = x224_crq(MessageType::X224TPDUConnectionRequest);
+    let negotiation = rdp_neg_req(NegotiationType::TypeRDPNegReq, Protocols::ProtocolSSL);
 
-        // enough place for length
-        let len_marker = writer.seek(SeekFrom::Current(0)).unwrap();
-        writer.seek(SeekFrom::Current(1)).unwrap();
+    set_val!(packet, "len" => (packet.length() + negotiation.length()) as u8);
 
-        writer.write_u8(self.code as u8).unwrap();
-        // write padding
-        writer.write(&[0, 0, 0, 0, 0]).unwrap();
-        let len_message = match self.protocol_neg {
-            Some(ref message) => message.write(writer),
-            None => 0
-        };
-
-        let len_message = writer.seek(SeekFrom::Current(0)).unwrap() - start;
-
-        // write length
-        writer.seek(SeekFrom::Start(len_marker)).unwrap();
-        writer.write_u8((len_message - 1) as u8).unwrap();
-        writer.seek(SeekFrom::End(0));
-
-        return len_message;
-    }
+    Box::new(trame![packet, negotiation])
 }
 
 #[derive(Copy, Clone)]
@@ -106,16 +67,8 @@ impl Client {
     }
 }
 
-impl<W: Write + Seek> On<TpktClientEvent, W> for Client {
+impl<W: Write + Seek + Read + 'static> On<TpktClientEvent, W> for Client {
     fn on (&self, event: &TpktClientEvent) -> Box<Message<W>>{
-        Box::new(ClientConnectionRequestPDU::new (
-            MessageType::X224TPDUConnectionRequest,
-                "".to_string(),
-                Some(Negotiation {
-                    negotiation_type: NegotiationType::TypeRDPNegReq,
-                    result: Protocols::ProtocolSSL as u32
-                })
-            )
-        )
+        write_client_x224_connection_request_pdu()
     }
 }
