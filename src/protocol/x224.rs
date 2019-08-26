@@ -1,9 +1,7 @@
-use protocol::tpkt::{TpktClientEvent};
-use core::model::{Message, On, Check, U16Le, U32Le, Component};
-use std::io::{Write, Seek, SeekFrom, Read};
-use byteorder::{WriteBytesExt, LittleEndian};
+use protocol::tpkt::{TpktClientEvent, TpktMessage};
+use core::model::{Message, On, Check, U16, U32, Component, Trame};
+use std::io::{Write, Seek, Read};
 use std::collections::BTreeMap;
-use std::process::Command;
 
 #[derive(Copy, Clone)]
 pub enum NegotiationType {
@@ -29,30 +27,30 @@ pub enum MessageType {
     X224TPDUError = 0x70
 }
 
-fn rdp_neg_req<W: Write + Seek + Read + 'static>(negType: NegotiationType, result: Protocols) -> Component<W> {
+fn rdp_neg_req<W: Write + Seek + Read + 'static>(neg_type: NegotiationType, result: Protocols) -> Component<W> {
     component! [
-        "type" => Check::new(negType as u8),
+        "type" => Check::new(neg_type as u8),
         "flag" => 0 as u8,
-        "length" => Check::new(0x0008 as U16Le),
-        "result" => result as U32Le
+        "length" => Check::new(U16::LE(0x0008)),
+        "result" => U32::LE(result as u32)
     ]
 }
 
-fn x224_crq<W: Write + Seek + Read + 'static>(code: MessageType) -> Component<W> {
+fn x224_crq<W: Write + Seek + Read + 'static>(len: u8, code: MessageType) -> Component<W> {
     component! [
-        "len" => 0 as u8,
+        "len" => len + 7,
         "code" => Check::new(code as u8),
-        "padding" => trame! [0 as U16Le, 0 as U16Le, 0 as u8]
+        "padding" => trame! [U16::LE(0), U16::LE(0), 0 as u8]
     ]
 }
 
-fn write_client_x224_connection_request_pdu<W: Write + Seek + Read + 'static>() -> Box<Message<W>> {
-    let mut packet = x224_crq(MessageType::X224TPDUConnectionRequest);
+fn write_client_x224_connection_request_pdu<W: Write + Seek + Read + 'static>() -> Trame<W> {
     let negotiation = rdp_neg_req(NegotiationType::TypeRDPNegReq, Protocols::ProtocolSSL);
 
-    set_val!(packet, "len" => (packet.length() + negotiation.length()) as u8);
-
-    Box::new(trame![packet, negotiation])
+    trame![
+        x224_crq(negotiation.length() as u8, MessageType::X224TPDUConnectionRequest),
+        negotiation
+    ]
 }
 
 #[derive(Copy, Clone)]
@@ -67,8 +65,8 @@ impl Client {
     }
 }
 
-impl<W: Write + Seek + Read + 'static> On<TpktClientEvent, W> for Client {
-    fn on (&self, event: &TpktClientEvent) -> Box<Message<W>>{
-        write_client_x224_connection_request_pdu()
+impl<W: Write + Seek + Read + 'static> On<TpktClientEvent, TpktMessage<W>> for Client {
+    fn on (&self, event: &TpktClientEvent) -> TpktMessage<W>{
+        TpktMessage::X224(write_client_x224_connection_request_pdu())
     }
 }

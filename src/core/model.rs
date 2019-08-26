@@ -1,6 +1,6 @@
 use std::io::{Write, Seek, Read};
 use std::collections::BTreeMap;
-use byteorder::{WriteBytesExt, LittleEndian};
+use byteorder::{WriteBytesExt, LittleEndian, BigEndian};
 
 /// A trait use to create a message from a layer
 /// A message write into a stream as he would like
@@ -18,8 +18,8 @@ pub trait Message<W: Write + Seek + Read> {
 /// # Examples
 /// ```no_run
 /// ```
-pub trait On<T, W: Write + Seek> {
-    fn on(&self, event: &T) -> Box<Message<W>>;
+pub trait On<T,O> {
+    fn on(&self, event: &T) -> O;
 }
 
 impl<W: Write + Seek + Read> Message<W> for u8 {
@@ -37,7 +37,7 @@ impl<W: Write + Seek + Read> Message<W> for u8 {
 
 }
 
-pub type List<W> = Vec<Box<Message<W>>>;
+pub type Trame<W> = Vec<Box<Message<W>>>;
 
 #[macro_export]
 macro_rules! trame {
@@ -48,7 +48,7 @@ macro_rules! trame {
     }}
 }
 
-impl <W: Write + Seek + Read> Message<W> for List<W> {
+impl <W: Write + Seek + Read> Message<W> for Trame<W> {
    fn write(&self, writer: &mut W) {
        for v in self {
            v.write(writer);
@@ -107,11 +107,17 @@ impl <W: Write + Seek + Read> Message<W> for Component<W> {
     }
 }
 
-pub type U16Le = u16;
+pub enum U16 {
+    BE(u16),
+    LE(u16)
+}
 
-impl<W: Write + Seek + Read> Message<W> for U16Le {
+impl<W: Write + Seek + Read> Message<W> for U16 {
     fn write(&self, writer: &mut W) {
-        writer.write_u16::<LittleEndian>(*self).unwrap();
+        match self {
+            U16::BE(value) => writer.write_u16::<BigEndian>(*value).unwrap(),
+            U16::LE(value) => writer.write_u16::<LittleEndian>(*value).unwrap()
+        };
     }
 
     fn length(&self) -> u64 {
@@ -123,14 +129,21 @@ impl<W: Write + Seek + Read> Message<W> for U16Le {
     }
 }
 
-pub type U32Le = u32;
+pub enum U32 {
+    BE(u32),
+    LE(u32)
+}
 
-impl<W: Write + Seek + Read> Message<W> for U32Le {
+impl<W: Write + Seek + Read> Message<W> for U32 {
     fn write(&self, writer: &mut W) {
-        writer.write_u32::<LittleEndian>(*self).unwrap();
+        match self {
+            U32::BE(value) => writer.write_u32::<BigEndian>(*value).unwrap(),
+            U32::LE(value) => writer.write_u32::<LittleEndian>(*value).unwrap()
+        };
     }
+
     fn length(&self) -> u64 {
-        4
+        2
     }
 
     fn read(&mut self, reader: &mut W) {

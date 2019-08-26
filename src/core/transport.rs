@@ -4,7 +4,7 @@ use std::net::{SocketAddr, AddrParseError, TcpStream};
 use std::io;
 use std::io::{Cursor, Read, Write};
 use self::native_tls::{TlsConnector, HandshakeError};
-use core::model::{On};
+use core::model::{On, Message};
 
 #[derive(Debug)]
 pub enum ConnectedError {
@@ -39,11 +39,11 @@ pub enum ConnectedEvent {
 }
 
 pub struct Connected {
-    pub listener: Box<On<ConnectedEvent, Cursor<Vec<u8>>>>
+    pub listener: Box<On<ConnectedEvent, Box<Message<Cursor<Vec<u8>>>>>>
 }
 
 impl Connected {
-    pub fn new(listener: Box<On<ConnectedEvent, Cursor<Vec<u8>>>>) -> Self {
+    pub fn new(listener: Box<On<ConnectedEvent, Box<Message<Cursor<Vec<u8>>>>>>) -> Self {
         Connected {
             listener
         }
