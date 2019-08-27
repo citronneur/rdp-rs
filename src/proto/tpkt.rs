@@ -1,6 +1,6 @@
-use core::transport::{ConnectedEvent};
-use core::model::{On, Message, U32, Trame, Component};
-use std::io::{Write, Seek, Read};
+use core::link::{LinkEvent, LinkMessage, LinkMessageList};
+use core::data::{On, Message, U32, Trame, Component};
+use std::io::{Write, Read, Result};
 use std::collections::BTreeMap;
 
 /// TPKT action heaer
@@ -12,7 +12,7 @@ pub enum Action {
     FastPathActionX224 = 0x3
 }
 
-fn tpkt_header<W: Write + Seek + Read + 'static>(size: u32) -> Component<W> {
+fn tpkt_header<W: Write + Read + 'static>(size: u32) -> Component<W> {
     component![
         "action" => Action::FastPathActionX224 as u8,
         "flag" => 0 as u8,
@@ -30,6 +30,11 @@ pub enum TpktMessage<W> {
     X224(Trame<W>)
 }
 
+enum TpktState {
+    ReadHeader,
+    ReadBody
+}
+
 /// Client Context of TPKT layer
 ///
 /// # Example
@@ -37,7 +42,8 @@ pub enum TpktMessage<W> {
 /// let tpkt_client = Client::new(upper_layer);
 /// ```
 pub struct Client<W> {
-    listener: Box<On<TpktClientEvent, TpktMessage<W>>>
+    listener: Box<On<TpktClientEvent, TpktMessage<W>>>,
+    current_state: TpktState
 }
 
 impl<W: Write> Client<W> {
@@ -46,28 +52,35 @@ impl<W: Write> Client<W> {
     /// listener : layer will listen on TpktClientEvent
     pub fn new (listener: Box<On<TpktClientEvent, TpktMessage<W>>>) -> Self {
         Client {
-            listener
+            listener,
+            current_state: TpktState::ReadHeader
         }
     }
 }
 
 /// Implement the On<ConnectedEvent> event for the underlying layer
-impl<W: Write + Seek + Read+ 'static> On<ConnectedEvent, Box<Message<W>>> for Client<W> {
-    fn on (&self, event: &ConnectedEvent) -> Box<Message<W>> {
+impl<W: Write + Read + 'static> On<LinkEvent, LinkMessageList<W>> for Client<W> {
+    fn on (&self, event: &LinkEvent) -> Result<LinkMessageList<W>> {
 
         let message = match event {
             // No connect step for this layer, forward to next layer
-            ConnectedEvent::Connect => self.listener.on(&TpktClientEvent::Connect),
-            ConnectedEvent::Data(buffer) => panic!("data!!")
-        };
+            LinkEvent::Connect => self.listener.on(&TpktClientEvent::Connect),
+            LinkEvent::AvailableData(buffer) => {
+                panic!("data!!")
+            }
+        }?;
 
         match message {
-            TpktMessage::X224(data) => Box::new(trame! [
-                tpkt_header(data.length() as u32),
-                data
-            ])
+            TpktMessage::X224(data) => {
+                Ok(vec! [
+                    LinkMessage::Send(Box::new(trame![
+                        tpkt_header(data.length() as u32),
+                        data
+                    ])),
+                    LinkMessage::Expect(2)
+                ])
+            }
         }
-
     }
 }
 

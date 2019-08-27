@@ -7,9 +7,9 @@ use native_tls::TlsConnector;
 use std::io::Read;*/
 
 extern crate rdp;
-use rdp::core::transport::{Connected};
-use rdp::protocol::tpkt;
-use rdp::protocol::x224;
+use rdp::core::link::{Link};
+use rdp::proto::tpkt;
+use rdp::proto::x224;
 
 fn main() {
     /**//*let addr = "127.0.0.1:33389".parse::<SocketAddr>().unwrap();
@@ -56,7 +56,7 @@ fn main() {
 
     let x224_layer = x224::Client::new();
     let tpkt_layer = tpkt::Client::new(Box::new( x224_layer));
-    let mut transport = Connected::new(Box::new(tpkt_layer));
+    let mut transport = Link::new(Box::new(tpkt_layer));
 
 
     match transport.connect() {

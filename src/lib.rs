@@ -2,4 +2,4 @@ extern crate byteorder;
 
 #[macro_use]
 pub mod core;
-pub mod protocol;
+pub mod proto;

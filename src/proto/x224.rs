@@ -1,6 +1,6 @@
-use protocol::tpkt::{TpktClientEvent, TpktMessage};
-use core::model::{Message, On, Check, U16, U32, Component, Trame};
-use std::io::{Write, Seek, Read};
+use proto::tpkt::{TpktClientEvent, TpktMessage};
+use core::data::{Message, On, Check, U16, U32, Component, Trame};
+use std::io::{Write, Seek, Read, Result};
 use std::collections::BTreeMap;
 
 #[derive(Copy, Clone)]
@@ -66,7 +66,7 @@ impl Client {
 }
 
 impl<W: Write + Seek + Read + 'static> On<TpktClientEvent, TpktMessage<W>> for Client {
-    fn on (&self, event: &TpktClientEvent) -> TpktMessage<W>{
-        TpktMessage::X224(write_client_x224_connection_request_pdu())
+    fn on (&self, event: &TpktClientEvent) -> Result<TpktMessage<W>>{
+        Ok(TpktMessage::X224(write_client_x224_connection_request_pdu()))
     }
 }
