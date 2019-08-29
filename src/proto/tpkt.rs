@@ -1,6 +1,6 @@
 use core::link::{LinkEvent, LinkMessage, LinkMessageList};
 use core::data::{On, Message, U32, Trame, Component};
-use std::io::{Write, Read, Result};
+use std::io::{Write, Read, Result, Error, ErrorKind};
 use std::collections::BTreeMap;
 
 /// TPKT action heaer
@@ -31,7 +31,8 @@ pub enum TpktMessage<W> {
 }
 
 enum TpktState {
-    ReadHeader,
+    ReadAction,
+    ReadSize,
     ReadBody
 }
 
@@ -53,32 +54,55 @@ impl<W: Write> Client<W> {
     pub fn new (listener: Box<On<TpktClientEvent, TpktMessage<W>>>) -> Self {
         Client {
             listener,
-            current_state: TpktState::ReadHeader
+            current_state: TpktState::ReadAction
         }
     }
 }
 
-/// Implement the On<ConnectedEvent> event for the underlying layer
+/// Implement the On<ConnectedEvent, LinkMessageList<W>> event for the underlying layer
 impl<W: Write + Read + 'static> On<LinkEvent, LinkMessageList<W>> for Client<W> {
-    fn on (&self, event: &LinkEvent) -> Result<LinkMessageList<W>> {
+    fn on (&mut self, event: LinkEvent) -> Result<LinkMessageList<W>> {
 
-        let message = match event {
+        match event {
             // No connect step for this layer, forward to next layer
-            LinkEvent::Connect => self.listener.on(&TpktClientEvent::Connect),
-            LinkEvent::AvailableData(buffer) => {
-                panic!("data!!")
-            }
-        }?;
-
-        match message {
-            TpktMessage::X224(data) => {
-                Ok(vec! [
-                    LinkMessage::Send(Box::new(trame![
-                        tpkt_header(data.length() as u32),
-                        data
-                    ])),
-                    LinkMessage::Expect(2)
-                ])
+            LinkEvent::Connect => {
+                if let TpktMessage::X224(data) = self.listener.on(TpktClientEvent::Connect)? {
+                    Ok(vec![
+                        LinkMessage::Send(Box::new(trame![
+                            tpkt_header(data.length() as u32),
+                            data
+                        ])),
+                        LinkMessage::Expect(1) // wait for action !!!
+                    ])
+                }
+                else {
+                    Err(Error::new(ErrorKind::InvalidData, "FastPath packet are forbidden during connection"))
+                }
+            },
+            // Available data automate
+            LinkEvent::AvailableData(mut buffer) => {
+                match self.current_state {
+                    TpktState::ReadAction => {
+                        let mut action: u8 = 0;
+                        action.read(&mut buffer);
+                        if action == Action::FastPathActionX224 as u8 {
+                            // now wait extended header
+                            self.current_state = TpktState::ReadSize;
+                            Ok(vec![LinkMessage::Expect(2)])
+                        }
+                        else {
+                            Err(Error::new(ErrorKind::Other, "Not implemented"))
+                        }
+                    },
+                    TpktState::ReadSize => {
+                        let mut size = U32::BE(0);
+                        size.read(&mut buffer);
+                        // now wait for body
+                        self.current_state = TpktState::ReadBody;
+                        Ok(vec![LinkMessage::Expect(size.get() as usize - 4)])
+                    },
+                    TpktState::ReadBody => {Ok(vec![])}
+                }
             }
         }
     }

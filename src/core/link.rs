@@ -36,7 +36,7 @@ type LinkResult<T> = result::Result<T, LinkError>;
 
 pub enum LinkEvent {
     Connect,
-    AvailableData(Vec<u8>)
+    AvailableData(Cursor<Vec<u8>>)
 }
 
 pub enum LinkMessage<W> {
@@ -69,14 +69,14 @@ impl Link {
         let addr = "127.0.0.1:33389".parse::<SocketAddr>()?;
         let mut  tcp_stream = TcpStream::connect(&addr)?;
         //let mut stream = connector.connect("google.com", tcp_stream)?;
-        self.handle_event(&LinkEvent::Connect, &mut tcp_stream);
+        self.handle_event(LinkEvent::Connect, &mut tcp_stream);
 
         loop {
             // Read exactly
             let mut buffer = Vec::with_capacity(self.expected_size);
             match tcp_stream.read_exact(&mut buffer) {
                 Ok(()) => {
-                    self.handle_event(&LinkEvent::AvailableData(buffer), &mut tcp_stream);
+                    self.handle_event(LinkEvent::AvailableData(Cursor::new(buffer)), &mut tcp_stream);
                 },
                 Err(e) => return Err(LinkError::IoError(e))
             };
@@ -86,7 +86,7 @@ impl Link {
         Ok(())
     }
 
-    fn handle_event<W: Read + Write>(&mut self, event: &LinkEvent, stream: &mut W) -> Result<()> {
+    fn handle_event<W: Read + Write>(&mut self, event: LinkEvent, stream: &mut W) -> Result<()> {
         for message in &self.listener.on(event)? {
             match message {
                 LinkMessage::Expect(size) => self.expected_size = *size,

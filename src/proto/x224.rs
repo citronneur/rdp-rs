@@ -66,7 +66,7 @@ impl Client {
 }
 
 impl<W: Write + Seek + Read + 'static> On<TpktClientEvent, TpktMessage<W>> for Client {
-    fn on (&self, event: &TpktClientEvent) -> Result<TpktMessage<W>>{
+    fn on (&mut self, event: TpktClientEvent) -> Result<TpktMessage<W>>{
         Ok(TpktMessage::X224(write_client_x224_connection_request_pdu()))
     }
 }

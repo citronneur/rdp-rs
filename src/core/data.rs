@@ -8,7 +8,7 @@ use byteorder::{WriteBytesExt, ReadBytesExt, LittleEndian, BigEndian};
 /// ```no_run
 /// ```
 pub trait On<InputEvent, OutputMessage> {
-    fn on(&self, event: &InputEvent) -> Result<OutputMessage>;
+    fn on(&mut self, event: InputEvent) -> Result<OutputMessage>;
 }
 
 /// A trait use to create a message from a layer
@@ -128,10 +128,20 @@ impl <W: Write + Read> Message<W> for Component<W> {
     }
 }
 
-pub enum U16 {
-    BE(u16),
-    LE(u16)
+pub enum Value<Type> {
+    BE(Type),
+    LE(Type)
 }
+
+impl<Type: Copy> Value<Type> {
+    pub fn get(&self) -> Type {
+        match self {
+            Value::<Type>::BE(e) | Value::<Type>::LE(e) => *e
+        }
+    }
+}
+
+pub type U16 = Value<u16>;
 
 impl<W: Write + Read> Message<W> for U16 {
     fn write(&self, writer: &mut W) -> Result<()>{
@@ -150,10 +160,7 @@ impl<W: Write + Read> Message<W> for U16 {
     }
 }
 
-pub enum U32 {
-    BE(u32),
-    LE(u32)
-}
+pub type U32 = Value<u32>;
 
 impl<W: Write + Read> Message<W> for U32 {
     fn write(&self, writer: &mut W) -> Result<()> {
