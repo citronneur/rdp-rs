@@ -2,6 +2,7 @@ use std::io::{Write, Read};
 use std::io::Result;
 use std::collections::BTreeMap;
 use byteorder::{WriteBytesExt, ReadBytesExt, LittleEndian, BigEndian};
+use indexmap::IndexMap;
 
 /// Implement a listener of a particular event
 /// # Examples
@@ -87,12 +88,12 @@ impl <Stream: Write + Read> Message<Stream> for Trame<Stream> {
     }
 }
 
-pub type Component<W> = BTreeMap<String, Box<Message<W>>>;
+pub type Component<W> = IndexMap<String, Box<Message<W>>>;
 
 #[macro_export]
 macro_rules! component {
     ($( $key: expr => $val: expr ),*) => {{
-         let mut map = BTreeMap::new();
+         let mut map = IndexMap::new();
          $( map.insert($key.to_string(), Box::new($val) as Box<Message<W>>); )*
          map
     }}
@@ -108,8 +109,8 @@ macro_rules! set_val {
 
 impl <W: Write + Read> Message<W> for Component<W> {
     fn write(&self, writer: &mut W) -> Result<()>{
-        for v in self.values() {
-           v.write(writer)?;
+        for (name, value) in self.iter() {
+           value.write(writer)?;
         }
 
         Ok(())
@@ -121,8 +122,8 @@ impl <W: Write + Read> Message<W> for Component<W> {
 
     fn length(&self) -> u64 {
         let mut sum : u64 = 0;
-        for v in self.values() {
-            sum += v.length();
+        for (name, value) in self.iter() {
+            sum += value.length();
         }
         sum
     }
@@ -175,7 +176,7 @@ impl<W: Write + Read> Message<W> for U32 {
     }
 
     fn length(&self) -> u64 {
-        2
+        4
     }
 }
 
@@ -202,5 +203,20 @@ impl<W: Write + Read, T: Message<W>> Message<W> for Check<T> {
 
     fn length(&self) -> u64 {
         self.value.length()
+    }
+}
+
+impl<W: Write + Read> Message<W> for String {
+    fn write(&self, writer: &mut W) -> Result<()> {
+        writer.write(self.as_bytes());
+        Ok(())
+    }
+
+    fn read(&mut self, reader: &mut W) -> Result<()> {
+        Ok(())
+    }
+
+    fn length(&self) -> u64 {
+        self.as_bytes().len() as u64
     }
 }

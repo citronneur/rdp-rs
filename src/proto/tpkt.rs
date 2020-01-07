@@ -1,7 +1,7 @@
 use core::link::{LinkEvent, LinkMessage, LinkMessageList};
-use core::data::{On, Message, U32, Trame, Component};
-use std::io::{Write, Read, Result, Error, ErrorKind};
-use std::collections::BTreeMap;
+use core::data::{On, Message, U16, Trame, Component};
+use std::io::{Write, Read, Result, Error, ErrorKind, Seek};
+use indexmap::IndexMap;
 
 /// TPKT action heaer
 /// # see : https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-rdpbcgr/b8e7c588-51cb-455b-bb73-92d480903133
@@ -12,11 +12,11 @@ pub enum Action {
     FastPathActionX224 = 0x3
 }
 
-fn tpkt_header<W: Write + Read + 'static>(size: u32) -> Component<W> {
+fn tpkt_header<W: Write + Read + 'static>(size: u16) -> Component<W> {
     component![
         "action" => Action::FastPathActionX224 as u8,
         "flag" => 0 as u8,
-        "size" => U32::BE(size + 4)
+        "size" => U16::BE(size + 4)
     ]
 }
 
@@ -69,7 +69,7 @@ impl<W: Write + Read + 'static> On<LinkEvent, LinkMessageList<W>> for Client<W> 
                 if let TpktMessage::X224(data) = self.listener.on(TpktClientEvent::Connect)? {
                     Ok(vec![
                         LinkMessage::Send(Box::new(trame![
-                            tpkt_header(data.length() as u32),
+                            tpkt_header(data.length() as u16),
                             data
                         ])),
                         LinkMessage::Expect(1) // wait for action !!!
@@ -84,18 +84,20 @@ impl<W: Write + Read + 'static> On<LinkEvent, LinkMessageList<W>> for Client<W> 
                 match self.current_state {
                     TpktState::ReadAction => {
                         let mut action: u8 = 0;
+                        println!("Receive action {}", buffer.get_ref().len());
                         action.read(&mut buffer);
+
                         if action == Action::FastPathActionX224 as u8 {
                             // now wait extended header
                             self.current_state = TpktState::ReadSize;
                             Ok(vec![LinkMessage::Expect(2)])
                         }
                         else {
-                            Err(Error::new(ErrorKind::Other, "Not implemented"))
+                            Err(Error::new(ErrorKind::Other, "FastPath packet is not implemented"))
                         }
                     },
                     TpktState::ReadSize => {
-                        let mut size = U32::BE(0);
+                        let mut size = U16::BE(0);
                         size.read(&mut buffer);
                         // now wait for body
                         self.current_state = TpktState::ReadBody;

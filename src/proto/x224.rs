@@ -1,7 +1,7 @@
 use proto::tpkt::{TpktClientEvent, TpktMessage};
 use core::data::{Message, On, Check, U16, U32, Component, Trame};
 use std::io::{Write, Seek, Read, Result};
-use std::collections::BTreeMap;
+use indexmap::IndexMap;
 
 #[derive(Copy, Clone)]
 pub enum NegotiationType {
@@ -27,26 +27,31 @@ pub enum MessageType {
     X224TPDUError = 0x70
 }
 
-fn rdp_neg_req<W: Write + Seek + Read + 'static>(neg_type: NegotiationType, result: Protocols) -> Component<W> {
+fn rdp_neg_req<W: Write + Seek + Read + 'static>(neg_type: NegotiationType, result: u32) -> Component<W> {
     component! [
         "type" => Check::new(neg_type as u8),
         "flag" => 0 as u8,
         "length" => Check::new(U16::LE(0x0008)),
-        "result" => U32::LE(result as u32)
+        "result" => U32::LE(result)
     ]
 }
 
 fn x224_crq<W: Write + Seek + Read + 'static>(len: u8, code: MessageType) -> Component<W> {
     component! [
-        "len" => len + 7,
+        "len" => (len + 6) as u8,
         "code" => Check::new(code as u8),
         "padding" => trame! [U16::LE(0), U16::LE(0), 0 as u8]
+        //"cookie" => String::from("Cookie: mstshash=DESKTOP-Q"),
+        //"delimiter" => U16::BE(0x0d0a)
     ]
 }
 
 fn write_client_x224_connection_request_pdu<W: Write + Seek + Read + 'static>() -> Trame<W> {
-    let negotiation = rdp_neg_req(NegotiationType::TypeRDPNegReq, Protocols::ProtocolSSL);
-
+    let negotiation = rdp_neg_req(
+        NegotiationType::TypeRDPNegReq,
+        Protocols::ProtocolSSL as u32 | Protocols::ProtocolHybrid as u32 | Protocols::ProtocolHybridEx as u32
+    );
+    println!("size {}", negotiation.length());
     trame![
         x224_crq(negotiation.length() as u8, MessageType::X224TPDUConnectionRequest),
         negotiation

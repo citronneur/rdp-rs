@@ -5,13 +5,15 @@ use std::io::{Cursor, Read, Write, Result, Error};
 use self::native_tls::{TlsConnector, HandshakeError};
 use core::data::{On, Message};
 use std::result;
+use core::link::LinkError::RdpError;
 
 #[derive(Debug)]
 /// All errors available from this link layer
 pub enum LinkError {
     SslError(HandshakeError<TcpStream>),
     IoError(Error),
-    SocketAddrError(AddrParseError)
+    SocketAddrError(AddrParseError),
+    RdpError(Error)
 }
 
 impl From<HandshakeError<TcpStream>> for LinkError {
@@ -73,10 +75,13 @@ impl Link {
 
         loop {
             // Read exactly
-            let mut buffer = Vec::with_capacity(self.expected_size);
+            let mut buffer = vec![0; self.expected_size];
             match tcp_stream.read_exact(&mut buffer) {
                 Ok(()) => {
-                    self.handle_event(LinkEvent::AvailableData(Cursor::new(buffer)), &mut tcp_stream);
+                    match self.handle_event(LinkEvent::AvailableData(Cursor::new(buffer)), &mut tcp_stream) {
+                        Ok(()) => continue,
+                        Err(e) => return Err(LinkError::RdpError(e))
+                    }
                 },
                 Err(e) => return Err(LinkError::IoError(e))
             };
