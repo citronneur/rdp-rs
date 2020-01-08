@@ -1,6 +1,6 @@
 use core::link::{LinkEvent, LinkMessage, LinkMessageList};
 use core::data::{On, Message, U16, Trame, Component};
-use std::io::{Write, Read, Result, Error, ErrorKind, Seek};
+use std::io::{Write, Read, Result, Error, ErrorKind, Seek, Cursor};
 use indexmap::IndexMap;
 
 /// TPKT action heaer
@@ -23,11 +23,12 @@ fn tpkt_header<W: Write + Read + 'static>(size: u16) -> Component<W> {
 /// Event provided by TPKT layer
 /// Connect -> The underlying layer is connected
 pub enum TpktClientEvent {
-    Connect
+    Connect,
+    Packet(Cursor<Vec<u8>>)
 }
 
 pub enum TpktMessage<W> {
-    X224(Trame<W>)
+    X224(Component<W>)
 }
 
 enum TpktState {
@@ -72,7 +73,7 @@ impl<W: Write + Read + 'static> On<LinkEvent, LinkMessageList<W>> for Client<W> 
                             tpkt_header(data.length() as u16),
                             data
                         ])),
-                        LinkMessage::Expect(1) // wait for action !!!
+                        LinkMessage::Expect(2) // wait for action !!!
                     ])
                 }
                 else {
@@ -84,10 +85,12 @@ impl<W: Write + Read + 'static> On<LinkEvent, LinkMessageList<W>> for Client<W> 
                 match self.current_state {
                     TpktState::ReadAction => {
                         let mut action: u8 = 0;
-                        println!("Receive action {}", buffer.get_ref().len());
                         action.read(&mut buffer);
 
                         if action == Action::FastPathActionX224 as u8 {
+                            // read padding
+                            let mut padding: u8 = 0;
+                            padding.read(&mut buffer);
                             // now wait extended header
                             self.current_state = TpktState::ReadSize;
                             Ok(vec![LinkMessage::Expect(2)])
@@ -99,11 +102,25 @@ impl<W: Write + Read + 'static> On<LinkEvent, LinkMessageList<W>> for Client<W> 
                     TpktState::ReadSize => {
                         let mut size = U16::BE(0);
                         size.read(&mut buffer);
+
                         // now wait for body
                         self.current_state = TpktState::ReadBody;
                         Ok(vec![LinkMessage::Expect(size.get() as usize - 4)])
                     },
-                    TpktState::ReadBody => {Ok(vec![])}
+                    TpktState::ReadBody => {
+                        if let TpktMessage::X224(data) = self.listener.on(TpktClientEvent::Packet(buffer))? {
+                            Ok(vec![
+                                LinkMessage::Send(Box::new(trame![
+                                    tpkt_header(data.length() as u16),
+                                    data
+                                ])),
+                                LinkMessage::Expect(2) // wait for action !!!
+                            ])
+                        }
+                        else {
+                            Err(Error::new(ErrorKind::Other, "to implement"))
+                        }
+                    }
                 }
             }
         }

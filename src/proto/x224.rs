@@ -1,7 +1,8 @@
 use proto::tpkt::{TpktClientEvent, TpktMessage};
-use core::data::{Message, On, Check, U16, U32, Component, Trame};
-use std::io::{Write, Seek, Read, Result};
+use core::data::{Message, On, Check, U16, U32, Component, Trame, DataType};
+use std::io::{Write, Seek, Read, Result, Cursor, Error, ErrorKind};
 use indexmap::IndexMap;
+use proto::x224::MessageType::X224TPDUConnectionConfirm;
 
 #[derive(Copy, Clone)]
 pub enum NegotiationType {
@@ -46,32 +47,85 @@ fn x224_crq<W: Write + Seek + Read + 'static>(len: u8, code: MessageType) -> Com
     ]
 }
 
-fn write_client_x224_connection_request_pdu<W: Write + Seek + Read + 'static>() -> Trame<W> {
+pub fn client_x224_connection_request_pdu<W: Write + Seek + Read + 'static>(protocols: u32) -> Component<W> {
     let negotiation = rdp_neg_req(
         NegotiationType::TypeRDPNegReq,
-        Protocols::ProtocolSSL as u32 | Protocols::ProtocolHybrid as u32 | Protocols::ProtocolHybridEx as u32
+        protocols
     );
-    println!("size {}", negotiation.length());
-    trame![
-        x224_crq(negotiation.length() as u8, MessageType::X224TPDUConnectionRequest),
-        negotiation
+
+    component![
+        "header" => x224_crq(negotiation.length() as u8, MessageType::X224TPDUConnectionRequest),
+        "negotiation" => negotiation
+    ]
+}
+
+pub fn client_x224_connection_confirm_pdu<W: Write + Seek + Read + 'static>() -> Component<W> {
+    let negotiation = rdp_neg_req(
+        NegotiationType::TypeRDPNegRsp,
+        0
+    );
+
+    component![
+        "header" => x224_crq(0, MessageType::X224TPDUConnectionConfirm),
+        "negotiation" => negotiation
     ]
 }
 
 #[derive(Copy, Clone)]
-pub struct Client {
+enum X224ClientState {
+    ConnectionRequest,
+    ConnectionConfirm
+}
 
+#[derive(Copy, Clone)]
+pub struct Client {
+    state: X224ClientState
 }
 
 impl Client {
     pub fn new () -> Self {
         Client {
+            state: X224ClientState::ConnectionRequest
         }
+    }
+
+    pub fn handle_connection_request<W: Write + Seek + Read + 'static>(&mut self) -> Result<Component<W>> {
+        self.state = X224ClientState::ConnectionConfirm;
+        Ok(client_x224_connection_request_pdu(Protocols::ProtocolSSL as u32 | Protocols::ProtocolHybrid as u32))
+    }
+
+    pub fn handle_connection_confirm<W: Write + Seek + Read + 'static>(&mut self, buffer: &mut Cursor<Vec<u8>>) -> Result<Component<W>> {
+        let mut confirm = client_x224_connection_confirm_pdu();
+        confirm.read(buffer)?;
+
+        let nego = cast!(DataType::Component, confirm["negotiation"]);
+        let response_type = cast!(DataType::U8, nego["type"]) as NegotiationType;
+        if response_type != NegotiationType::TypeRDPNegRsp {
+            Err(Error::new(ErrorKind::Other, "Invalid response from server"))
+        }
+
+        let selected_protocol = cast!(DataType::U32, nego["result"]);
+
+
+        println!("handle_connection_confirm");
+        Ok(component![])
     }
 }
 
 impl<W: Write + Seek + Read + 'static> On<TpktClientEvent, TpktMessage<W>> for Client {
     fn on (&mut self, event: TpktClientEvent) -> Result<TpktMessage<W>>{
-        Ok(TpktMessage::X224(write_client_x224_connection_request_pdu()))
+        match event {
+            TpktClientEvent::Connect => {
+                Ok(TpktMessage::X224(self.handle_connection_request()?))
+            },
+
+            TpktClientEvent::Packet(mut e) => {
+                match self.state {
+                    X224ClientState::ConnectionConfirm => Ok(TpktMessage::X224(self.handle_connection_confirm(&mut e)?)),
+                    _ => Err(Error::new(ErrorKind::Other, "Invalid state"))
+                }
+            }
+        }
+
     }
 }
