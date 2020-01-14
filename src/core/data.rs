@@ -12,9 +12,28 @@ pub trait On<InputEvent, OutputMessage> {
     fn on(&mut self, event: InputEvent) -> Result<OutputMessage>;
 }
 
-pub enum DataType<'a, W: Write + Read> {
-    Component(&'a Component<W>),
-    Trame(&'a Trame<W>),
+#[macro_export]
+macro_rules! cast {
+    ($ident:path, $expr:expr) => (match $expr.visit() {
+        $ident(e) => e,
+        _ => {
+            return Err(Error::new(ErrorKind::InvalidData, "Invalid Cast"))
+        }
+    })
+}
+
+/// Allow us to retrieve correct data
+/// Into the message tree via cast! macro
+/// # Examples
+/// ```no_run
+/// let message = component![
+///     "header" => U32::LE(1234)
+/// ];
+/// let header = cast!(DataType::U32, message["header"]);
+/// ```
+pub enum DataType<'a, Stream: Write + Read> {
+    Component(&'a Component<Stream>),
+    Trame(&'a Trame<Stream>),
     U32(u32),
     U16(u16),
     U8(u8)
@@ -111,7 +130,7 @@ impl <Stream: Write + Read> Message<Stream> for Trame<Stream> {
     }
 }
 
-pub type Component<W> = IndexMap<String, Box<Message<W>>>;
+pub type Component<Stream> = IndexMap<String, Box<Message<Stream>>>;
 
 #[macro_export]
 macro_rules! component {
@@ -130,8 +149,8 @@ macro_rules! set_val {
     }
 }
 
-impl <W: Write + Read> Message<W> for Component<W> {
-    fn write(&self, writer: &mut W) -> Result<()>{
+impl <Stream: Write + Read> Message<Stream> for Component<Stream> {
+    fn write(&self, writer: &mut Stream) -> Result<()>{
         for (name, value) in self.iter() {
            value.write(writer)?;
         }
@@ -139,7 +158,7 @@ impl <W: Write + Read> Message<W> for Component<W> {
         Ok(())
     }
 
-    fn read(&mut self, reader: &mut W) -> Result<()>{
+    fn read(&mut self, reader: &mut Stream) -> Result<()>{
         for (name, value) in self.into_iter() {
             value.read(reader)?;
         }
@@ -154,7 +173,7 @@ impl <W: Write + Read> Message<W> for Component<W> {
         sum
     }
 
-    fn visit(&self) -> DataType<W> {
+    fn visit(&self) -> DataType<Stream> {
         DataType::Component(self)
     }
 }
@@ -174,15 +193,15 @@ impl<Type: Copy> Value<Type> {
 
 pub type U16 = Value<u16>;
 
-impl<W: Write + Read> Message<W> for U16 {
-    fn write(&self, writer: &mut W) -> Result<()>{
+impl<Stream: Write + Read> Message<Stream> for U16 {
+    fn write(&self, writer: &mut Stream) -> Result<()>{
         match self {
             U16::BE(value) => writer.write_u16::<BigEndian>(*value),
             U16::LE(value) => writer.write_u16::<LittleEndian>(*value)
         }
     }
 
-    fn read(&mut self, reader: &mut W) -> Result<()>{
+    fn read(&mut self, reader: &mut Stream) -> Result<()>{
         match self {
             U16::BE(value) => *value = reader.read_u16::<BigEndian>()?,
             U16::LE(value) => *value = reader.read_u16::<LittleEndian>()?
@@ -194,22 +213,22 @@ impl<W: Write + Read> Message<W> for U16 {
         2
     }
 
-    fn visit(&self) -> DataType<W> {
+    fn visit(&self) -> DataType<Stream> {
         DataType::U16(self.get())
     }
 }
 
 pub type U32 = Value<u32>;
 
-impl<W: Write + Read> Message<W> for U32 {
-    fn write(&self, writer: &mut W) -> Result<()> {
+impl<Stream: Write + Read> Message<Stream> for U32 {
+    fn write(&self, writer: &mut Stream) -> Result<()> {
         match self {
             U32::BE(value) => writer.write_u32::<BigEndian>(*value),
             U32::LE(value) => writer.write_u32::<LittleEndian>(*value)
         }
     }
 
-    fn read(&mut self, reader: &mut W) -> Result<()> {
+    fn read(&mut self, reader: &mut Stream) -> Result<()> {
         match self {
             U32::BE(value) => *value = reader.read_u32::<BigEndian>()?,
             U32::LE(value) => *value = reader.read_u32::<LittleEndian>()?
@@ -221,7 +240,7 @@ impl<W: Write + Read> Message<W> for U32 {
         4
     }
 
-    fn visit(&self) -> DataType<W> {
+    fn visit(&self) -> DataType<Stream> {
         DataType::U32(self.get())
     }
 }
@@ -238,12 +257,12 @@ impl<T> Check<T> {
     }
 }
 
-impl<W: Write + Read, T: Message<W>> Message<W> for Check<T> {
-    fn write(&self, writer: &mut W) -> Result<()> {
+impl<Stream: Write + Read, T: Message<Stream>> Message<Stream> for Check<T> {
+    fn write(&self, writer: &mut Stream) -> Result<()> {
         self.value.write(writer)
     }
 
-    fn read(&mut self, reader: &mut W) -> Result<()> {
+    fn read(&mut self, reader: &mut Stream) -> Result<()> {
         self.value.read(reader)?;
         Ok(())
     }
@@ -252,7 +271,7 @@ impl<W: Write + Read, T: Message<W>> Message<W> for Check<T> {
         self.value.length()
     }
 
-    fn visit(&self) -> DataType<W> {
+    fn visit(&self) -> DataType<Stream> {
        self.value.visit()
     }
 }
@@ -273,12 +292,3 @@ impl<W: Write + Read, T: Message<W>> Message<W> for Check<T> {
     }
 }*/
 
-#[macro_export]
-macro_rules! cast {
-    ($ident:path, $expr:expr) => (match $expr.visit() {
-        $ident(e) => e,
-        _ => {
-            return Err(Error::new(ErrorKind::InvalidData, "Invalid Cast"))
-        }
-    })
-}

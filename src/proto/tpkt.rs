@@ -28,7 +28,8 @@ pub enum TpktClientEvent {
 }
 
 pub enum TpktMessage<W> {
-    X224(Component<W>)
+    X224(Component<W>),
+    Link(LinkMessage<W>)
 }
 
 enum TpktState {
