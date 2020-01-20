@@ -1,97 +1,82 @@
 extern crate native_tls;
 
-use std::net::{SocketAddr, AddrParseError, TcpStream};
-use std::io::{Cursor, Read, Write, Result, Error};
-use self::native_tls::{TlsConnector, HandshakeError};
+use core::error::{RdpResult};
+use std::net::{SocketAddr, TcpStream};
+use std::io::{Cursor, Read, Write};
+use self::native_tls::{TlsConnector};
 use core::data::{On, Message};
-use std::result;
-use core::link::LinkError::RdpError;
-
-#[derive(Debug)]
-/// All errors available from this link layer
-pub enum LinkError {
-    SslError(HandshakeError<TcpStream>),
-    IoError(Error),
-    SocketAddrError(AddrParseError),
-    RdpError(Error)
-}
-
-impl From<HandshakeError<TcpStream>> for LinkError {
-    fn from(e: HandshakeError<TcpStream>) -> LinkError {
-        LinkError::SslError(e)
-    }
-}
-
-impl From<Error> for LinkError {
-    fn from(e: Error) -> LinkError {
-        LinkError::IoError(e)
-    }
-}
-
-impl From<AddrParseError> for LinkError {
-    fn from(e: AddrParseError) -> LinkError {
-        LinkError::SocketAddrError(e)
-    }
-}
-
-type LinkResult<T> = result::Result<T, LinkError>;
 
 pub enum LinkEvent {
     Connect,
     AvailableData(Cursor<Vec<u8>>)
 }
 
+#[derive(Copy, Clone)]
+pub enum Protocol {
+    SSL,
+    NLA
+}
+
 pub enum LinkMessage<W> {
     Expect(usize),
-    Send(Box<Message<W>>),
-    StartSSL
+    Send(Box<dyn Message<W>>),
+    SwitchProtocol(Protocol)
 }
 
 pub type LinkMessageList<Stream> = Vec<LinkMessage<Stream>>;
 type LinkMessageListStream = LinkMessageList<Cursor<Vec<u8>>>;
 
 pub struct Link {
-    pub listener: Box<On<LinkEvent, LinkMessageListStream>>,
+    pub listener: Box<dyn On<LinkEvent, LinkMessageListStream>>,
     pub expected_size: usize
 }
 
 impl Link {
-    pub fn new(listener: Box<On<LinkEvent, LinkMessageListStream>>) -> Self {
+    pub fn new(listener: Box<dyn On<LinkEvent, LinkMessageListStream>>) -> Self {
         Link {
             listener,
             expected_size: 0
         }
     }
 
-    pub fn connect(&mut self) -> LinkResult<()> {
-        let mut builder = TlsConnector::builder();
-        builder.danger_accept_invalid_certs(true);
-        let connector = builder.build().unwrap();
+    pub fn connect(&mut self) -> RdpResult<()> {
 
         let addr = "127.0.0.1:33389".parse::<SocketAddr>()?;
         let mut  tcp_stream = TcpStream::connect(&addr)?;
-        //let mut stream = connector.connect("google.com", tcp_stream)?;
-        self.handle_event(LinkEvent::Connect, &mut tcp_stream);
 
-        loop {
-            // Read exactly
-            let mut buffer = vec![0; self.expected_size];
-            match tcp_stream.read_exact(&mut buffer) {
-                Ok(()) => {
-                    match self.handle_event(LinkEvent::AvailableData(Cursor::new(buffer)), &mut tcp_stream) {
-                        Ok(()) => continue,
-                        Err(e) => return Err(LinkError::RdpError(e))
-                    }
-                },
-                Err(e) => return Err(LinkError::IoError(e))
-            };
-        }
+        // Handle connect event
+        self.handle_event(LinkEvent::Connect, &mut tcp_stream)?;
 
-        // all is done correctly
+        // clear loop
+        let protocol = self.do_loop(&mut tcp_stream)?;
+
+        // Switch to SSL
+        let mut builder = TlsConnector::builder();
+        builder.danger_accept_invalid_certs(true);
+        let connector = builder.build()?;
+        let mut ssl_stream = connector.connect("google.com", tcp_stream)?;
+
+        println!("Switch to SSL");
+        // Continue
+        self.do_loop(&mut ssl_stream)?;
+
         Ok(())
     }
 
-    fn handle_event<W: Read + Write>(&mut self, event: LinkEvent, stream: &mut W) -> Result<()> {
+    fn do_loop<Stream: Read + Write>(&mut self, mut stream: &mut Stream) -> RdpResult<Protocol> {
+        loop {
+            // Read exactly
+            let mut buffer = vec![0; self.expected_size];
+            stream.read_exact(&mut buffer)?;
+            if let Some(protocol) = self.handle_event(LinkEvent::AvailableData(Cursor::new(buffer)), &mut stream)? {
+                // Ask to switch protocol
+                return Ok(protocol);
+            }
+            continue;
+        }
+    }
+
+    fn handle_event(&mut self, event: LinkEvent, stream: &mut dyn Write) -> RdpResult<Option<Protocol>> {
         for message in &self.listener.on(event)? {
             match message {
                 LinkMessage::Expect(size) => self.expected_size = *size,
@@ -100,9 +85,9 @@ impl Link {
                     to_send.write(&mut buffer)?;
                     stream.write(buffer.get_ref().as_slice())?;
                 },
-                _ => panic!("ouou")
+                LinkMessage::SwitchProtocol(protocol) => return  Ok(Some(*protocol))
             };
         }
-        Ok(())
+        Ok(None)
     }
 }

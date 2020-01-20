@@ -1,11 +1,10 @@
 use proto::tpkt::{TpktClientEvent, TpktMessage};
-use core::data::{Message, On, Check, U16, U32, Component, Trame, DataType};
-use std::io::{Write, Read, Result, Cursor, Error, ErrorKind};
+use core::data::{Message, On, Check, U16, U32, Component, DataType};
+use core::error::{Error, RdpError, RdpResult, RdpErrorKind};
+use std::io::{Write, Read, Cursor};
 use indexmap::IndexMap;
-use proto::x224::MessageType::X224TPDUConnectionConfirm;
-use core::link::LinkMessage;
-use proto::x224::NegotiationType::{TypeRDPNegRsp, TypeRDPNegFailure};
-use proto::x224::Protocols::ProtocolRDP;
+use core::link::{LinkMessage, Protocol};
+use proto::tpkt::TpktMessage::Link;
 
 #[derive(Copy, Clone)]
 pub enum NegotiationType {
@@ -75,6 +74,8 @@ fn x224_crq<W: Write + Read + 'static>(len: u8, code: MessageType) -> Component<
     ]
 }
 
+//pub fn client_x224_connection<W: Write + Read + 'static>(result: Option<u32>)
+
 pub fn client_x224_connection_request_pdu<W: Write + Read + 'static>(protocols: u32) -> Component<W> {
     let negotiation = rdp_neg_req(
         NegotiationType::TypeRDPNegReq,
@@ -117,30 +118,31 @@ impl Client {
         }
     }
 
-    pub fn handle_connection_request<W: Write + Read + 'static>(&mut self) -> Result<Component<W>> {
+    pub fn handle_connection_request<W: Write + Read + 'static>(&mut self) -> RdpResult<Component<W>> {
         self.state = X224ClientState::ConnectionConfirm;
         Ok(client_x224_connection_request_pdu(Protocols::ProtocolSSL as u32 | Protocols::ProtocolHybrid as u32))
     }
 
-    pub fn handle_connection_confirm<W: Write + Read + 'static>(&mut self, buffer: &mut Cursor<Vec<u8>>) -> Result<LinkMessage<W>> {
+    pub fn handle_connection_confirm<W: Write + Read + 'static>(&mut self, buffer: &mut Cursor<Vec<u8>>) -> RdpResult<LinkMessage<W>> {
         let mut confirm = client_x224_connection_confirm_pdu();
         confirm.read(buffer)?;
 
         let nego = cast!(DataType::Component, confirm["negotiation"]);
 
         match NegotiationType::from(cast!(DataType::U8, nego["type"])) {
-            NegotiationType::TypeRDPNegFailure => Err(Error::new(ErrorKind::Other, "Error during negotiation step")),
-            NegotiationType::TypeRDPNegReq | NegotiationType::TypeRDPNegUnknown => Err(Error::new(ErrorKind::Other, "Invalid response from server")),
+            NegotiationType::TypeRDPNegFailure => Err(Error::RdpError(RdpError::new(RdpErrorKind::ProtocolNegFailure, "Error during negotiation step"))),
+            NegotiationType::TypeRDPNegReq | NegotiationType::TypeRDPNegUnknown => Err(Error::RdpError(RdpError::new(RdpErrorKind::InvalidAutomata, "Invalid response from server"))),
             NegotiationType::TypeRDPNegRsp =>  match Protocols::from(cast!(DataType::U32, nego["result"])) {
-                Protocols::ProtocolSSL => Ok(LinkMessage::StartSSL),
-                _ => Err(Error::new(ErrorKind::Other, "Invalid selected protocol"))
+                Protocols::ProtocolSSL => Ok(LinkMessage::SwitchProtocol(Protocol::SSL)),
+                Protocols::ProtocolHybrid => Ok(LinkMessage::SwitchProtocol(Protocol::NLA)),
+                _ => Err(Error::RdpError(RdpError::new(RdpErrorKind::InvalidProtocol, "Invalid selected protocol")))
             }
         }
     }
 }
 
 impl<W: Write + Read + 'static> On<TpktClientEvent, TpktMessage<W>> for Client {
-    fn on (&mut self, event: TpktClientEvent) -> Result<TpktMessage<W>>{
+    fn on (&mut self, event: TpktClientEvent) -> RdpResult<TpktMessage<W>>{
         match event {
             TpktClientEvent::Connect => {
                 Ok(TpktMessage::X224(self.handle_connection_request()?))
@@ -149,7 +151,7 @@ impl<W: Write + Read + 'static> On<TpktClientEvent, TpktMessage<W>> for Client {
             TpktClientEvent::Packet(mut e) => {
                 match self.state {
                     X224ClientState::ConnectionConfirm => Ok(TpktMessage::Link(self.handle_connection_confirm(&mut e)?)),
-                    _ => Err(Error::new(ErrorKind::Other, "Invalid state"))
+                    _ => Err(Error::RdpError(RdpError::new(RdpErrorKind::InvalidAutomata, "Invalid state")))
                 }
             }
         }

@@ -1,6 +1,5 @@
 use std::io::{Write, Read};
-use std::io::Result;
-use std::collections::BTreeMap;
+use core::error::{RdpResult, RdpErrorKind, RdpError, Error};
 use byteorder::{WriteBytesExt, ReadBytesExt, LittleEndian, BigEndian};
 use indexmap::IndexMap;
 
@@ -9,7 +8,7 @@ use indexmap::IndexMap;
 /// ```no_run
 /// ```
 pub trait On<InputEvent, OutputMessage> {
-    fn on(&mut self, event: InputEvent) -> Result<OutputMessage>;
+    fn on(&mut self, event: InputEvent) -> RdpResult<OutputMessage>;
 }
 
 #[macro_export]
@@ -17,7 +16,7 @@ macro_rules! cast {
     ($ident:path, $expr:expr) => (match $expr.visit() {
         $ident(e) => e,
         _ => {
-            return Err(Error::new(ErrorKind::InvalidData, "Invalid Cast"))
+            return Err(Error::RdpError(RdpError::new(RdpErrorKind::InvalidCast, "Invalid Cast")))
         }
     })
 }
@@ -44,10 +43,10 @@ pub enum DataType<'a, Stream: Write + Read> {
 /// A message write into a stream as he would like
 pub trait Message<Stream: Write + Read> {
     /// Write current element into a writable stream
-    fn write(&self, writer: &mut Stream) -> Result<()>;
+    fn write(&self, writer: &mut Stream) -> RdpResult<()>;
 
     /// Read and set current variable from readable stream
-    fn read(&mut self, reader: &mut Stream) -> Result<()>;
+    fn read(&mut self, reader: &mut Stream) -> RdpResult<()>;
 
     /// Length in bytes of current element
     fn length(&self) -> u64;
@@ -67,11 +66,11 @@ pub trait Message<Stream: Write + Read> {
 /// ```
 impl<Stream: Write + Read> Message<Stream> for u8 {
     /// Write value into stream
-    fn write(&self, writer: &mut Stream)  -> Result<()> {
-        writer.write_u8(*self)
+    fn write(&self, writer: &mut Stream)  -> RdpResult<()> {
+        Ok(writer.write_u8(*self)?)
     }
     /// Read into stream
-    fn read(&mut self, reader: &mut Stream) -> Result<()> {
+    fn read(&mut self, reader: &mut Stream) -> RdpResult<()> {
         *self = reader.read_u8()?;
         Ok(())
     }
@@ -91,28 +90,28 @@ impl<Stream: Write + Read> Message<Stream> for u8 {
 /// ```no_run
 /// let t = trame! [0 as u8, 1 as u8];
 /// ```
-pub type Trame<Stream> = Vec<Box<Message<Stream>>>;
+pub type Trame<Stream> = Vec<Box<dyn Message<Stream>>>;
 
 #[macro_export]
 macro_rules! trame {
     ($( $val: expr ),*) => {{
          let mut vec = Vec::new();
-         $( vec.push(Box::new($val) as Box<Message<W>>); )*
+         $( vec.push(Box::new($val) as Box<dyn Message<W>>); )*
          vec
     }}
 }
 
 impl <Stream: Write + Read> Message<Stream> for Trame<Stream> {
-    fn write(&self, writer: &mut Stream) -> Result<()>{
+    fn write(&self, writer: &mut Stream) -> RdpResult<()>{
         for v in self {
-           v.write(writer);
+           v.write(writer)?;
         }
         Ok(())
     }
 
-    fn read(&mut self, reader: &mut Stream) -> Result<()>{
+    fn read(&mut self, reader: &mut Stream) -> RdpResult<()>{
         for v in self {
-           v.read(reader);
+           v.read(reader)?;
         }
         Ok(())
     }
@@ -130,13 +129,13 @@ impl <Stream: Write + Read> Message<Stream> for Trame<Stream> {
     }
 }
 
-pub type Component<Stream> = IndexMap<String, Box<Message<Stream>>>;
+pub type Component<Stream> = IndexMap<String, Box<dyn Message<Stream>>>;
 
 #[macro_export]
 macro_rules! component {
     ($( $key: expr => $val: expr ),*) => {{
          let mut map = IndexMap::new();
-         $( map.insert($key.to_string(), Box::new($val) as Box<Message<W>>); )*
+         $( map.insert($key.to_string(), Box::new($val) as Box<dyn Message<W>>); )*
          map
     }}
 }
@@ -150,16 +149,16 @@ macro_rules! set_val {
 }
 
 impl <Stream: Write + Read> Message<Stream> for Component<Stream> {
-    fn write(&self, writer: &mut Stream) -> Result<()>{
-        for (name, value) in self.iter() {
+    fn write(&self, writer: &mut Stream) -> RdpResult<()>{
+        for (_name, value) in self.iter() {
            value.write(writer)?;
         }
 
         Ok(())
     }
 
-    fn read(&mut self, reader: &mut Stream) -> Result<()>{
-        for (name, value) in self.into_iter() {
+    fn read(&mut self, reader: &mut Stream) -> RdpResult<()>{
+        for (_name, value) in self.into_iter() {
             value.read(reader)?;
         }
         Ok(())
@@ -167,7 +166,7 @@ impl <Stream: Write + Read> Message<Stream> for Component<Stream> {
 
     fn length(&self) -> u64 {
         let mut sum : u64 = 0;
-        for (name, value) in self.iter() {
+        for (_name, value) in self.iter() {
             sum += value.length();
         }
         sum
@@ -178,12 +177,13 @@ impl <Stream: Write + Read> Message<Stream> for Component<Stream> {
     }
 }
 
+#[derive(Copy, Clone)]
 pub enum Value<Type> {
     BE(Type),
     LE(Type)
 }
 
-impl<Type: Copy> Value<Type> {
+impl<Type: Copy + PartialEq> Value<Type> {
     pub fn get(&self) -> Type {
         match self {
             Value::<Type>::BE(e) | Value::<Type>::LE(e) => *e
@@ -191,17 +191,23 @@ impl<Type: Copy> Value<Type> {
     }
 }
 
+impl<Type: Copy + PartialEq> PartialEq for Value<Type> {
+    fn eq(&self, other: &Self) -> bool {
+        return self.get() == other.get()
+    }
+}
+
 pub type U16 = Value<u16>;
 
 impl<Stream: Write + Read> Message<Stream> for U16 {
-    fn write(&self, writer: &mut Stream) -> Result<()>{
+    fn write(&self, writer: &mut Stream) -> RdpResult<()>{
         match self {
-            U16::BE(value) => writer.write_u16::<BigEndian>(*value),
-            U16::LE(value) => writer.write_u16::<LittleEndian>(*value)
+            U16::BE(value) => Ok(writer.write_u16::<BigEndian>(*value)?),
+            U16::LE(value) => Ok(writer.write_u16::<LittleEndian>(*value)?)
         }
     }
 
-    fn read(&mut self, reader: &mut Stream) -> Result<()>{
+    fn read(&mut self, reader: &mut Stream) -> RdpResult<()>{
         match self {
             U16::BE(value) => *value = reader.read_u16::<BigEndian>()?,
             U16::LE(value) => *value = reader.read_u16::<LittleEndian>()?
@@ -221,14 +227,14 @@ impl<Stream: Write + Read> Message<Stream> for U16 {
 pub type U32 = Value<u32>;
 
 impl<Stream: Write + Read> Message<Stream> for U32 {
-    fn write(&self, writer: &mut Stream) -> Result<()> {
+    fn write(&self, writer: &mut Stream) -> RdpResult<()> {
         match self {
-            U32::BE(value) => writer.write_u32::<BigEndian>(*value),
-            U32::LE(value) => writer.write_u32::<LittleEndian>(*value)
+            U32::BE(value) => Ok(writer.write_u32::<BigEndian>(*value)?),
+            U32::LE(value) => Ok(writer.write_u32::<LittleEndian>(*value)?)
         }
     }
 
-    fn read(&mut self, reader: &mut Stream) -> Result<()> {
+    fn read(&mut self, reader: &mut Stream) -> RdpResult<()> {
         match self {
             U32::BE(value) => *value = reader.read_u32::<BigEndian>()?,
             U32::LE(value) => *value = reader.read_u32::<LittleEndian>()?
@@ -245,11 +251,11 @@ impl<Stream: Write + Read> Message<Stream> for U32 {
     }
 }
 
-pub struct Check<T> {
+pub struct Check<T: Copy> {
     value: T
 }
 
-impl<T> Check<T> {
+impl<T: Copy> Check<T> {
     pub fn new(value: T) -> Self{
         Check {
             value
@@ -257,13 +263,17 @@ impl<T> Check<T> {
     }
 }
 
-impl<Stream: Write + Read, T: Message<Stream>> Message<Stream> for Check<T> {
-    fn write(&self, writer: &mut Stream) -> Result<()> {
+impl<Stream: Write + Read, T: Message<Stream> + Copy + PartialEq> Message<Stream> for Check<T> {
+    fn write(&self, writer: &mut Stream) -> RdpResult<()> {
         self.value.write(writer)
     }
 
-    fn read(&mut self, reader: &mut Stream) -> Result<()> {
+    fn read(&mut self, reader: &mut Stream) -> RdpResult<()> {
+        let old = self.value;
         self.value.read(reader)?;
+        if old != self.value {
+            return Err(Error::RdpError(RdpError::new(RdpErrorKind::InvalidCast, "Invalid cast of data message")))
+        }
         Ok(())
     }
 
@@ -275,6 +285,10 @@ impl<Stream: Write + Read, T: Message<Stream>> Message<Stream> for Check<T> {
        self.value.visit()
     }
 }
+
+/*impl<Stream: Write + Read, T: Message<Stream>> Message<Stream> for Option<T> {
+
+}*/
 
 /*impl<W: Write + Read> Message<W> for Vec<u8> {
     fn write(&self, writer: &mut W) -> Result<()> {
