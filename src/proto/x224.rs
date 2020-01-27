@@ -4,7 +4,6 @@ use core::error::{Error, RdpError, RdpResult, RdpErrorKind};
 use std::io::{Write, Read, Cursor};
 use indexmap::IndexMap;
 use core::link::{LinkMessage, Protocol};
-use proto::tpkt::TpktMessage::Link;
 
 #[derive(Copy, Clone)]
 pub enum NegotiationType {

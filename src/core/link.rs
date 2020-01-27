@@ -5,6 +5,7 @@ use std::net::{SocketAddr, TcpStream};
 use std::io::{Cursor, Read, Write};
 use self::native_tls::{TlsConnector};
 use core::data::{On, Message};
+use core::cssp::write_ts_request;
 
 pub enum LinkEvent {
     Connect,
@@ -57,6 +58,7 @@ impl Link {
         let mut ssl_stream = connector.connect("google.com", tcp_stream)?;
 
         println!("Switch to SSL");
+
         // Continue
         self.do_loop(&mut ssl_stream)?;
 
