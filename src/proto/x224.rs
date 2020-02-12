@@ -4,6 +4,7 @@ use core::error::{Error, RdpError, RdpResult, RdpErrorKind};
 use std::io::{Write, Read, Cursor};
 use indexmap::IndexMap;
 use core::link::{LinkMessage, Protocol};
+use std::option::{Option};
 
 #[derive(Copy, Clone)]
 pub enum NegotiationType {
@@ -73,28 +74,16 @@ fn x224_crq<W: Write + Read + 'static>(len: u8, code: MessageType) -> Component<
     ]
 }
 
-//pub fn client_x224_connection<W: Write + Read + 'static>(result: Option<u32>)
-
-pub fn client_x224_connection_request_pdu<W: Write + Read + 'static>(protocols: u32) -> Component<W> {
+pub fn client_x224_connection_pdu<W: Write + Read + 'static>(
+    neg_type: NegotiationType,
+    protocols: Option<u32>) -> Component<W> {
     let negotiation = rdp_neg_req(
-        NegotiationType::TypeRDPNegReq,
-        protocols
+        neg_type,
+        if let Some(p) = protocols {p} else {0}
     );
 
     component![
         "header" => x224_crq(negotiation.length() as u8, MessageType::X224TPDUConnectionRequest),
-        "negotiation" => negotiation
-    ]
-}
-
-pub fn client_x224_connection_confirm_pdu<W: Write + Read + 'static>() -> Component<W> {
-    let negotiation = rdp_neg_req(
-        NegotiationType::TypeRDPNegRsp,
-        0
-    );
-
-    component![
-        "header" => x224_crq(0, MessageType::X224TPDUConnectionConfirm),
         "negotiation" => negotiation
     ]
 }
@@ -119,11 +108,11 @@ impl Client {
 
     pub fn handle_connection_request<W: Write + Read + 'static>(&mut self) -> RdpResult<Component<W>> {
         self.state = X224ClientState::ConnectionConfirm;
-        Ok(client_x224_connection_request_pdu(Protocols::ProtocolSSL as u32 | Protocols::ProtocolHybrid as u32))
+        Ok(client_x224_connection_pdu(NegotiationType::TypeRDPNegReq,Some(Protocols::ProtocolSSL as u32 | Protocols::ProtocolHybrid as u32)))
     }
 
     pub fn handle_connection_confirm<W: Write + Read + 'static>(&mut self, buffer: &mut Cursor<Vec<u8>>) -> RdpResult<LinkMessage<W>> {
-        let mut confirm = client_x224_connection_confirm_pdu();
+        let mut confirm = client_x224_connection_pdu(NegotiationType::TypeRDPNegRsp, None);
         confirm.read(buffer)?;
 
         let nego = cast!(DataType::Component, confirm["negotiation"]);

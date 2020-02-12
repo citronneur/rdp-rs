@@ -5,3 +5,4 @@ extern crate yasna;
 #[macro_use]
 pub mod core;
 pub mod proto;
+pub mod nla;

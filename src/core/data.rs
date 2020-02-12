@@ -286,23 +286,21 @@ impl<Stream: Write + Read, T: Message<Stream> + Copy + PartialEq> Message<Stream
     }
 }
 
-/*impl<Stream: Write + Read, T: Message<Stream>> Message<Stream> for Option<T> {
-
-}*/
-
-/*impl<W: Write + Read> Message<W> for Vec<u8> {
-    fn write(&self, writer: &mut W) -> Result<()> {
+impl<Stream: Write + Read> Message<Stream> for Vec<u8> {
+    fn write(&self, writer: &mut Stream) -> RdpResult<()> {
         writer.write(self);
         Ok(())
     }
 
-    fn read(&mut self, reader: &mut W) -> Result<()> {
-        reader.read_exact(self)?;
-        Ok(())
+    fn read(&mut self, reader: &mut Stream) -> RdpResult<()> {
+        unimplemented!()
     }
 
     fn length(&self) -> u64 {
-        self.len() as u64
+        unimplemented!()
     }
-}*/
 
+    fn visit(&self) -> DataType<Stream> {
+        unimplemented!()
+    }
+}
