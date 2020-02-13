@@ -1,6 +1,6 @@
 use super::sspi::{AuthenticationProtocol};
 use core::data::{Message, Component, U16, U32};
-use std::io::{Write, Read};
+use std::io::{Write, Read, Cursor};
 use indexmap::IndexMap;
 
 #[repr(u32)]
@@ -57,6 +57,9 @@ fn version<W: Read + Write + 'static>() -> Component<W> {
     )
 }
 
+///
+/// This is the negotiate (first) message use by NTLMv2 protocol
+/// It used to announce capability to the peer
 fn negotiate_message<W: Read + Write + 'static>(flags: u32) -> Component<W> {
     component!(
         "Signature" => b"NTLMSSP\x00".to_vec(),
@@ -68,7 +71,8 @@ fn negotiate_message<W: Read + Write + 'static>(flags: u32) -> Component<W> {
         "WorkstationLen" => U16::LE(0),
         "WorkstationMaxLen" => U16::LE(0),
         "WorkstationBufferOffset" => U32::LE(0),
-        "Version" => version()
+        "Version" => version(),
+        "Payload" => Vec::<u8>::new()
     )
 }
 
@@ -76,8 +80,39 @@ pub struct Ntlm {
 
 }
 
-impl<T: Read + Write + 'static> AuthenticationProtocol<T>  for Ntlm{
+impl Ntlm {
+    pub fn new() -> Self {
+        Ntlm {
+
+        }
+    }
+}
+
+impl<T: Read + Write + 'static> AuthenticationProtocol<T>  for Ntlm {
+
+    /// Create Negotiate message for our NTLMv2 implementation
     fn create_negotiate_message(&self) -> Box<Message<T>> {
-        Box::new(negotiate_message(0))
+        Box::new(negotiate_message(
+            Negotiate::NtlmsspNegociateKeyExch as u32 |
+                Negotiate::NtlmsspNegociate128 as u32 |
+                Negotiate::NtlmsspNegociateExtendedSessionSecurity as u32 |
+                Negotiate::NtlmsspNegociateAlwaysSign as u32 |
+                Negotiate::NtlmsspNegociateNTLM as u32 |
+                Negotiate::NtlmsspNegociateSeal as u32 |
+                Negotiate::NtlmsspNegociateSign as u32 |
+                Negotiate::NtlmsspRequestTarget as u32 |
+                Negotiate::NtlmsspNegociateUnicode as u32
+        ))
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    #[test]
+    fn test_ntlmv2_negotiate_message() {
+        let mut buffer = Cursor::new(Vec::new());
+        Ntlm::new().create_negotiate_message().write(&mut buffer);
+        assert_eq!(buffer.get_ref().as_slice(), [0]);
     }
 }

@@ -35,7 +35,8 @@ pub enum DataType<'a, Stream: Write + Read> {
     Trame(&'a Trame<Stream>),
     U32(u32),
     U16(u16),
-    U8(u8)
+    U8(u8),
+    None
 }
 
 
@@ -302,5 +303,67 @@ impl<Stream: Write + Read> Message<Stream> for Vec<u8> {
 
     fn visit(&self) -> DataType<Stream> {
         unimplemented!()
+    }
+}
+
+pub struct Conditional<T> {
+    callback: Box<Fn(&T) -> bool>,
+    current: T
+}
+
+impl<T> Conditional<T> {
+    fn new<F: 'static>(current: T, callback: F) -> Self
+        where F: Fn(&T) -> bool {
+        Conditional {
+            callback : Box::new(callback),
+            current
+        }
+    }
+}
+
+impl<Stream: Write + Read, T: Message<Stream>> Message<Stream> for Conditional<T> {
+    fn write(&self, writer: &mut Stream) -> RdpResult<()> {
+        if (self.callback)(&self.current) {
+            self.current.write(writer)?
+        }
+        Ok(())
+    }
+
+    fn read(&mut self, reader: &mut Stream) -> RdpResult<()> {
+        if (self.callback)(&self.current) {
+            self.current.read(reader)?
+        }
+        Ok(())
+    }
+
+    fn length(&self) -> u64 {
+        if (self.callback)(&self.current) {
+            return self.current.length()
+        }
+        0
+    }
+
+    fn visit(&self) -> DataType<Stream> {
+        if (self.callback)(&self.current) {
+            return self.current.visit()
+        }
+        DataType::None
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use std::io::Cursor;
+    #[test]
+    fn test_data_conditional() {
+
+        //let x : Component<Vec<u8>> = component!(
+        //    "version" => Conditional::new(8, |inner| {
+        //        true
+        //    })
+        //);
+
+        //assert_eq!(buffer.get_ref().as_slice(), [0]);
     }
 }
