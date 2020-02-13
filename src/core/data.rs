@@ -135,8 +135,8 @@ pub type Component<Stream> = IndexMap<String, Box<dyn Message<Stream>>>;
 #[macro_export]
 macro_rules! component {
     ($( $key: expr => $val: expr ),*) => {{
-         let mut map = IndexMap::new();
-         $( map.insert($key.to_string(), Box::new($val) as Box<dyn Message<W>>); )*
+         let mut map = Component::new();
+         $( map.insert($key.to_string(), Box::new($val)); )*
          map
     }}
 }
@@ -358,12 +358,12 @@ mod test {
     #[test]
     fn test_data_conditional() {
 
-        //let x : Component<Vec<u8>> = component!(
-        //    "version" => Conditional::new(8, |inner| {
-        //        true
-        //    })
-        //);
-
-        //assert_eq!(buffer.get_ref().as_slice(), [0]);
+        let x : Component<Cursor<Vec<u8>>> = component!(
+            "version" => Conditional::new(8, |inner| {
+                true
+            })
+        );
+        let x = cast!(DataType::U8, x["version"]);
+        assert_eq!(8, x);
     }
 }
