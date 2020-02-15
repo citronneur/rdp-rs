@@ -14,21 +14,31 @@ pub trait On<InputEvent, OutputMessage> {
 #[macro_export]
 macro_rules! cast {
     ($ident:path, $expr:expr) => (match $expr.visit() {
-        $ident(e) => e,
-        _ => {
-            return Err(Error::RdpError(RdpError::new(RdpErrorKind::InvalidCast, "Invalid Cast")))
-        }
+        $ident(e) => Ok(e),
+        _ => Err(Error::RdpError(RdpError::new(RdpErrorKind::InvalidCast, "Invalid Cast")))
     })
 }
 
+#[macro_export]
+macro_rules! cast_optional {
+    ($ident:path, $expr:expr) => (match $expr.visit() {
+        $ident(e) => Ok(Some(e)),
+        DataType::None(()) => Ok(None),
+        _ => Err(Error::RdpError(RdpError::new(RdpErrorKind::InvalidCast, "Invalid Cast")))
+    })
+}
+
+/// All data type used
+///
 /// Allow us to retrieve correct data
-/// Into the message tree via cast! macro
+/// Into the message tree via cast! or cast_optional! macro
+///
 /// # Examples
-/// ```no_run
-/// let message = component![
+/// ```
+/// let message = component!(
 ///     "header" => U32::LE(1234)
-/// ];
-/// let header = cast!(DataType::U32, message["header"]);
+/// );
+/// let header = cast!(DataType::U32, message["header"]).unwrap();
 /// ```
 pub enum DataType<'a, Stream: Write + Read> {
     Component(&'a Component<Stream>),
@@ -36,73 +46,127 @@ pub enum DataType<'a, Stream: Write + Read> {
     U32(u32),
     U16(u16),
     U8(u8),
-    None
+    None(())
 }
 
-
-/// A trait use to create a message from a layer
-/// A message write into a stream as he would like
+/// All is a message
+///
+/// A message can be Read or Write from a Stream
+///
 pub trait Message<Stream: Write + Read> {
+    /// Write node to the Stream
+    ///
     /// Write current element into a writable stream
     fn write(&self, writer: &mut Stream) -> RdpResult<()>;
 
+    /// Read node from stream
+    ///
     /// Read and set current variable from readable stream
     fn read(&mut self, reader: &mut Stream) -> RdpResult<()>;
 
     /// Length in bytes of current element
     fn length(&self) -> u64;
 
+    /// Cast value on Message Tree
+    ///
     /// Visit value and try to return inner type
+    /// This is based on Tree visitor pattern
     fn visit(&self) -> DataType<Stream>;
 }
 
-/// Implement Message trait for basic type u8
-/// # Exemple
-/// ```no_run
-/// let mut x = 0 as u8;
-/// x.read(reader);
+/// u8 message
 ///
-/// let x : u8 = 4;
-/// x.write(writer);
-/// ```
+/// Implement Message trait for basic type u8
 impl<Stream: Write + Read> Message<Stream> for u8 {
-    /// Write value into stream
+
+    /// Write u8 value into stream
+    /// # Example
+    ///
+    /// ```
+    /// let mut s = Cursor::new(Vec::new());
+    /// let value = 8 as u8;
+    /// value.write(s);
+    /// ```
     fn write(&self, writer: &mut Stream)  -> RdpResult<()> {
         Ok(writer.write_u8(*self)?)
     }
-    /// Read into stream
+
+    /// Read u8 value from stream
+    /// # Example
+    ///
+    /// ```
+    /// let mut value = 0 as u8;
+    /// value.read(s); // set the value according to stream content
+    /// ```
     fn read(&mut self, reader: &mut Stream) -> RdpResult<()> {
         *self = reader.read_u8()?;
         Ok(())
     }
 
-    /// Size in byte of wrapped value
+    /// Size in byte of wrapped value 1 in case of u8
     fn length(&self) -> u64 {
         1
     }
 
+    /// Use visitor pattern to retrieve
+    /// Value in case of component
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// let x = 8;
+    /// if let DataType::U8(value) = x.visit() {
+    ///     assert_eq!(value, 8)
+    /// }
+    /// else {
+    ///     panic!("Invalid cast");
+    /// }
+    /// ```
     fn visit(&self) -> DataType<Stream> {
         DataType::U8(*self)
     }
+
 }
 
 /// Trame is just a list of boxed messages
-/// # Exemple
+/// # Example
+///
 /// ```no_run
 /// let t = trame! [0 as u8, 1 as u8];
 /// ```
 pub type Trame<Stream> = Vec<Box<dyn Message<Stream>>>;
 
+/// Trame macro is used to initialize a vector of message
+/// This is equivalent to vec! macro in case of vector
+///
+/// # Example
+///
+/// ```
+/// let padding = trame! [0 as u8, 1 as u8];
+/// ```
 #[macro_export]
 macro_rules! trame {
     ($( $val: expr ),*) => {{
-         let mut vec = Vec::new();
-         $( vec.push(Box::new($val) as Box<dyn Message<W>>); )*
+         let mut vec = Trame::new();
+         $( vec.push(Box::new($val)); )*
          vec
     }}
 }
 
+/// Trame is a message too
 impl <Stream: Write + Read> Message<Stream> for Trame<Stream> {
+    /// Write a trame to a stream
+    ///
+    /// Write all subnode of the trame to the stream
+    /// This can be view as anonymous node
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// let mut s = Cursor::new(Vec::new());
+    /// let x = trame!([0, 1, 2, 4, 5]);
+    /// x.write(s);
+    /// ```
     fn write(&self, writer: &mut Stream) -> RdpResult<()>{
         for v in self {
            v.write(writer)?;
@@ -130,23 +194,15 @@ impl <Stream: Write + Read> Message<Stream> for Trame<Stream> {
     }
 }
 
-pub type Component<Stream> = IndexMap<String, Box<dyn Message<Stream>>>;
+pub type Component<Stream> = IndexMap<String, Box<Filter<Stream>>>;
 
 #[macro_export]
 macro_rules! component {
     ($( $key: expr => $val: expr ),*) => {{
          let mut map = Component::new();
-         $( map.insert($key.to_string(), Box::new($val)); )*
+         $( map.insert($key.to_string(), Box::new(Filter::new($val, |c| "".to_string()))); )*
          map
     }}
-}
-
-
-#[macro_export]
-macro_rules! set_val {
-    ( $component: expr, $key: expr => $val: expr ) => {
-        *$component.get_mut(&$key.to_string()).unwrap() = Box::new($val) as Box<Message<W>>;
-    }
 }
 
 impl <Stream: Write + Read> Message<Stream> for Component<Stream> {
@@ -154,13 +210,14 @@ impl <Stream: Write + Read> Message<Stream> for Component<Stream> {
         for (_name, value) in self.iter() {
            value.write(writer)?;
         }
-
         Ok(())
     }
 
     fn read(&mut self, reader: &mut Stream) -> RdpResult<()>{
         for (_name, value) in self.into_iter() {
-            value.read(reader)?;
+            //if value.activate(self)? {
+               //self.length();
+            //}
         }
         Ok(())
     }
@@ -176,6 +233,7 @@ impl <Stream: Write + Read> Message<Stream> for Component<Stream> {
     fn visit(&self) -> DataType<Stream> {
         DataType::Component(self)
     }
+
 }
 
 #[derive(Copy, Clone)]
@@ -216,6 +274,7 @@ impl<Stream: Write + Read> Message<Stream> for U16 {
         Ok(())
     }
 
+
     fn length(&self) -> u64 {
         2
     }
@@ -223,6 +282,7 @@ impl<Stream: Write + Read> Message<Stream> for U16 {
     fn visit(&self) -> DataType<Stream> {
         DataType::U16(self.get())
     }
+
 }
 
 pub type U32 = Value<u32>;
@@ -250,6 +310,7 @@ impl<Stream: Write + Read> Message<Stream> for U32 {
     fn visit(&self) -> DataType<Stream> {
         DataType::U32(self.get())
     }
+
 }
 
 pub struct Check<T: Copy> {
@@ -273,7 +334,7 @@ impl<Stream: Write + Read, T: Message<Stream> + Copy + PartialEq> Message<Stream
         let old = self.value;
         self.value.read(reader)?;
         if old != self.value {
-            return Err(Error::RdpError(RdpError::new(RdpErrorKind::InvalidCast, "Invalid cast of data message")))
+            return Err(Error::RdpError(RdpError::new(RdpErrorKind::InvalidConst, "Invalid constness of data")))
         }
         Ok(())
     }
@@ -283,7 +344,7 @@ impl<Stream: Write + Read, T: Message<Stream> + Copy + PartialEq> Message<Stream
     }
 
     fn visit(&self) -> DataType<Stream> {
-       self.value.visit()
+        self.value.visit()
     }
 }
 
@@ -306,48 +367,40 @@ impl<Stream: Write + Read> Message<Stream> for Vec<u8> {
     }
 }
 
-pub struct Conditional<T> {
-    callback: Box<Fn(&T) -> bool>,
-    current: T
+pub struct Filter<Stream> {
+    callback: Box<Fn(&Message<Stream>) -> String>,
+    current: Box<Message<Stream>>
 }
 
-impl<T> Conditional<T> {
-    fn new<F: 'static>(current: T, callback: F) -> Self
-        where F: Fn(&T) -> bool {
-        Conditional {
+impl<Stream : Read + Write> Filter<Stream> {
+    pub fn new<M: 'static, F: 'static>(current: M, callback: F) -> Self
+        where F: Fn(&Message<Stream>) -> String, M: Message<Stream> {
+        Filter {
             callback : Box::new(callback),
-            current
+            current : Box::new(current)
         }
+    }
+
+    fn filter(&self) -> String {
+        (self.callback)(self.current.as_ref())
     }
 }
 
-impl<Stream: Write + Read, T: Message<Stream>> Message<Stream> for Conditional<T> {
+impl<Stream: Write + Read> Message<Stream> for Filter<Stream> {
     fn write(&self, writer: &mut Stream) -> RdpResult<()> {
-        if (self.callback)(&self.current) {
-            self.current.write(writer)?
-        }
-        Ok(())
+        self.current.write(writer)
     }
 
     fn read(&mut self, reader: &mut Stream) -> RdpResult<()> {
-        if (self.callback)(&self.current) {
-            self.current.read(reader)?
-        }
-        Ok(())
+        self.current.read(reader)
     }
 
     fn length(&self) -> u64 {
-        if (self.callback)(&self.current) {
-            return self.current.length()
-        }
-        0
+        self.current.length()
     }
 
     fn visit(&self) -> DataType<Stream> {
-        if (self.callback)(&self.current) {
-            return self.current.visit()
-        }
-        DataType::None
+        self.current.visit()
     }
 }
 
@@ -355,15 +408,35 @@ impl<Stream: Write + Read, T: Message<Stream>> Message<Stream> for Conditional<T
 mod test {
     use super::*;
     use std::io::Cursor;
-    #[test]
-    fn test_data_conditional() {
+    use std::vec;
 
-        let x : Component<Cursor<Vec<u8>>> = component!(
-            "version" => Conditional::new(8, |inner| {
-                true
-            })
-        );
-        let x = cast!(DataType::U8, x["version"]);
-        assert_eq!(8, x);
+    #[test]
+    fn test_data_u8_write() {
+        let mut stream = Cursor::new(Vec::<u8>::new());
+        let x = 1 as u8;
+        x.write(&mut stream).unwrap();
+    }
+
+    #[test]
+    fn test_data_conditional_true() {
+        //let mut stream = Cursor::new(vec![8 as u8]);
+        //let mut x : Component<Cursor<Vec<u8>>> = component!(
+        //    "version" => Conditional::new(0, |ctx| {
+        //        true
+        //    })
+        //);
+        //x.read(&mut stream);
+        //assert_eq!(Some(8), cast_optional!(DataType::U8, x["version"]).unwrap());
+    }
+    #[test]
+    fn test_data_conditional_false() {
+        //let mut stream = Cursor::new(vec![8 as u8]);
+        //let mut x : Component<Cursor<Vec<u8>>> = component!(
+        //    "version" => Conditional::new(0, |inner| {
+        //        false
+        //    })
+        //);
+        //x.read(&mut stream);
+        //assert_eq!(None, cast_optional!(DataType::U8, x["version"]).unwrap());
     }
 }

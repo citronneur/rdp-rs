@@ -1,8 +1,7 @@
 use proto::tpkt::{TpktClientEvent, TpktMessage};
-use core::data::{Message, On, Check, U16, U32, Component, DataType};
+use core::data::{Message, On, Check, U16, U32, Component, DataType, Trame, Filter};
 use core::error::{Error, RdpError, RdpResult, RdpErrorKind};
 use std::io::{Write, Read, Cursor};
-use indexmap::IndexMap;
 use core::link::{LinkMessage, Protocol};
 use std::option::{Option};
 
@@ -115,12 +114,12 @@ impl Client {
         let mut confirm = client_x224_connection_pdu(NegotiationType::TypeRDPNegRsp, None);
         confirm.read(buffer)?;
 
-        let nego = cast!(DataType::Component, confirm["negotiation"]);
+        let nego = cast!(DataType::Component, confirm["negotiation"]).unwrap();
 
-        match NegotiationType::from(cast!(DataType::U8, nego["type"])) {
+        match NegotiationType::from(cast!(DataType::U8, nego["type"]).unwrap()) {
             NegotiationType::TypeRDPNegFailure => Err(Error::RdpError(RdpError::new(RdpErrorKind::ProtocolNegFailure, "Error during negotiation step"))),
             NegotiationType::TypeRDPNegReq | NegotiationType::TypeRDPNegUnknown => Err(Error::RdpError(RdpError::new(RdpErrorKind::InvalidAutomata, "Invalid response from server"))),
-            NegotiationType::TypeRDPNegRsp =>  match Protocols::from(cast!(DataType::U32, nego["result"])) {
+            NegotiationType::TypeRDPNegRsp =>  match Protocols::from(cast!(DataType::U32, nego["result"]).unwrap()) {
                 Protocols::ProtocolSSL => Ok(LinkMessage::SwitchProtocol(Protocol::SSL)),
                 Protocols::ProtocolHybrid => Ok(LinkMessage::SwitchProtocol(Protocol::NLA)),
                 _ => Err(Error::RdpError(RdpError::new(RdpErrorKind::InvalidProtocol, "Invalid selected protocol")))

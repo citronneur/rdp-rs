@@ -13,7 +13,8 @@ pub enum RdpErrorKind {
     ProtocolNegFailure,
     InvalidAutomata,
     InvalidProtocol,
-    InvalidCast
+    InvalidCast,
+    InvalidConst
 }
 
 #[derive(Debug)]

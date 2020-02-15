@@ -1,7 +1,7 @@
 use super::sspi::{AuthenticationProtocol};
-use core::data::{Message, Component, U16, U32};
+use core::data::{Message, Component, U16, U32, Trame, Filter, DataType};
+use core::error::{Error, RdpError, RdpErrorKind};
 use std::io::{Write, Read, Cursor};
-use indexmap::IndexMap;
 
 #[repr(u32)]
 enum Negotiate {
@@ -113,6 +113,6 @@ mod test {
     fn test_ntlmv2_negotiate_message() {
         let mut buffer = Cursor::new(Vec::new());
         Ntlm::new().create_negotiate_message().write(&mut buffer);
-        assert_eq!(buffer.get_ref().as_slice(), [0]);
+        assert_eq!(buffer.get_ref().as_slice(), [78, 84, 76, 77, 83, 83, 80, 0, 1, 0, 0, 0, 53, 130, 8, 96, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
     }
 }
