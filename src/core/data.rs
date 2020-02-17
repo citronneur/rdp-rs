@@ -2,6 +2,7 @@ use std::io::{Write, Read};
 use core::error::{RdpResult, RdpErrorKind, RdpError, Error};
 use byteorder::{WriteBytesExt, ReadBytesExt, LittleEndian, BigEndian};
 use indexmap::IndexMap;
+use std::collections::HashSet;
 
 /// Implement a listener of a particular event
 /// # Examples
@@ -49,6 +50,20 @@ pub enum DataType<'a, Stream: Write + Read> {
     None(())
 }
 
+#[macro_export]
+macro_rules! skip {
+    ($( $key: expr ),*) => {{
+         let mut set = HashSet::new();
+         $( set.insert($key.to_string()) ; )*
+         set
+    }}
+}
+
+pub enum MessageOption {
+    SkipField(Option<HashSet<String>>),
+    None
+}
+
 /// All is a message
 ///
 /// A message can be Read or Write from a Stream
@@ -72,6 +87,8 @@ pub trait Message<Stream: Write + Read> {
     /// Visit value and try to return inner type
     /// This is based on Tree visitor pattern
     fn visit(&self) -> DataType<Stream>;
+
+    fn options(&self) -> MessageOption;
 }
 
 /// u8 message
@@ -126,6 +143,9 @@ impl<Stream: Write + Read> Message<Stream> for u8 {
         DataType::U8(*self)
     }
 
+    fn options(&self) -> MessageOption {
+        MessageOption::None
+    }
 }
 
 /// Trame is just a list of boxed messages
@@ -192,39 +212,73 @@ impl <Stream: Write + Read> Message<Stream> for Trame<Stream> {
     fn visit(&self) -> DataType<Stream> {
         DataType::Trame(self)
     }
+
+    fn options(&self) -> MessageOption {
+        MessageOption::None
+    }
 }
 
-pub type Component<Stream> = IndexMap<String, Box<Filter<Stream>>>;
+pub type Component<Stream> = IndexMap<String, Box<dyn Message<Stream>>>;
 
 #[macro_export]
 macro_rules! component {
     ($( $key: expr => $val: expr ),*) => {{
          let mut map = Component::new();
-         $( map.insert($key.to_string(), Box::new(Filter::new($val, |c| "".to_string()))); )*
+         $( map.insert($key.to_string(), Box::new($val)) ; )*
          map
     }}
 }
 
 impl <Stream: Write + Read> Message<Stream> for Component<Stream> {
     fn write(&self, writer: &mut Stream) -> RdpResult<()>{
-        for (_name, value) in self.iter() {
-           value.write(writer)?;
+        let mut filtering_key = HashSet::new();
+        for (name, value) in self.iter() {
+            // ignore filtering keys
+            if filtering_key.contains(name) {
+                continue;
+            }
+            if let MessageOption::SkipField(Some(x)) = value.options() {
+                for field in x {
+                    filtering_key.insert(field);
+                }
+            }
+            value.write(writer)?;
         }
         Ok(())
     }
 
     fn read(&mut self, reader: &mut Stream) -> RdpResult<()>{
-        for (_name, value) in self.into_iter() {
-            //if value.activate(self)? {
-               //self.length();
-            //}
+        let mut filtering_key = HashSet::new();
+        for (name, value) in self.into_iter() {
+            // ignore filtering keys
+            if filtering_key.contains(name) {
+                continue;
+            }
+            if let MessageOption::SkipField(Some(x)) = value.options() {
+                for field in x {
+                    filtering_key.insert(field);
+                }
+            }
+
+
+            value.read(reader)?;
         }
         Ok(())
     }
 
     fn length(&self) -> u64 {
         let mut sum : u64 = 0;
-        for (_name, value) in self.iter() {
+        let mut filtering_key = HashSet::new();
+        for (name, value) in self.iter() {
+            // ignore filtering keys
+            if filtering_key.contains(name) {
+                continue;
+            }
+            if let MessageOption::SkipField(Some(x)) = value.options() {
+                for field in x {
+                    filtering_key.insert(field);
+                }
+            }
             sum += value.length();
         }
         sum
@@ -234,6 +288,9 @@ impl <Stream: Write + Read> Message<Stream> for Component<Stream> {
         DataType::Component(self)
     }
 
+    fn options(&self) -> MessageOption {
+        MessageOption::None
+    }
 }
 
 #[derive(Copy, Clone)]
@@ -283,6 +340,9 @@ impl<Stream: Write + Read> Message<Stream> for U16 {
         DataType::U16(self.get())
     }
 
+    fn options(&self) -> MessageOption {
+        MessageOption::None
+    }
 }
 
 pub type U32 = Value<u32>;
@@ -311,6 +371,9 @@ impl<Stream: Write + Read> Message<Stream> for U32 {
         DataType::U32(self.get())
     }
 
+    fn options(&self) -> MessageOption {
+        MessageOption::None
+    }
 }
 
 pub struct Check<T: Copy> {
@@ -346,6 +409,10 @@ impl<Stream: Write + Read, T: Message<Stream> + Copy + PartialEq> Message<Stream
     fn visit(&self) -> DataType<Stream> {
         self.value.visit()
     }
+
+    fn options(&self) -> MessageOption {
+        MessageOption::None
+    }
 }
 
 impl<Stream: Write + Read> Message<Stream> for Vec<u8> {
@@ -365,28 +432,28 @@ impl<Stream: Write + Read> Message<Stream> for Vec<u8> {
     fn visit(&self) -> DataType<Stream> {
         unimplemented!()
     }
+
+    fn options(&self) -> MessageOption {
+        MessageOption::None
+    }
 }
 
-pub struct Filter<Stream> {
-    callback: Box<Fn(&Message<Stream>) -> String>,
-    current: Box<Message<Stream>>
+pub struct Filter<T> {
+    current: T,
+    filter: Box<dyn Fn(&T) -> Option<HashSet<String>>>,
 }
 
-impl<Stream : Read + Write> Filter<Stream> {
-    pub fn new<M: 'static, F: 'static>(current: M, callback: F) -> Self
-        where F: Fn(&Message<Stream>) -> String, M: Message<Stream> {
+impl<T> Filter<T> {
+    pub fn new<F: 'static>(current: T, filter: F) -> Self
+        where F: Fn(&T) -> Option<HashSet<String>> {
         Filter {
-            callback : Box::new(callback),
-            current : Box::new(current)
+            current,
+            filter : Box::new(filter)
         }
     }
-
-    fn filter(&self) -> String {
-        (self.callback)(self.current.as_ref())
-    }
 }
 
-impl<Stream: Write + Read> Message<Stream> for Filter<Stream> {
+impl<Stream: Write + Read, T: Message<Stream>> Message<Stream> for Filter<T> {
     fn write(&self, writer: &mut Stream) -> RdpResult<()> {
         self.current.write(writer)
     }
@@ -402,13 +469,16 @@ impl<Stream: Write + Read> Message<Stream> for Filter<Stream> {
     fn visit(&self) -> DataType<Stream> {
         self.current.visit()
     }
+
+    fn options(&self) -> MessageOption {
+        MessageOption::SkipField((self.filter)(&self.current))
+    }
 }
 
 #[cfg(test)]
 mod test {
     use super::*;
     use std::io::Cursor;
-    use std::vec;
 
     #[test]
     fn test_data_u8_write() {

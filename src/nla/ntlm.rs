@@ -1,7 +1,7 @@
 use super::sspi::{AuthenticationProtocol};
-use core::data::{Message, Component, U16, U32, Trame, Filter, DataType};
-use core::error::{Error, RdpError, RdpErrorKind};
-use std::io::{Write, Read, Cursor};
+use core::data::{Message, Component, U16, U32, Trame, Filter};
+use std::io::{Write, Read};
+use std::collections::HashSet;
 
 #[repr(u32)]
 enum Negotiate {
@@ -64,7 +64,12 @@ fn negotiate_message<W: Read + Write + 'static>(flags: u32) -> Component<W> {
     component!(
         "Signature" => b"NTLMSSP\x00".to_vec(),
         "MessageType" => U32::LE(0x00000001),
-        "NegotiateFlags" => U32::LE(flags),
+        "NegotiateFlags" => Filter::new(U32::LE(flags), |node| {
+            if node.get() & Negotiate::NtlmsspNegociateVersion as u32 == 0 {
+                return Some(skip!("Version".to_string()))
+            }
+            return None
+        }),
         "DomainNameLen" => U16::LE(0),
         "DomainNameMaxLen" => U16::LE(0),
         "DomainNameBufferOffset" => U32::LE(0),
@@ -91,7 +96,7 @@ impl Ntlm {
 impl<T: Read + Write + 'static> AuthenticationProtocol<T>  for Ntlm {
 
     /// Create Negotiate message for our NTLMv2 implementation
-    fn create_negotiate_message(&self) -> Box<Message<T>> {
+    fn create_negotiate_message(&self) -> Box<dyn Message<T>> {
         Box::new(negotiate_message(
             Negotiate::NtlmsspNegociateKeyExch as u32 |
                 Negotiate::NtlmsspNegociate128 as u32 |
@@ -109,6 +114,7 @@ impl<T: Read + Write + 'static> AuthenticationProtocol<T>  for Ntlm {
 #[cfg(test)]
 mod test {
     use super::*;
+    use std::io::Cursor;
     #[test]
     fn test_ntlmv2_negotiate_message() {
         let mut buffer = Cursor::new(Vec::new());

@@ -1,5 +1,5 @@
 use proto::tpkt::{TpktClientEvent, TpktMessage};
-use core::data::{Message, On, Check, U16, U32, Component, DataType, Trame, Filter};
+use core::data::{Message, On, Check, U16, U32, Component, DataType, Trame};
 use core::error::{Error, RdpError, RdpResult, RdpErrorKind};
 use std::io::{Write, Read, Cursor};
 use core::link::{LinkMessage, Protocol};
@@ -66,7 +66,7 @@ fn rdp_neg_req<W: Write + Read + 'static>(neg_type: NegotiationType, result: u32
 fn x224_crq<W: Write + Read + 'static>(len: u8, code: MessageType) -> Component<W> {
     component! [
         "len" => (len + 6) as u8,
-        "code" => Check::new(code as u8),
+        "code" => code as u8,
         "padding" => trame! [U16::LE(0), U16::LE(0), 0 as u8]
         //"cookie" => String::from("Cookie: mstshash=DESKTOP-Q"),
         //"delimiter" => U16::BE(0x0d0a)
@@ -111,6 +111,7 @@ impl Client {
     }
 
     pub fn handle_connection_confirm<W: Write + Read + 'static>(&mut self, buffer: &mut Cursor<Vec<u8>>) -> RdpResult<LinkMessage<W>> {
+
         let mut confirm = client_x224_connection_pdu(NegotiationType::TypeRDPNegRsp, None);
         confirm.read(buffer)?;
 
@@ -130,6 +131,7 @@ impl Client {
 
 impl<W: Write + Read + 'static> On<TpktClientEvent, TpktMessage<W>> for Client {
     fn on (&mut self, event: TpktClientEvent) -> RdpResult<TpktMessage<W>>{
+
         match event {
             TpktClientEvent::Connect => {
                 Ok(TpktMessage::X224(self.handle_connection_request()?))

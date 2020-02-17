@@ -1,13 +1,20 @@
-use super::asn1::{ASN1, Sequence, ExplicitTag};
+use super::asn1::{ASN1, Sequence, ExplicitTag, SequenceOf};
 use yasna::Tag;
-use std::option::{Option};
+use nla::asn1::OctetString;
 
+fn nego_data(nego: Vec<u8>) -> SequenceOf {
+    sequence_of![
+        sequence![
+            "negoToken" => ExplicitTag::new(Tag::context(0), nego)
+        ]
+    ]
+}
 
-
-pub fn ts_request() -> Box<dyn ASN1> {
-    Box::new(sequence!(
-        "version" => ExplicitTag::new(Tag::context(0), 2)
-    ))
+pub fn ts_request(nego: Vec<u8>) -> Box<dyn ASN1> {
+    Box::new(sequence![
+        "version" => ExplicitTag::new(Tag::context(0), 2),
+        "negoTokens" => ExplicitTag::new(Tag::context(1), nego_data(nego))
+    ])
 }
 
 
@@ -36,7 +43,7 @@ mod test {
     #[test]
     fn test_tsrequest() {
         let x = yasna::construct_der(|writer| {
-            ts_request().write_asn1(writer);
+            ts_request(vec![0]).write_asn1(writer);
         });
         assert_eq!(x, vec![48, 5, 160, 3, 2, 1, 2]);
     }

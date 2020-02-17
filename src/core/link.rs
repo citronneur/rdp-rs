@@ -5,6 +5,9 @@ use std::net::{SocketAddr, TcpStream};
 use std::io::{Cursor, Read, Write};
 use self::native_tls::{TlsConnector};
 use core::data::{On, Message};
+use nla::ntlm::Ntlm;
+use nla::sspi::AuthenticationProtocol;
+use nla::cssp::ts_request;
 
 pub enum LinkEvent {
     Connect,
@@ -58,6 +61,19 @@ impl Link {
 
         println!("Switch to SSL");
 
+        let ntlm_layer = Ntlm::new();
+        let mut buffer = Cursor::new(Vec::new());
+        ntlm_layer.create_negotiate_message().write(&mut buffer)?;
+
+        let x = yasna::construct_der(|writer| {
+            ts_request(buffer.get_ref().to_vec()).write_asn1(writer);
+        });
+
+        ssl_stream.write(x.as_slice())?;
+
+        let mut x = vec![0; 1560];
+        ssl_stream.read(&mut x);
+        println!("{:?}", x);
         // Continue
         self.do_loop(&mut ssl_stream)?;
 

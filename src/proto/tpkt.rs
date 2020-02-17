@@ -1,5 +1,5 @@
 use core::link::{LinkEvent, LinkMessage, LinkMessageList};
-use core::data::{On, Message, U16, Component, Trame, Filter};
+use core::data::{On, Message, U16, Component, Trame};
 use core::error::{RdpResult, RdpError, RdpErrorKind, Error};
 use std::io::{Write, Read, Cursor};
 
