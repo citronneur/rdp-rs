@@ -1,6 +1,5 @@
 use super::asn1::{ASN1, Sequence, ExplicitTag, SequenceOf};
 use yasna::Tag;
-use nla::asn1::OctetString;
 
 fn nego_data(nego: Vec<u8>) -> SequenceOf {
     sequence_of![
@@ -28,12 +27,18 @@ pub fn ts_request(nego: Vec<u8>) -> Box<dyn ASN1> {
 //    })
 //}
 
-pub fn write_ts_request() -> Vec<u8>  {
+pub fn create_ts_request(nego: Vec<u8>) -> Vec<u8>  {
+    let ts_request = sequence![
+        "version" => ExplicitTag::new(Tag::context(0), 2),
+        "negoTokens" => ExplicitTag::new(Tag::context(1),
+            sequence_of![
+                sequence![
+                    "negoToken" => ExplicitTag::new(Tag::context(0), nego)
+                ]
+            ])
+    ];
     yasna::construct_der(|writer| {
-        writer.write_sequence(|writer| {
-            writer.next().write_i32(10);
-            writer.next().write_bool(true);
-        })
+        ts_request.write_asn1(writer);
     })
 }
 

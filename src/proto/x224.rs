@@ -1,7 +1,7 @@
 use proto::tpkt::{TpktClientEvent, TpktMessage};
 use core::data::{Message, On, Check, U16, U32, Component, DataType, Trame};
 use core::error::{Error, RdpError, RdpResult, RdpErrorKind};
-use std::io::{Write, Read, Cursor};
+use std::io::{Cursor};
 use core::link::{LinkMessage, Protocol};
 use std::option::{Option};
 
@@ -54,7 +54,7 @@ pub enum MessageType {
     X224TPDUError = 0x70
 }
 
-fn rdp_neg_req<W: Write + Read + 'static>(neg_type: NegotiationType, result: u32) -> Component<W> {
+fn rdp_neg_req(neg_type: NegotiationType, result: u32) -> Component {
     component! [
         "type" => Check::new(neg_type as u8),
         "flag" => 0 as u8,
@@ -63,7 +63,7 @@ fn rdp_neg_req<W: Write + Read + 'static>(neg_type: NegotiationType, result: u32
     ]
 }
 
-fn x224_crq<W: Write + Read + 'static>(len: u8, code: MessageType) -> Component<W> {
+fn x224_crq(len: u8, code: MessageType) -> Component {
     component! [
         "len" => (len + 6) as u8,
         "code" => code as u8,
@@ -73,9 +73,9 @@ fn x224_crq<W: Write + Read + 'static>(len: u8, code: MessageType) -> Component<
     ]
 }
 
-pub fn client_x224_connection_pdu<W: Write + Read + 'static>(
+pub fn client_x224_connection_pdu(
     neg_type: NegotiationType,
-    protocols: Option<u32>) -> Component<W> {
+    protocols: Option<u32>) -> Component {
     let negotiation = rdp_neg_req(
         neg_type,
         if let Some(p) = protocols {p} else {0}
@@ -105,12 +105,12 @@ impl Client {
         }
     }
 
-    pub fn handle_connection_request<W: Write + Read + 'static>(&mut self) -> RdpResult<Component<W>> {
+    pub fn handle_connection_request(&mut self) -> RdpResult<Component> {
         self.state = X224ClientState::ConnectionConfirm;
         Ok(client_x224_connection_pdu(NegotiationType::TypeRDPNegReq,Some(Protocols::ProtocolSSL as u32 | Protocols::ProtocolHybrid as u32)))
     }
 
-    pub fn handle_connection_confirm<W: Write + Read + 'static>(&mut self, buffer: &mut Cursor<Vec<u8>>) -> RdpResult<LinkMessage<W>> {
+    pub fn handle_connection_confirm(&mut self, buffer: &mut Cursor<Vec<u8>>) -> RdpResult<LinkMessage> {
 
         let mut confirm = client_x224_connection_pdu(NegotiationType::TypeRDPNegRsp, None);
         confirm.read(buffer)?;
@@ -129,8 +129,8 @@ impl Client {
     }
 }
 
-impl<W: Write + Read + 'static> On<TpktClientEvent, TpktMessage<W>> for Client {
-    fn on (&mut self, event: TpktClientEvent) -> RdpResult<TpktMessage<W>>{
+impl On<TpktClientEvent, TpktMessage> for Client {
+    fn on (&mut self, event: TpktClientEvent) -> RdpResult<TpktMessage>{
 
         match event {
             TpktClientEvent::Connect => {

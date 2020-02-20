@@ -12,22 +12,6 @@ pub trait On<InputEvent, OutputMessage> {
     fn on(&mut self, event: InputEvent) -> RdpResult<OutputMessage>;
 }
 
-#[macro_export]
-macro_rules! cast {
-    ($ident:path, $expr:expr) => (match $expr.visit() {
-        $ident(e) => Ok(e),
-        _ => Err(Error::RdpError(RdpError::new(RdpErrorKind::InvalidCast, "Invalid Cast")))
-    })
-}
-
-#[macro_export]
-macro_rules! cast_optional {
-    ($ident:path, $expr:expr) => (match $expr.visit() {
-        $ident(e) => Ok(Some(e)),
-        DataType::None(()) => Ok(None),
-        _ => Err(Error::RdpError(RdpError::new(RdpErrorKind::InvalidCast, "Invalid Cast")))
-    })
-}
 
 /// All data type used
 ///
@@ -36,48 +20,144 @@ macro_rules! cast_optional {
 ///
 /// # Examples
 /// ```
+/// # #[macro_use]
+/// # extern crate rdp;
+/// # use rdp::core::data::{DataType, Component, U32};
+/// # fn main() {
+/// let message = component!(
+///     "header" => U32::LE(1234)
+/// );
+/// if let DataType::U32(header) = message["header"].visit() {
+///     assert_eq!(header, 1234)
+/// }
+/// else {
+///     panic!("Invalid cast")
+/// }
+/// # }
+/// ```
+pub enum DataType<'a> {
+    Component(&'a Component),
+    Trame(&'a Trame),
+    U32(u32),
+    U16(u16),
+    U8(u8)
+}
+
+
+/// Retrieve leaf value into a type tree
+///
+/// This is a facilitate macro use to visit a type tree
+/// and check and retrieve the inner value
+///
+/// # Example
+/// ```
+/// # #[macro_use]
+/// # extern crate rdp;
+/// # use rdp::core::data::{Component, DataType, U32};
+/// # use rdp::core::error::{Error, RdpError, RdpResult, RdpErrorKind};
+/// # fn main() {
 /// let message = component!(
 ///     "header" => U32::LE(1234)
 /// );
 /// let header = cast!(DataType::U32, message["header"]).unwrap();
+/// assert_eq!(header, 1234)
+/// # }
 /// ```
-pub enum DataType<'a, Stream: Write + Read> {
-    Component(&'a Component<Stream>),
-    Trame(&'a Trame<Stream>),
-    U32(u32),
-    U16(u16),
-    U8(u8),
-    None(())
+#[macro_export]
+macro_rules! cast {
+    ($ident:path, $expr:expr) => (match $expr.visit() {
+        $ident(e) => Ok(e),
+        _ => Err(Error::RdpError(RdpError::new(RdpErrorKind::InvalidCast, "Invalid Cast")))
+    })
 }
 
+/// Use for convenient import
+pub type Skip = HashSet<String>;
+
+/// Allow to a son to inform parent of something special
+///
+/// IN tree type a son can control parser of a parent node
+/// by providing some type depend fields
+///
+/// This is control by the options function of Message Trait
+pub enum MessageOption {
+    SkipField(Option<Skip>),
+    None
+}
+
+/// Skip a set of field
+///
+/// Allow a son to inform a parent to skip reading or writing other fields
+///
+/// # Example
+/// ```
+/// # #[macro_use]
+/// # extern crate rdp;
+/// # use rdp::core::data::Message;
+/// # use rdp::core::data::{Filter, U32, Component, Skip, U16};
+/// # use std::io::Cursor;
+/// # fn main() {
+///     let message = component!(
+///         "Flags" => Filter::new(U32::LE(0), |flag| {
+///             if flag.get() == 1 {
+///                 return Some(skip!("Version".to_string()))
+///             }
+///             return None
+///         }),
+///         "Version" => U16::LE(0)
+///     );
+///     let mut s = Cursor::new(Vec::new());
+///     message.write(&mut s);
+///     assert_eq!(s.get_ref().len(), 6)
+/// # }
+/// ```
+///
+/// Test when skipping is activated
+/// # Example
+/// ```
+/// # #[macro_use]
+/// # extern crate rdp;
+/// # use rdp::core::data::Message;
+/// # use rdp::core::data::{Filter, U32, Component, Skip, U16};
+/// # use std::io::Cursor;
+/// # fn main() {
+///     let message = component!(
+///         "Flags" => Filter::new(U32::LE(1), |flag| {
+///             if flag.get() == 1 {
+///                 return Some(skip!("Version".to_string()))
+///             }
+///             return None
+///         }),
+///         "Version" => U16::LE(0)
+///     );
+///     let mut s = Cursor::new(Vec::new());
+///     message.write(&mut s);
+///     assert_eq!(s.get_ref().len(), 4)
+/// # }
+/// ```
 #[macro_export]
 macro_rules! skip {
     ($( $key: expr ),*) => {{
-         let mut set = HashSet::new();
+         let mut set = Skip::new();
          $( set.insert($key.to_string()) ; )*
          set
     }}
-}
-
-pub enum MessageOption {
-    SkipField(Option<HashSet<String>>),
-    None
 }
 
 /// All is a message
 ///
 /// A message can be Read or Write from a Stream
 ///
-pub trait Message<Stream: Write + Read> {
+pub trait Message {
     /// Write node to the Stream
     ///
     /// Write current element into a writable stream
-    fn write(&self, writer: &mut Stream) -> RdpResult<()>;
+    fn write(&self, writer: &mut dyn Write) -> RdpResult<()>;
 
     /// Read node from stream
     ///
     /// Read and set current variable from readable stream
-    fn read(&mut self, reader: &mut Stream) -> RdpResult<()>;
+    fn read(&mut self, reader: &mut dyn Read) -> RdpResult<()>;
 
     /// Length in bytes of current element
     fn length(&self) -> u64;
@@ -86,36 +166,43 @@ pub trait Message<Stream: Write + Read> {
     ///
     /// Visit value and try to return inner type
     /// This is based on Tree visitor pattern
-    fn visit(&self) -> DataType<Stream>;
+    fn visit(&self) -> DataType;
 
+    /// Retrieve options of a subtype
+    ///
+    /// Allow subtype to show some options
+    /// That will impact current operation on parent
+    /// like skipping some fields of a component
     fn options(&self) -> MessageOption;
 }
 
 /// u8 message
 ///
 /// Implement Message trait for basic type u8
-impl<Stream: Write + Read> Message<Stream> for u8 {
+impl Message for u8 {
 
     /// Write u8 value into stream
     /// # Example
     ///
-    /// ```
+    /// ``` no_run
+    /// use rdp::core::data;
+    /// use std::io::Cursor;
     /// let mut s = Cursor::new(Vec::new());
     /// let value = 8 as u8;
     /// value.write(s);
     /// ```
-    fn write(&self, writer: &mut Stream)  -> RdpResult<()> {
+    fn write(&self, writer: &mut dyn Write)  -> RdpResult<()> {
         Ok(writer.write_u8(*self)?)
     }
 
     /// Read u8 value from stream
     /// # Example
     ///
-    /// ```
+    /// ```no_run
     /// let mut value = 0 as u8;
     /// value.read(s); // set the value according to stream content
     /// ```
-    fn read(&mut self, reader: &mut Stream) -> RdpResult<()> {
+    fn read(&mut self, reader: &mut dyn Read) -> RdpResult<()> {
         *self = reader.read_u8()?;
         Ok(())
     }
@@ -133,28 +220,33 @@ impl<Stream: Write + Read> Message<Stream> for u8 {
     /// ```
     /// let x = 8;
     /// if let DataType::U8(value) = x.visit() {
-    ///     assert_eq!(value, 8)
+    ///     assert_eq!(value.get(), 8)
     /// }
     /// else {
     ///     panic!("Invalid cast");
     /// }
     /// ```
-    fn visit(&self) -> DataType<Stream> {
+    fn visit(&self) -> DataType {
         DataType::U8(*self)
     }
 
+    /// Retrieve option of a subnode
+    ///
+    /// Allow a parent to retrieve some optional
+    /// That will influence the current node operation
+    /// like skipping field of a component
     fn options(&self) -> MessageOption {
         MessageOption::None
     }
 }
 
-/// Trame is just a list of boxed messages
+/// Trame is just a list of boxed Message
 /// # Example
 ///
 /// ```no_run
 /// let t = trame! [0 as u8, 1 as u8];
 /// ```
-pub type Trame<Stream> = Vec<Box<dyn Message<Stream>>>;
+pub type Trame = Vec<Box<dyn Message>>;
 
 /// Trame macro is used to initialize a vector of message
 /// This is equivalent to vec! macro in case of vector
@@ -173,8 +265,8 @@ macro_rules! trame {
     }}
 }
 
-/// Trame is a message too
-impl <Stream: Write + Read> Message<Stream> for Trame<Stream> {
+/// Trame is a Message too
+impl Message for Trame {
     /// Write a trame to a stream
     ///
     /// Write all subnode of the trame to the stream
@@ -187,14 +279,14 @@ impl <Stream: Write + Read> Message<Stream> for Trame<Stream> {
     /// let x = trame!([0, 1, 2, 4, 5]);
     /// x.write(s);
     /// ```
-    fn write(&self, writer: &mut Stream) -> RdpResult<()>{
+    fn write(&self, writer: &mut dyn Write) -> RdpResult<()>{
         for v in self {
            v.write(writer)?;
         }
         Ok(())
     }
 
-    fn read(&mut self, reader: &mut Stream) -> RdpResult<()>{
+    fn read(&mut self, reader: &mut dyn Read) -> RdpResult<()>{
         for v in self {
            v.read(reader)?;
         }
@@ -209,7 +301,7 @@ impl <Stream: Write + Read> Message<Stream> for Trame<Stream> {
         sum
     }
 
-    fn visit(&self) -> DataType<Stream> {
+    fn visit(&self) -> DataType {
         DataType::Trame(self)
     }
 
@@ -218,7 +310,7 @@ impl <Stream: Write + Read> Message<Stream> for Trame<Stream> {
     }
 }
 
-pub type Component<Stream> = IndexMap<String, Box<dyn Message<Stream>>>;
+pub type Component = IndexMap<String, Box<dyn Message>>;
 
 #[macro_export]
 macro_rules! component {
@@ -229,8 +321,8 @@ macro_rules! component {
     }}
 }
 
-impl <Stream: Write + Read> Message<Stream> for Component<Stream> {
-    fn write(&self, writer: &mut Stream) -> RdpResult<()>{
+impl Message for Component {
+    fn write(&self, writer: &mut dyn Write) -> RdpResult<()>{
         let mut filtering_key = HashSet::new();
         for (name, value) in self.iter() {
             // ignore filtering keys
@@ -247,7 +339,7 @@ impl <Stream: Write + Read> Message<Stream> for Component<Stream> {
         Ok(())
     }
 
-    fn read(&mut self, reader: &mut Stream) -> RdpResult<()>{
+    fn read(&mut self, reader: &mut dyn Read) -> RdpResult<()>{
         let mut filtering_key = HashSet::new();
         for (name, value) in self.into_iter() {
             // ignore filtering keys
@@ -259,7 +351,6 @@ impl <Stream: Write + Read> Message<Stream> for Component<Stream> {
                     filtering_key.insert(field);
                 }
             }
-
 
             value.read(reader)?;
         }
@@ -284,7 +375,7 @@ impl <Stream: Write + Read> Message<Stream> for Component<Stream> {
         sum
     }
 
-    fn visit(&self) -> DataType<Stream> {
+    fn visit(&self) -> DataType {
         DataType::Component(self)
     }
 
@@ -315,15 +406,15 @@ impl<Type: Copy + PartialEq> PartialEq for Value<Type> {
 
 pub type U16 = Value<u16>;
 
-impl<Stream: Write + Read> Message<Stream> for U16 {
-    fn write(&self, writer: &mut Stream) -> RdpResult<()>{
+impl Message for U16 {
+    fn write(&self, writer: &mut dyn Write) -> RdpResult<()>{
         match self {
             U16::BE(value) => Ok(writer.write_u16::<BigEndian>(*value)?),
             U16::LE(value) => Ok(writer.write_u16::<LittleEndian>(*value)?)
         }
     }
 
-    fn read(&mut self, reader: &mut Stream) -> RdpResult<()>{
+    fn read(&mut self, reader: &mut dyn Read) -> RdpResult<()>{
         match self {
             U16::BE(value) => *value = reader.read_u16::<BigEndian>()?,
             U16::LE(value) => *value = reader.read_u16::<LittleEndian>()?
@@ -336,7 +427,7 @@ impl<Stream: Write + Read> Message<Stream> for U16 {
         2
     }
 
-    fn visit(&self) -> DataType<Stream> {
+    fn visit(&self) -> DataType {
         DataType::U16(self.get())
     }
 
@@ -347,15 +438,15 @@ impl<Stream: Write + Read> Message<Stream> for U16 {
 
 pub type U32 = Value<u32>;
 
-impl<Stream: Write + Read> Message<Stream> for U32 {
-    fn write(&self, writer: &mut Stream) -> RdpResult<()> {
+impl Message for U32 {
+    fn write(&self, writer: &mut dyn Write) -> RdpResult<()> {
         match self {
             U32::BE(value) => Ok(writer.write_u32::<BigEndian>(*value)?),
             U32::LE(value) => Ok(writer.write_u32::<LittleEndian>(*value)?)
         }
     }
 
-    fn read(&mut self, reader: &mut Stream) -> RdpResult<()> {
+    fn read(&mut self, reader: &mut dyn Read) -> RdpResult<()> {
         match self {
             U32::BE(value) => *value = reader.read_u32::<BigEndian>()?,
             U32::LE(value) => *value = reader.read_u32::<LittleEndian>()?
@@ -367,7 +458,7 @@ impl<Stream: Write + Read> Message<Stream> for U32 {
         4
     }
 
-    fn visit(&self) -> DataType<Stream> {
+    fn visit(&self) -> DataType {
         DataType::U32(self.get())
     }
 
@@ -388,12 +479,12 @@ impl<T: Copy> Check<T> {
     }
 }
 
-impl<Stream: Write + Read, T: Message<Stream> + Copy + PartialEq> Message<Stream> for Check<T> {
-    fn write(&self, writer: &mut Stream) -> RdpResult<()> {
+impl<T: Message + Copy + PartialEq> Message for Check<T> {
+    fn write(&self, writer: &mut dyn Write) -> RdpResult<()> {
         self.value.write(writer)
     }
 
-    fn read(&mut self, reader: &mut Stream) -> RdpResult<()> {
+    fn read(&mut self, reader: &mut dyn Read) -> RdpResult<()> {
         let old = self.value;
         self.value.read(reader)?;
         if old != self.value {
@@ -406,7 +497,7 @@ impl<Stream: Write + Read, T: Message<Stream> + Copy + PartialEq> Message<Stream
         self.value.length()
     }
 
-    fn visit(&self) -> DataType<Stream> {
+    fn visit(&self) -> DataType {
         self.value.visit()
     }
 
@@ -415,13 +506,13 @@ impl<Stream: Write + Read, T: Message<Stream> + Copy + PartialEq> Message<Stream
     }
 }
 
-impl<Stream: Write + Read> Message<Stream> for Vec<u8> {
-    fn write(&self, writer: &mut Stream) -> RdpResult<()> {
+impl Message for Vec<u8> {
+    fn write(&self, writer: &mut dyn Write) -> RdpResult<()> {
         writer.write(self);
         Ok(())
     }
 
-    fn read(&mut self, reader: &mut Stream) -> RdpResult<()> {
+    fn read(&mut self, reader: &mut dyn Read) -> RdpResult<()> {
         unimplemented!()
     }
 
@@ -429,7 +520,7 @@ impl<Stream: Write + Read> Message<Stream> for Vec<u8> {
         unimplemented!()
     }
 
-    fn visit(&self) -> DataType<Stream> {
+    fn visit(&self) -> DataType {
         unimplemented!()
     }
 
@@ -453,12 +544,12 @@ impl<T> Filter<T> {
     }
 }
 
-impl<Stream: Write + Read, T: Message<Stream>> Message<Stream> for Filter<T> {
-    fn write(&self, writer: &mut Stream) -> RdpResult<()> {
+impl<T: Message> Message for Filter<T> {
+    fn write(&self, writer: &mut dyn Write) -> RdpResult<()> {
         self.current.write(writer)
     }
 
-    fn read(&mut self, reader: &mut Stream) -> RdpResult<()> {
+    fn read(&mut self, reader: &mut dyn Read) -> RdpResult<()> {
         self.current.read(reader)
     }
 
@@ -466,7 +557,7 @@ impl<Stream: Write + Read, T: Message<Stream>> Message<Stream> for Filter<T> {
         self.current.length()
     }
 
-    fn visit(&self) -> DataType<Stream> {
+    fn visit(&self) -> DataType {
         self.current.visit()
     }
 
@@ -485,28 +576,8 @@ mod test {
         let mut stream = Cursor::new(Vec::<u8>::new());
         let x = 1 as u8;
         x.write(&mut stream).unwrap();
+        assert_eq!(stream.get_ref().as_slice(), [1])
     }
 
-    #[test]
-    fn test_data_conditional_true() {
-        //let mut stream = Cursor::new(vec![8 as u8]);
-        //let mut x : Component<Cursor<Vec<u8>>> = component!(
-        //    "version" => Conditional::new(0, |ctx| {
-        //        true
-        //    })
-        //);
-        //x.read(&mut stream);
-        //assert_eq!(Some(8), cast_optional!(DataType::U8, x["version"]).unwrap());
-    }
-    #[test]
-    fn test_data_conditional_false() {
-        //let mut stream = Cursor::new(vec![8 as u8]);
-        //let mut x : Component<Cursor<Vec<u8>>> = component!(
-        //    "version" => Conditional::new(0, |inner| {
-        //        false
-        //    })
-        //);
-        //x.read(&mut stream);
-        //assert_eq!(None, cast_optional!(DataType::U8, x["version"]).unwrap());
-    }
+
 }

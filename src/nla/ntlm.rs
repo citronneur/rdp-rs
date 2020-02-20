@@ -1,7 +1,7 @@
 use super::sspi::{AuthenticationProtocol};
-use core::data::{Message, Component, U16, U32, Trame, Filter};
-use std::io::{Write, Read};
-use std::collections::HashSet;
+use core::data::{Message, Component, U16, U32, Trame, Filter, Skip};
+use std::io::{Cursor};
+use core::error::RdpResult;
 
 #[repr(u32)]
 enum Negotiate {
@@ -47,7 +47,7 @@ enum NTLMRevision {
     NtlmSspRevisionW2K3 = 0x0F
 }
 
-fn version<W: Read + Write + 'static>() -> Component<W> {
+fn version() -> Component {
     component!(
         "ProductMajorVersion" => MajorVersion::WindowsMajorVersion6 as u8,
         "ProductMinorVersion" => MinorVersion::WindowsMinorVersion0 as u8,
@@ -60,7 +60,7 @@ fn version<W: Read + Write + 'static>() -> Component<W> {
 ///
 /// This is the negotiate (first) message use by NTLMv2 protocol
 /// It used to announce capability to the peer
-fn negotiate_message<W: Read + Write + 'static>(flags: u32) -> Component<W> {
+fn negotiate_message(flags: u32) -> Component {
     component!(
         "Signature" => b"NTLMSSP\x00".to_vec(),
         "MessageType" => U32::LE(0x00000001),
@@ -93,11 +93,11 @@ impl Ntlm {
     }
 }
 
-impl<T: Read + Write + 'static> AuthenticationProtocol<T>  for Ntlm {
-
+impl AuthenticationProtocol  for Ntlm {
     /// Create Negotiate message for our NTLMv2 implementation
-    fn create_negotiate_message(&self) -> Box<dyn Message<T>> {
-        Box::new(negotiate_message(
+    fn create_negotiate_message(&self) -> RdpResult<Vec<u8>> {
+        let mut buffer = Cursor::new(Vec::new());
+        negotiate_message(
             Negotiate::NtlmsspNegociateKeyExch as u32 |
                 Negotiate::NtlmsspNegociate128 as u32 |
                 Negotiate::NtlmsspNegociateExtendedSessionSecurity as u32 |
@@ -107,7 +107,8 @@ impl<T: Read + Write + 'static> AuthenticationProtocol<T>  for Ntlm {
                 Negotiate::NtlmsspNegociateSign as u32 |
                 Negotiate::NtlmsspRequestTarget as u32 |
                 Negotiate::NtlmsspNegociateUnicode as u32
-        ))
+        ).write(&mut buffer)?;
+        return Ok(buffer.get_ref().to_vec())
     }
 }
 
@@ -118,7 +119,7 @@ mod test {
     #[test]
     fn test_ntlmv2_negotiate_message() {
         let mut buffer = Cursor::new(Vec::new());
-        Ntlm::new().create_negotiate_message().write(&mut buffer);
+        Ntlm::new().create_negotiate_message().unwrap().write(&mut buffer).unwrap();
         assert_eq!(buffer.get_ref().as_slice(), [78, 84, 76, 77, 83, 83, 80, 0, 1, 0, 0, 0, 53, 130, 8, 96, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
     }
 }

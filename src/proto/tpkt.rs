@@ -1,7 +1,7 @@
 use core::link::{LinkEvent, LinkMessage, LinkMessageList};
 use core::data::{On, Message, U16, Component, Trame};
 use core::error::{RdpResult, RdpError, RdpErrorKind, Error};
-use std::io::{Write, Read, Cursor};
+use std::io::{Cursor};
 
 /// TPKT action heaer
 /// # see : https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-rdpbcgr/b8e7c588-51cb-455b-bb73-92d480903133
@@ -12,7 +12,7 @@ pub enum Action {
     FastPathActionX224 = 0x3
 }
 
-fn tpkt_header<W: Write + Read + 'static>(size: u16) -> Component<W> {
+fn tpkt_header(size: u16) -> Component {
     component![
         "action" => Action::FastPathActionX224 as u8,
         "flag" => 0 as u8,
@@ -27,9 +27,9 @@ pub enum TpktClientEvent {
     Packet(Cursor<Vec<u8>>)
 }
 
-pub enum TpktMessage<W> {
-    X224(Component<W>),
-    Link(LinkMessage<W>)
+pub enum TpktMessage {
+    X224(Component),
+    Link(LinkMessage)
 }
 
 enum TpktState {
@@ -44,16 +44,16 @@ enum TpktState {
 /// ```no_run
 /// let tpkt_client = Client::new(upper_layer);
 /// ```
-pub struct Client<W> {
-    listener: Box<dyn On<TpktClientEvent, TpktMessage<W>>>,
+pub struct Client {
+    listener: Box<dyn On<TpktClientEvent, TpktMessage>>,
     current_state: TpktState
 }
 
-impl<W: Write> Client<W> {
+impl Client {
     /// Ctor of TPKT client layer
     ///
     /// listener : layer will listen on TpktClientEvent
-    pub fn new (listener: Box<dyn On<TpktClientEvent, TpktMessage<W>>>) -> Self {
+    pub fn new (listener: Box<dyn On<TpktClientEvent, TpktMessage>>) -> Self {
         Client {
             listener,
             current_state: TpktState::ReadAction
@@ -62,8 +62,8 @@ impl<W: Write> Client<W> {
 }
 
 /// Implement the On<ConnectedEvent, LinkMessageList<W>> event for the underlying layer
-impl<W: Write + Read + 'static> On<LinkEvent, LinkMessageList<W>> for Client<W> {
-    fn on (&mut self, event: LinkEvent) -> RdpResult<LinkMessageList<W>> {
+impl On<LinkEvent, LinkMessageList> for Client {
+    fn on (&mut self, event: LinkEvent) -> RdpResult<LinkMessageList> {
 
         match event {
             // No connect step for this layer, forward to next layer

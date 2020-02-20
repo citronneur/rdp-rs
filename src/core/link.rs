@@ -7,7 +7,7 @@ use self::native_tls::{TlsConnector};
 use core::data::{On, Message};
 use nla::ntlm::Ntlm;
 use nla::sspi::AuthenticationProtocol;
-use nla::cssp::ts_request;
+use nla::cssp::create_ts_request;
 
 pub enum LinkEvent {
     Connect,
@@ -20,22 +20,21 @@ pub enum Protocol {
     NLA
 }
 
-pub enum LinkMessage<W> {
+pub enum LinkMessage {
     Expect(usize),
-    Send(Box<dyn Message<W>>),
+    Send(Box<dyn Message>),
     SwitchProtocol(Protocol)
 }
 
-pub type LinkMessageList<Stream> = Vec<LinkMessage<Stream>>;
-type LinkMessageListStream = LinkMessageList<Cursor<Vec<u8>>>;
+pub type LinkMessageList = Vec<LinkMessage>;
 
 pub struct Link {
-    pub listener: Box<dyn On<LinkEvent, LinkMessageListStream>>,
+    pub listener: Box<dyn On<LinkEvent, LinkMessageList>>,
     pub expected_size: usize
 }
 
 impl Link {
-    pub fn new(listener: Box<dyn On<LinkEvent, LinkMessageListStream>>) -> Self {
+    pub fn new(listener: Box<dyn On<LinkEvent, LinkMessageList>>) -> Self {
         Link {
             listener,
             expected_size: 0
@@ -62,12 +61,8 @@ impl Link {
         println!("Switch to SSL");
 
         let ntlm_layer = Ntlm::new();
-        let mut buffer = Cursor::new(Vec::new());
-        ntlm_layer.create_negotiate_message().write(&mut buffer)?;
 
-        let x = yasna::construct_der(|writer| {
-            ts_request(buffer.get_ref().to_vec()).write_asn1(writer);
-        });
+        let x = create_ts_request(ntlm_layer.create_negotiate_message()?);
 
         ssl_stream.write(x.as_slice())?;
 

@@ -1,6 +1,5 @@
-use core::data::{Message};
-use std::io::{Write, Read};
+use core::error::RdpResult;
 
-pub trait AuthenticationProtocol<Stream: Read + Write> {
-    fn create_negotiate_message(&self) -> Box<dyn Message<Stream>>;
+pub trait AuthenticationProtocol {
+    fn create_negotiate_message(&self) -> RdpResult<Vec<u8>>;
 }
