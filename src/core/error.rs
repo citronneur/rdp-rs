@@ -1,8 +1,9 @@
 extern crate native_tls;
 
+use std::io::{Read, Write};
 use std::io::Error as IoError;
 use std::string::String;
-use std::net::{AddrParseError, TcpStream};
+use std::net::{AddrParseError};
 use self::native_tls::HandshakeError;
 use self::native_tls::Error as SslError;
 
@@ -37,7 +38,7 @@ pub enum Error {
     RdpError(RdpError),
     Io(IoError),
     AddrParseError(AddrParseError),
-    SslHandshakeError(HandshakeError<TcpStream>),
+    SslHandshakeError,
     SslError(SslError)
 }
 
@@ -53,9 +54,9 @@ impl From<AddrParseError> for Error {
     }
 }
 
-impl From<HandshakeError<TcpStream>> for Error {
-    fn from(e: HandshakeError<TcpStream>) -> Error {
-        Error::SslHandshakeError(e)
+impl<S: Read + Write> From<HandshakeError<S>> for Error {
+    fn from(_: HandshakeError<S>) -> Error {
+        Error::SslHandshakeError
     }
 }
 

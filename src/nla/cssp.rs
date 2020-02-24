@@ -48,7 +48,7 @@ mod test {
     #[test]
     fn test_tsrequest() {
         let x = yasna::construct_der(|writer| {
-            ts_request(vec![0]).write_asn1(writer);
+            ts_request(vec![0]).write_asn1(writer).unwrap();
         });
         assert_eq!(x, vec![48, 5, 160, 3, 2, 1, 2]);
     }

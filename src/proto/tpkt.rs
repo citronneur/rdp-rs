@@ -1,7 +1,10 @@
-use core::link::{LinkEvent, LinkMessage, LinkMessageList};
-use core::data::{On, Message, U16, Component, Trame};
+use core::link::{Link};
+use core::data::{Message, U16, Component, Trame};
 use core::error::{RdpResult, RdpError, RdpErrorKind, Error};
-use std::io::{Cursor};
+use std::io::{Cursor, Write, Read};
+use nla::ntlm::Ntlm;
+use nla::sspi::AuthenticationProtocol;
+use nla::cssp::create_ts_request;
 
 /// TPKT action heaer
 /// # see : https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-rdpbcgr/b8e7c588-51cb-455b-bb73-92d480903133
@@ -20,49 +23,75 @@ fn tpkt_header(size: u16) -> Component {
     ]
 }
 
-/// Event provided by TPKT layer
-/// Connect -> The underlying layer is connected
-pub enum TpktClientEvent {
-    Connect,
-    Packet(Cursor<Vec<u8>>)
-}
-
-pub enum TpktMessage {
-    X224(Component),
-    Link(LinkMessage)
-}
-
-enum TpktState {
-    ReadAction,
-    ReadSize,
-    ReadBody
-}
-
 /// Client Context of TPKT layer
 ///
 /// # Example
-/// ```no_run
+/// ```
 /// let tpkt_client = Client::new(upper_layer);
 /// ```
-pub struct Client {
-    listener: Box<dyn On<TpktClientEvent, TpktMessage>>,
-    current_state: TpktState
+pub struct Client<S> {
+    transport: Link<S>
 }
 
-impl Client {
+impl<S: Read + Write> Client<S> {
     /// Ctor of TPKT client layer
-    ///
-    /// listener : layer will listen on TpktClientEvent
-    pub fn new (listener: Box<dyn On<TpktClientEvent, TpktMessage>>) -> Self {
+    pub fn new (transport: Link<S>) -> Self {
         Client {
-            listener,
-            current_state: TpktState::ReadAction
+            transport
         }
     }
+
+    pub fn send<T: 'static>(&mut self, message: T) -> RdpResult<()>
+    where T: Message {
+        self.transport.send(
+            trame![
+                tpkt_header(message.length() as u16),
+                message
+            ]
+        )
+    }
+
+    pub fn read(&mut self) -> RdpResult<Vec<u8>> {
+        let mut buffer = Cursor::new(self.transport.recv(2)?);
+        let mut action: u8 = 0;
+        action.read(&mut buffer)?;
+        if action != Action::FastPathActionX224 as u8 {
+            return Err(Error::RdpError(RdpError::new(RdpErrorKind::NotImplemented, "FastPath packet is not implemented")))
+        }
+        // read padding
+        let mut padding: u8 = 0;
+        padding.read(&mut buffer)?;
+        // now wait extended header
+        buffer = Cursor::new(self.transport.recv(2)?);
+
+        let mut size = U16::BE(0);
+        size.read(&mut buffer)?;
+
+        // now wait for body
+        Ok(self.transport.recv(size.get() as usize - 4)?)
+    }
+
+    pub fn start_ssl(mut self) -> RdpResult<Client<S>> {
+        Ok(Client::new(self.transport.start_ssl()?))
+    }
+
+    pub fn start_nla(mut self) -> RdpResult<Client<S>> {
+        let mut link = self.transport.start_ssl()?;
+        let ntlm_layer = Ntlm::new();
+
+        let x = create_ts_request(ntlm_layer.create_negotiate_message()?);
+
+        link.send(x)?;
+
+        let mut x = link.recv(1560)?;
+        println!("{:?}", x);
+        Ok(Client::new(link))
+    }
+
 }
 
-/// Implement the On<ConnectedEvent, LinkMessageList<W>> event for the underlying layer
-impl On<LinkEvent, LinkMessageList> for Client {
+//// Implement the On<ConnectedEvent, LinkMessageList<W>> event for the underlying layer
+/*impl On<LinkEvent, LinkMessageList> for Client {
     fn on (&mut self, event: LinkEvent) -> RdpResult<LinkMessageList> {
 
         match event {
@@ -129,5 +158,5 @@ impl On<LinkEvent, LinkMessageList> for Client {
             }
         }
     }
-}
+}*/
 

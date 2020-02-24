@@ -1,8 +1,7 @@
-use proto::tpkt::{TpktClientEvent, TpktMessage};
-use core::data::{Message, On, Check, U16, U32, Component, DataType, Trame};
+use proto::tpkt::Client as TpktClient;
+use core::data::{Message, Check, U16, U32, Component, DataType, Trame};
 use core::error::{Error, RdpError, RdpResult, RdpErrorKind};
-use std::io::{Cursor};
-use core::link::{LinkMessage, Protocol};
+use std::io::{Cursor, Read, Write};
 use std::option::{Option};
 
 #[derive(Copy, Clone)]
@@ -24,7 +23,7 @@ impl From<u8> for NegotiationType {
     }
 }
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug)]
 pub enum Protocols {
     ProtocolRDP = 0x00,
     ProtocolSSL = 0x01,
@@ -87,49 +86,65 @@ pub fn client_x224_connection_pdu(
     ]
 }
 
-#[derive(Copy, Clone)]
-enum X224ClientState {
-    ConnectionRequest,
-    ConnectionConfirm
+pub struct Client<S> {
+    transport: TpktClient<S>
 }
 
-#[derive(Copy, Clone)]
-pub struct Client {
-    state: X224ClientState
-}
-
-impl Client {
-    pub fn new () -> Self {
+impl<S: Read + Write> Client<S> {
+    pub fn new (transport: TpktClient<S>) -> Self {
         Client {
-            state: X224ClientState::ConnectionRequest
+            transport
+        }
+    }
+}
+
+pub struct Connector<S> {
+    transport: TpktClient<S>
+}
+
+impl<S: Read + Write> Connector<S> {
+    pub fn new (transport: TpktClient<S>) -> Self {
+        Connector {
+            transport
         }
     }
 
-    pub fn handle_connection_request(&mut self) -> RdpResult<Component> {
-        self.state = X224ClientState::ConnectionConfirm;
-        Ok(client_x224_connection_pdu(NegotiationType::TypeRDPNegReq,Some(Protocols::ProtocolSSL as u32 | Protocols::ProtocolHybrid as u32)))
+    pub fn connect(mut self) -> RdpResult<Client<S>> {
+        self.send_connection_request()?;
+        match self.recv_connection_confirm()? {
+            Protocols::ProtocolHybrid => Ok(Client::new(self.transport.start_nla()?)),
+            Protocols::ProtocolSSL => Ok(Client::new(self.transport.start_ssl()?)),
+            Protocols::ProtocolRDP => Ok(Client::new(self.transport)),
+            _ => Err(Error::RdpError(RdpError::new(RdpErrorKind::InvalidProtocol, "Security protocol not handled")))
+        }
     }
 
-    pub fn handle_connection_confirm(&mut self, buffer: &mut Cursor<Vec<u8>>) -> RdpResult<LinkMessage> {
+    fn send_connection_request(&mut self) -> RdpResult<()> {
+        self.transport.send(
+            client_x224_connection_pdu(
+                NegotiationType::TypeRDPNegReq,
+                Some(Protocols::ProtocolSSL as u32 | Protocols::ProtocolHybrid as u32)
+            )
+        )
+    }
+
+    fn recv_connection_confirm(&mut self) -> RdpResult<Protocols> {
+        let mut buffer = Cursor::new(self.transport.read()?);
 
         let mut confirm = client_x224_connection_pdu(NegotiationType::TypeRDPNegRsp, None);
-        confirm.read(buffer)?;
+        confirm.read(&mut buffer)?;
 
         let nego = cast!(DataType::Component, confirm["negotiation"]).unwrap();
 
-        match NegotiationType::from(cast!(DataType::U8, nego["type"]).unwrap()) {
+        match NegotiationType::from(cast!(DataType::U8, nego["type"])?) {
             NegotiationType::TypeRDPNegFailure => Err(Error::RdpError(RdpError::new(RdpErrorKind::ProtocolNegFailure, "Error during negotiation step"))),
             NegotiationType::TypeRDPNegReq | NegotiationType::TypeRDPNegUnknown => Err(Error::RdpError(RdpError::new(RdpErrorKind::InvalidAutomata, "Invalid response from server"))),
-            NegotiationType::TypeRDPNegRsp =>  match Protocols::from(cast!(DataType::U32, nego["result"]).unwrap()) {
-                Protocols::ProtocolSSL => Ok(LinkMessage::SwitchProtocol(Protocol::SSL)),
-                Protocols::ProtocolHybrid => Ok(LinkMessage::SwitchProtocol(Protocol::NLA)),
-                _ => Err(Error::RdpError(RdpError::new(RdpErrorKind::InvalidProtocol, "Invalid selected protocol")))
-            }
+            NegotiationType::TypeRDPNegRsp => Ok(Protocols::from(cast!(DataType::U32, nego["result"])?))
         }
     }
 }
 
-impl On<TpktClientEvent, TpktMessage> for Client {
+/*impl On<TpktClientEvent, TpktMessage> for Client {
     fn on (&mut self, event: TpktClientEvent) -> RdpResult<TpktMessage>{
 
         match event {
@@ -146,4 +161,4 @@ impl On<TpktClientEvent, TpktMessage> for Client {
         }
 
     }
-}
+}*/
