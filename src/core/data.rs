@@ -4,14 +4,6 @@ use byteorder::{WriteBytesExt, ReadBytesExt, LittleEndian, BigEndian};
 use indexmap::IndexMap;
 use std::collections::HashSet;
 
-/// Implement a listener of a particular event
-/// # Examples
-/// ```no_run
-/// ```
-pub trait On<InputEvent, OutputMessage> {
-    fn on(&mut self, event: InputEvent) -> RdpResult<OutputMessage>;
-}
-
 
 /// All data type used
 ///
@@ -184,12 +176,16 @@ impl Message for u8 {
     /// Write u8 value into stream
     /// # Example
     ///
-    /// ``` no_run
-    /// use rdp::core::data;
-    /// use std::io::Cursor;
-    /// let mut s = Cursor::new(Vec::new());
-    /// let value = 8 as u8;
-    /// value.write(s);
+    /// ```
+    /// # extern crate rdp;
+    /// # use rdp::core::data::Message;
+    /// # use std::io::Cursor;
+    /// # fn main() {
+    ///     let mut s = Cursor::new(Vec::new());
+    ///     let value : u8 = 8;
+    ///     value.write(&mut s);
+    ///     assert_eq!(*s.get_ref(), vec![8 as u8]);
+    /// # }
     /// ```
     fn write(&self, writer: &mut dyn Write)  -> RdpResult<()> {
         Ok(writer.write_u8(*self)?)
@@ -198,33 +194,54 @@ impl Message for u8 {
     /// Read u8 value from stream
     /// # Example
     ///
-    /// ```no_run
-    /// let mut value = 0 as u8;
-    /// value.read(s); // set the value according to stream content
+    /// ```
+    /// # extern crate rdp;
+    /// # use rdp::core::data::Message;
+    /// # use std::io::Cursor;
+    /// # fn main () {
+    ///     let mut stream = Cursor::new(vec![8]);
+    ///     let mut value = 0 as u8;
+    ///     value.read(&mut stream); // set the value according to stream content
+    ///     assert_eq!(value, 8);
+    /// # }
     /// ```
     fn read(&mut self, reader: &mut dyn Read) -> RdpResult<()> {
         *self = reader.read_u8()?;
         Ok(())
     }
 
-    /// Size in byte of wrapped value 1 in case of u8
+    /// Size in byte of wrapped value
+    /// 1 in case of u8
+    /// # Example
+    /// ```
+    /// # extern crate rdp;
+    /// # use rdp::core::data::Message;
+    /// # fn main() {
+    ///     let x : u8 = 0;
+    ///     assert_eq!(x.length(), 1);
+    /// # }
+    /// ```
     fn length(&self) -> u64 {
         1
     }
 
     /// Use visitor pattern to retrieve
-    /// Value in case of component
+    /// leaf value in case of node component
     ///
     /// # Example
     ///
     /// ```
-    /// let x = 8;
-    /// if let DataType::U8(value) = x.visit() {
-    ///     assert_eq!(value.get(), 8)
-    /// }
-    /// else {
-    ///     panic!("Invalid cast");
-    /// }
+    /// # extern crate rdp;
+    /// # use rdp::core::data::{Message, DataType};
+    /// # fn main() {
+    ///     let x : u8 = 8;
+    ///     if let DataType::U8(value) = x.visit() {
+    ///         assert_eq!(value, 8)
+    ///     }
+    ///     else {
+    ///         panic!("Invalid cast");
+    ///     }
+    /// # }
     /// ```
     fn visit(&self) -> DataType {
         DataType::U8(*self)
@@ -232,9 +249,11 @@ impl Message for u8 {
 
     /// Retrieve option of a subnode
     ///
-    /// Allow a parent to retrieve some optional
+    /// Allow a parent to retrieve some optional value
     /// That will influence the current node operation
     /// like skipping field of a component
+    ///
+    /// This kind of node have no option
     fn options(&self) -> MessageOption {
         MessageOption::None
     }
@@ -243,18 +262,26 @@ impl Message for u8 {
 /// Trame is just a list of boxed Message
 /// # Example
 ///
-/// ```no_run
-/// let t = trame! [0 as u8, 1 as u8];
+/// ```
+/// # #[macro_use]
+/// # extern crate rdp;
+/// # use rdp::core::data::{Trame, U32};
+/// # fn main() {
+///     let t = trame! [0 as u8, U32::BE(4)];
+/// # }
 /// ```
 pub type Trame = Vec<Box<dyn Message>>;
 
-/// Trame macro is used to initialize a vector of message
-/// This is equivalent to vec! macro in case of vector
-///
+/// Macro to easily init a new Trame of message
 /// # Example
 ///
 /// ```
-/// let padding = trame! [0 as u8, 1 as u8];
+/// # #[macro_use]
+/// # extern crate rdp;
+/// # use rdp::core::data::{Trame, U32};
+/// # fn main() {
+///     let t = trame! [0 as u8, U32::BE(4)];
+/// # }
 /// ```
 #[macro_export]
 macro_rules! trame {

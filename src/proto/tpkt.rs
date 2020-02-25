@@ -6,7 +6,7 @@ use nla::ntlm::Ntlm;
 use nla::sspi::AuthenticationProtocol;
 use nla::cssp::create_ts_request;
 
-/// TPKT action heaer
+/// TPKT action header
 /// # see : https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-rdpbcgr/b8e7c588-51cb-455b-bb73-92d480903133
 /// # see : https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-rdpbcgr/68b5ee54-d0d5-4d65-8d81-e1c4025f7597
 #[derive(Copy, Clone)]
@@ -15,7 +15,24 @@ pub enum Action {
     FastPathActionX224 = 0x3
 }
 
-fn tpkt_header(size: u16) -> Component {
+/// TPKT layer header
+///
+/// This the header layout of any RDP packet
+/// # Example
+/// ```
+/// # #[macro_use]
+/// # extern crate rdp;
+/// # use rdp::core::data::{Message, Trame, U32};
+/// # use rdp::proto::tpkt::{tpkt_header};
+/// # fn main() {
+///     let x = U32::BE(1);
+///     let message = trame![
+///         tpkt_header(x.length() as u16),
+///         x
+///     ];
+/// # }
+/// ```
+pub fn tpkt_header(size: u16) -> Component {
     component![
         "action" => Action::FastPathActionX224 as u8,
         "flag" => 0 as u8,
@@ -75,7 +92,7 @@ impl<S: Read + Write> Client<S> {
         Ok(Client::new(self.transport.start_ssl()?))
     }
 
-    pub fn start_nla(mut self) -> RdpResult<Client<S>> {
+    pub fn start_nla(self) -> RdpResult<Client<S>> {
         let mut link = self.transport.start_ssl()?;
         let ntlm_layer = Ntlm::new();
 

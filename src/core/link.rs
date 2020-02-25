@@ -53,7 +53,7 @@ impl<S: Read + Write> Link<S> {
         Ok(buffer)
     }
 
-    pub fn start_ssl(mut self) -> RdpResult<Link<S>> {
+    pub fn start_ssl(self) -> RdpResult<Link<S>> {
         let mut builder = TlsConnector::builder();
         builder.danger_accept_invalid_certs(true);
         let connector = builder.build()?;
