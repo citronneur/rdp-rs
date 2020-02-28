@@ -62,7 +62,7 @@ fn version() -> Component {
 /// It used to announce capability to the peer
 fn negotiate_message(flags: u32) -> Component {
     component!(
-        "Signature" => b"NTLMSSP\x00",
+        "Signature" => b"NTLMSSP\x00".to_vec(),
         "MessageType" => U32::LE(0x00000001),
         "NegotiateFlags" => Filter::new(U32::LE(flags), |node| {
             if node.get() & Negotiate::NtlmsspNegociateVersion as u32 == 0 {
@@ -82,7 +82,7 @@ fn negotiate_message(flags: u32) -> Component {
 
 fn challenge_message() -> Component {
     component![
-        "Signature" => Check::new(b"NTLMSSP\x00"),
+        "Signature" => Check::new(b"NTLMSSP\x00".to_vec()),
         "MessageType" => Check::new(U32::LE(2)),
         "TargetNameLen" => U16::LE(0),
         "TargetNameLenMax" => U16::LE(0),

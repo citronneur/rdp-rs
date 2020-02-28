@@ -3,6 +3,8 @@ use core::error::{RdpResult, RdpErrorKind, RdpError, Error};
 use byteorder::{WriteBytesExt, ReadBytesExt, LittleEndian, BigEndian};
 use indexmap::IndexMap;
 use std::collections::HashSet;
+use std::borrow::BorrowMut;
+use std::ops::DerefMut;
 
 
 /// All data type used
@@ -495,11 +497,11 @@ impl Message for U32 {
     }
 }
 
-pub struct Check<T: Copy> {
+pub struct Check<T> {
     value: T
 }
 
-impl<T: Copy> Check<T> {
+impl<T> Check<T> {
     pub fn new(value: T) -> Self{
         Check {
             value
@@ -507,13 +509,13 @@ impl<T: Copy> Check<T> {
     }
 }
 
-impl<T: Message + Copy + PartialEq> Message for Check<T> {
+impl<T: Message + Clone + PartialEq> Message for Check<T> {
     fn write(&self, writer: &mut dyn Write) -> RdpResult<()> {
         self.value.write(writer)
     }
 
     fn read(&mut self, reader: &mut dyn Read) -> RdpResult<()> {
-        let old = self.value;
+        let old = self.value.clone();
         self.value.read(reader)?;
         if old != self.value {
             return Err(Error::RdpError(RdpError::new(RdpErrorKind::InvalidConst, "Invalid constness of data")))
@@ -594,29 +596,6 @@ impl<T: Message> Message for Filter<T> {
     }
 }
 
-impl Message for &[u8] {
-    fn write(&self, writer: &mut dyn Write) -> RdpResult<()> {
-        writer.write(self);
-        Ok(())
-    }
-
-    fn read(&mut self, reader: &mut dyn Read) -> RdpResult<()> {
-        reader.read(self);
-        Ok(())
-    }
-
-    fn length(&self) -> u64 {
-        self.len() as u64
-    }
-
-    fn visit(&self) -> DataType {
-        DataType::Slice(self)
-    }
-
-    fn options(&self) -> MessageOption {
-        MessageOption::None
-    }
-}
 #[cfg(test)]
 mod test {
     use super::*;
