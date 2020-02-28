@@ -32,7 +32,8 @@ pub enum DataType<'a> {
     Trame(&'a Trame),
     U32(u32),
     U16(u16),
-    U8(u8)
+    U8(u8),
+    Slice(&'a [u8])
 }
 
 
@@ -558,7 +559,7 @@ impl Message for Vec<u8> {
 
 pub struct Filter<T> {
     current: T,
-    filter: Box<dyn Fn(&T) -> Option<HashSet<String>>>,
+    filter: Box<dyn Fn(&T) -> Option<HashSet<String>>>
 }
 
 impl<T> Filter<T> {
@@ -593,6 +594,29 @@ impl<T: Message> Message for Filter<T> {
     }
 }
 
+impl Message for &[u8] {
+    fn write(&self, writer: &mut dyn Write) -> RdpResult<()> {
+        writer.write(self);
+        Ok(())
+    }
+
+    fn read(&mut self, reader: &mut dyn Read) -> RdpResult<()> {
+        reader.read(self);
+        Ok(())
+    }
+
+    fn length(&self) -> u64 {
+        self.len() as u64
+    }
+
+    fn visit(&self) -> DataType {
+        DataType::Slice(self)
+    }
+
+    fn options(&self) -> MessageOption {
+        MessageOption::None
+    }
+}
 #[cfg(test)]
 mod test {
     use super::*;
@@ -605,6 +629,4 @@ mod test {
         x.write(&mut stream).unwrap();
         assert_eq!(stream.get_ref().as_slice(), [1])
     }
-
-
 }

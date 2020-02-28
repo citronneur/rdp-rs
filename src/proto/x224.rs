@@ -67,8 +67,6 @@ fn x224_crq(len: u8, code: MessageType) -> Component {
         "len" => (len + 6) as u8,
         "code" => code as u8,
         "padding" => trame! [U16::LE(0), U16::LE(0), 0 as u8]
-        //"cookie" => String::from("Cookie: mstshash=DESKTOP-Q"),
-        //"delimiter" => U16::BE(0x0d0a)
     ]
 }
 
@@ -143,22 +141,3 @@ impl<S: Read + Write> Connector<S> {
         }
     }
 }
-
-/*impl On<TpktClientEvent, TpktMessage> for Client {
-    fn on (&mut self, event: TpktClientEvent) -> RdpResult<TpktMessage>{
-
-        match event {
-            TpktClientEvent::Connect => {
-                Ok(TpktMessage::X224(self.handle_connection_request()?))
-            },
-
-            TpktClientEvent::Packet(mut e) => {
-                match self.state {
-                    X224ClientState::ConnectionConfirm => Ok(TpktMessage::Link(self.handle_connection_confirm(&mut e)?)),
-                    _ => Err(Error::RdpError(RdpError::new(RdpErrorKind::InvalidAutomata, "Invalid state")))
-                }
-            }
-        }
-
-    }
-}*/

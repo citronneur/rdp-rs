@@ -1,33 +1,8 @@
-use super::asn1::{ASN1, Sequence, ExplicitTag, SequenceOf};
+use nla::asn1::{ASN1, Sequence, ExplicitTag, SequenceOf, ASN1Type, OctetString};
+use core::error::{RdpError, RdpErrorKind, Error};
 use yasna::Tag;
 
-fn nego_data(nego: Vec<u8>) -> SequenceOf {
-    sequence_of![
-        sequence![
-            "negoToken" => ExplicitTag::new(Tag::context(0), nego)
-        ]
-    ]
-}
-
-pub fn ts_request(nego: Vec<u8>) -> Box<dyn ASN1> {
-    Box::new(sequence![
-        "version" => ExplicitTag::new(Tag::context(0), 2),
-        "negoTokens" => ExplicitTag::new(Tag::context(1), nego_data(nego))
-    ])
-}
-
-
-//pub fn read_ts_request(buf: &[u8]) -> ASN1Result<(i64, bool)> {
-//    yasna::parse_der(buf, |reader| {
-//        reader.read_sequence(|reader| {
-//            let i = reader.next().read_i64()?;
-//            let b = reader.next().read_bool()?;
-//            return Ok((i, b));
-//        })
-//    })
-//}
-
-pub fn create_ts_request(nego: Vec<u8>) -> Vec<u8>  {
+pub fn create_ts_request(nego: Vec<u8>) -> Vec<u8> {
     let ts_request = sequence![
         "version" => ExplicitTag::new(Tag::context(0), 2),
         "negoTokens" => ExplicitTag::new(Tag::context(1),
@@ -42,14 +17,31 @@ pub fn create_ts_request(nego: Vec<u8>) -> Vec<u8>  {
     })
 }
 
+
+pub fn read_ts_request(stream: &[u8]) -> Vec<u8> {
+    let mut ts_request = sequence![
+        "version" => ExplicitTag::new(Tag::context(0), 2),
+        "negoTokens" => ExplicitTag::new(Tag::context(1),
+            SequenceOf::reader(Box::new(|| {
+                Box::new(sequence![
+                    "negoToken" => ExplicitTag::new(Tag::context(0), OctetString::new())
+                ])
+            }))
+         )
+    ];
+    let x = yasna::parse_der(stream, |reader| {
+        if let Err(Error::ASN1Error(e)) = ts_request.read_asn1(reader) {
+            return Err(e)
+        }
+        Ok(())
+    });
+    let nego_tokens = cast!(ASN1Type::SequenceOf, ts_request["negoTokens"]).unwrap();
+    let first_nego_tokens = cast!(ASN1Type::Sequence, nego_tokens.inner[0]).unwrap();
+    let nego_token = cast!(ASN1Type::OctetString, first_nego_tokens["negoToken"]).unwrap();
+    nego_token.to_vec()
+}
+
 #[cfg(test)]
 mod test {
     use super::*;
-    #[test]
-    fn test_tsrequest() {
-        let x = yasna::construct_der(|writer| {
-            ts_request(vec![0]).write_asn1(writer).unwrap();
-        });
-        assert_eq!(x, vec![48, 5, 160, 3, 2, 1, 2]);
-    }
 }

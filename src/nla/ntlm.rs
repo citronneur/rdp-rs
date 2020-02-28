@@ -1,5 +1,5 @@
 use super::sspi::{AuthenticationProtocol};
-use core::data::{Message, Component, U16, U32, Trame, Filter, Skip};
+use core::data::{Message, Component, U16, U32, Trame, Filter, Skip, Check};
 use std::io::{Cursor};
 use core::error::RdpResult;
 
@@ -62,7 +62,7 @@ fn version() -> Component {
 /// It used to announce capability to the peer
 fn negotiate_message(flags: u32) -> Component {
     component!(
-        "Signature" => b"NTLMSSP\x00".to_vec(),
+        "Signature" => b"NTLMSSP\x00",
         "MessageType" => U32::LE(0x00000001),
         "NegotiateFlags" => Filter::new(U32::LE(flags), |node| {
             if node.get() & Negotiate::NtlmsspNegociateVersion as u32 == 0 {
@@ -76,9 +76,30 @@ fn negotiate_message(flags: u32) -> Component {
         "WorkstationLen" => U16::LE(0),
         "WorkstationMaxLen" => U16::LE(0),
         "WorkstationBufferOffset" => U32::LE(0),
-        "Version" => version(),
-        "Payload" => Vec::<u8>::new()
+        "Version" => version()
     )
+}
+
+fn challenge_message() -> Component {
+    component![
+        "Signature" => Check::new(b"NTLMSSP\x00"),
+        "MessageType" => Check::new(U32::LE(2)),
+        "TargetNameLen" => U16::LE(0),
+        "TargetNameLenMax" => U16::LE(0),
+        "TargetNameBufferOffset" => U32::LE(0),
+        "NegotiateFlags" => Filter::new(U32::LE(0), |node| {
+            if node.get() & Negotiate::NtlmsspNegociateVersion as u32 == 0 {
+                return Some(skip!("Version".to_string()))
+            }
+            return None
+        }),
+        "ServerChallenge" => vec![0; 8],
+        "Reserved" => vec![0; 8],
+        "TargetInfoLen" => U16::LE(0),
+        "TargetInfoMaxLen" => U16::LE(0),
+        "TargetInfoBufferOffset" => U32::LE(0),
+        "Version" => version()
+    ]
 }
 
 pub struct Ntlm {
@@ -109,6 +130,14 @@ impl AuthenticationProtocol  for Ntlm {
                 Negotiate::NtlmsspNegociateUnicode as u32
         ).write(&mut buffer)?;
         return Ok(buffer.get_ref().to_vec())
+    }
+
+    fn read_challenge_message(&self, request: &[u8]) -> RdpResult<()> {
+        let mut stream = Cursor::new(request);
+        let mut result = challenge_message();
+        result.read(&mut stream);
+
+        Ok(())
     }
 }
 

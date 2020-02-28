@@ -6,6 +6,7 @@ use std::string::String;
 use std::net::{AddrParseError};
 use self::native_tls::HandshakeError;
 use self::native_tls::Error as SslError;
+use yasna::ASN1Error;
 
 #[derive(Debug)]
 pub enum RdpErrorKind {
@@ -39,7 +40,8 @@ pub enum Error {
     Io(IoError),
     AddrParseError(AddrParseError),
     SslHandshakeError,
-    SslError(SslError)
+    SslError(SslError),
+    ASN1Error(ASN1Error)
 }
 
 impl From<IoError> for Error {
@@ -63,6 +65,12 @@ impl<S: Read + Write> From<HandshakeError<S>> for Error {
 impl From<SslError> for Error {
     fn from(e: SslError) -> Error {
         Error::SslError(e)
+    }
+}
+
+impl From<ASN1Error> for Error {
+    fn from(e: ASN1Error) -> Error {
+        Error::ASN1Error(e)
     }
 }
 

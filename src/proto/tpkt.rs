@@ -4,7 +4,7 @@ use core::error::{RdpResult, RdpError, RdpErrorKind, Error};
 use std::io::{Cursor, Write, Read};
 use nla::ntlm::Ntlm;
 use nla::sspi::AuthenticationProtocol;
-use nla::cssp::create_ts_request;
+use nla::cssp::{create_ts_request, read_ts_request};
 
 /// TPKT action header
 /// # see : https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-rdpbcgr/b8e7c588-51cb-455b-bb73-92d480903133
@@ -18,21 +18,7 @@ pub enum Action {
 /// TPKT layer header
 ///
 /// This the header layout of any RDP packet
-/// # Example
-/// ```
-/// # #[macro_use]
-/// # extern crate rdp;
-/// # use rdp::core::data::{Message, Trame, U32};
-/// # use rdp::proto::tpkt::{tpkt_header};
-/// # fn main() {
-///     let x = U32::BE(1);
-///     let message = trame![
-///         tpkt_header(x.length() as u16),
-///         x
-///     ];
-/// # }
-/// ```
-pub fn tpkt_header(size: u16) -> Component {
+fn tpkt_header(size: u16) -> Component {
     component![
         "action" => Action::FastPathActionX224 as u8,
         "flag" => 0 as u8,
@@ -93,6 +79,7 @@ impl<S: Read + Write> Client<S> {
     }
 
     pub fn start_nla(self) -> RdpResult<Client<S>> {
+
         let mut link = self.transport.start_ssl()?;
         let ntlm_layer = Ntlm::new();
 
@@ -100,80 +87,39 @@ impl<S: Read + Write> Client<S> {
 
         link.send(x)?;
 
-        let mut x = link.recv(1560)?;
-        println!("{:?}", x);
+        // try to receive all available data
+        ntlm_layer.read_challenge_message(read_ts_request(link.recv(0)?.as_slice()).as_slice());
+
         Ok(Client::new(link))
     }
-
 }
 
-//// Implement the On<ConnectedEvent, LinkMessageList<W>> event for the underlying layer
-/*impl On<LinkEvent, LinkMessageList> for Client {
-    fn on (&mut self, event: LinkEvent) -> RdpResult<LinkMessageList> {
+#[cfg(test)]
+mod test {
+    use super::*;
+    use std::io::Cursor;
+    use core::data::{U32, DataType};
 
-        match event {
-            // No connect step for this layer, forward to next layer
-            LinkEvent::Connect => {
-                if let TpktMessage::X224(data) = self.listener.on(TpktClientEvent::Connect)? {
-                    Ok(vec![
-                        LinkMessage::Send(Box::new(trame![
-                            tpkt_header(data.length() as u16),
-                            data
-                        ])),
-                        LinkMessage::Expect(2) // wait for action !!!
-                    ])
-                }
-                else {
-                    Err(Error::RdpError(RdpError::new(RdpErrorKind::InvalidData, "FastPath packet are forbidden during connection")))
-                }
-            },
-            // Available data automate
-            LinkEvent::AvailableData(mut buffer) => {
-                match self.current_state {
-                    TpktState::ReadAction => {
-                        let mut action: u8 = 0;
-                        action.read(&mut buffer)?;
-
-                        if action == Action::FastPathActionX224 as u8 {
-                            // read padding
-                            let mut padding: u8 = 0;
-                            padding.read(&mut buffer)?;
-                            // now wait extended header
-                            self.current_state = TpktState::ReadSize;
-                            Ok(vec![LinkMessage::Expect(2)])
-                        }
-                        else {
-                            Err(Error::RdpError(RdpError::new(RdpErrorKind::NotImplemented, "FastPath packet is not implemented")))
-                        }
-                    },
-                    TpktState::ReadSize => {
-                        let mut size = U16::BE(0);
-                        size.read(&mut buffer)?;
-
-                        // now wait for body
-                        self.current_state = TpktState::ReadBody;
-                        Ok(vec![LinkMessage::Expect(size.get() as usize - 4)])
-                    },
-                    TpktState::ReadBody => {
-                        match self.listener.on(TpktClientEvent::Packet(buffer))? {
-                            TpktMessage::X224(data) => {
-                                Ok(vec![
-                                    LinkMessage::Send(Box::new(trame![
-                                        tpkt_header(data.length() as u16),
-                                        data
-                                    ])),
-                                    LinkMessage::Expect(2) // wait for action !!!
-                                ])
-                            },
-                            TpktMessage::Link(e) => {
-                                // just forward
-                                Ok(vec![e])
-                            }
-                        }
-                    }
-                }
-            }
-        }
+    /// Test the tpkt header type in write context
+    #[test]
+    fn test_write_tpkt_header() {
+        let x = U32::BE(1);
+        let message = trame![
+            tpkt_header(x.length() as u16),
+            x
+        ];
+        let mut buffer = Cursor::new(Vec::new());
+        message.write(&mut buffer);
+        assert_eq!(buffer.get_ref().as_slice(), [3, 0, 0, 8, 0, 0, 0, 1]);
     }
-}*/
 
+    /// Test read of TPKT header
+    #[test]
+    fn test_read_tpkt_header() {
+        let mut message =  tpkt_header(0);
+        let mut buffer = Cursor::new([3, 0, 0, 8, 0, 0, 0, 1]);
+        message.read(&mut buffer);
+        assert_eq!(cast!(DataType::U16, message["size"]).unwrap(), 8);
+        assert_eq!(cast!(DataType::U8, message["action"]).unwrap(), Action::FastPathActionX224 as u8);
+    }
+}

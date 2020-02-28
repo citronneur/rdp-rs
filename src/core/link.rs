@@ -19,6 +19,13 @@ impl<S: Read + Write> Stream<S> {
         Ok(())
     }
 
+    pub fn read(&mut self, buf: &mut[u8]) -> RdpResult<usize> {
+        match self {
+            Stream::Raw(e) => Ok(e.read(buf)?),
+            Stream::Ssl(e) => Ok(e.read(buf)?)
+        }
+    }
+
     pub fn write(&mut self, buffer: &[u8]) -> RdpResult<()> {
         match self {
             Stream::Raw(e) => e.write(buffer)?,
@@ -48,9 +55,17 @@ impl<S: Read + Write> Link<S> {
     }
 
     pub fn recv(&mut self, expected_size: usize) -> RdpResult<Vec<u8>> {
-        let mut buffer = vec![0; expected_size];
-        self.stream.read_exact(&mut buffer)?;
-        Ok(buffer)
+        if expected_size == 0 {
+            let mut buffer = vec![0; 1512];
+            let size = self.stream.read(&mut buffer)?;
+            buffer.resize(size, 0);
+            Ok(buffer)
+        }
+        else {
+            let mut buffer = vec![0; expected_size];
+            self.stream.read_exact(&mut buffer)?;
+            Ok(buffer)
+        }
     }
 
     pub fn start_ssl(self) -> RdpResult<Link<S>> {
