@@ -1,7 +1,7 @@
 use super::sspi::{AuthenticationProtocol};
-use core::data::{Message, Component, U16, U32, Trame, Filter, Skip, Check};
+use core::data::{Message, Component, U16, U32, Trame, Filter, Skip, Check, DataType};
 use std::io::{Cursor};
-use core::error::RdpResult;
+use core::error::{RdpResult, RdpError, RdpErrorKind, Error};
 
 #[repr(u32)]
 enum Negotiate {
@@ -65,7 +65,7 @@ fn negotiate_message(flags: u32) -> Component {
         "Signature" => b"NTLMSSP\x00".to_vec(),
         "MessageType" => U32::LE(0x00000001),
         "NegotiateFlags" => Filter::new(U32::LE(flags), |node| {
-            if node.get() & Negotiate::NtlmsspNegociateVersion as u32 == 0 {
+            if node.get() & (Negotiate::NtlmsspNegociateVersion as u32) == 0 {
                 return Some(skip!("Version".to_string()))
             }
             return None
@@ -76,7 +76,8 @@ fn negotiate_message(flags: u32) -> Component {
         "WorkstationLen" => U16::LE(0),
         "WorkstationMaxLen" => U16::LE(0),
         "WorkstationBufferOffset" => U32::LE(0),
-        "Version" => version()
+        "Version" => version(),
+        "Payload" => Vec::<u8>::new()
     )
 }
 
@@ -88,7 +89,7 @@ fn challenge_message() -> Component {
         "TargetNameLenMax" => U16::LE(0),
         "TargetNameBufferOffset" => U32::LE(0),
         "NegotiateFlags" => Filter::new(U32::LE(0), |node| {
-            if node.get() & Negotiate::NtlmsspNegociateVersion as u32 == 0 {
+            if node.get() & (Negotiate::NtlmsspNegociateVersion as u32) == 0 {
                 return Some(skip!("Version".to_string()))
             }
             return None
@@ -98,8 +99,25 @@ fn challenge_message() -> Component {
         "TargetInfoLen" => U16::LE(0),
         "TargetInfoMaxLen" => U16::LE(0),
         "TargetInfoBufferOffset" => U32::LE(0),
-        "Version" => version()
+        "Version" => version(),
+        "Payload" => Vec::<u8>::new()
     ]
+}
+
+fn av_pair() -> Component {
+    component![
+        "AvId" => U16::LE(0),
+        "AvLen" => U16::LE(0),
+        "Value" => Vec::<u8>::new()
+    ]
+}
+
+fn get_payload_field(message: &Component, length: u16, buffer_offset: u32) -> RdpResult<&[u8]> {
+    let payload = cast!(DataType::Slice, message["Payload"])?;
+    let offset = message.length() as usize - payload.len();
+    let start = buffer_offset as usize - offset;
+    let end = start + length as usize;
+    Ok(&payload[start..end])
 }
 
 pub struct Ntlm {
@@ -137,6 +155,21 @@ impl AuthenticationProtocol  for Ntlm {
         let mut result = challenge_message();
         result.read(&mut stream);
 
+        let server_challenge = cast!(DataType::Slice, result["ServerChallenge"])?;
+
+        let target_name = get_payload_field(
+            &result,
+            cast!(DataType::U16, result["TargetNameLen"])?,
+            cast!(DataType::U32, result["TargetNameBufferOffset"])?
+        )?;
+
+        let target_info = get_payload_field(
+            &result,
+            cast!(DataType::U16, result["TargetInfoLen"])?,
+            cast!(DataType::U32, result["TargetInfoBufferOffset"])?
+        )?;
+
+        println!("foo {:?}", target_info);
         Ok(())
     }
 }

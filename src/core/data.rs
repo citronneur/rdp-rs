@@ -77,6 +77,7 @@ pub type Skip = HashSet<String>;
 /// This is control by the options function of Message Trait
 pub enum MessageOption {
     SkipField(Option<Skip>),
+    Size(String, usize),
     None
 }
 
@@ -376,13 +377,14 @@ impl Message for Component {
             if filtering_key.contains(name) {
                 continue;
             }
+
+            value.read(reader)?;
+
             if let MessageOption::SkipField(Some(x)) = value.options() {
                 for field in x {
                     filtering_key.insert(field);
                 }
             }
-
-            value.read(reader)?;
         }
         Ok(())
     }
@@ -543,15 +545,21 @@ impl Message for Vec<u8> {
     }
 
     fn read(&mut self, reader: &mut dyn Read) -> RdpResult<()> {
-        unimplemented!()
+        if self.len() == 0 {
+            reader.read_to_end(self)?;
+        }
+        else {
+            reader.read_exact(self)?;
+        }
+        Ok(())
     }
 
     fn length(&self) -> u64 {
-        unimplemented!()
+        self.len() as u64
     }
 
     fn visit(&self) -> DataType {
-        unimplemented!()
+        DataType::Slice(self.as_slice())
     }
 
     fn options(&self) -> MessageOption {
@@ -559,12 +567,69 @@ impl Message for Vec<u8> {
     }
 }
 
+/// Add dynamic filtering capability for parent Node
+///
+/// Use by component node to create a filtering relationship
+/// between two or more fields
+///
+/// # Example
+/// ```
+/// # #[macro_use]
+/// # extern crate rdp;
+/// # use rdp::core::data::{Message, Filter, Component, U32, Skip, DataType};
+/// # use rdp::core::error::{Error, RdpError, RdpResult, RdpErrorKind};
+/// # use std::io::Cursor;
+/// # fn main() {
+///     let mut node = component![
+///         "flag" => Filter::new(U32::LE(0), |flag| {
+///             if flag.get() == 1 {
+///                 return Some(skip!("depend"));
+///             }
+///             return None;
+///         }),
+///         "depend" => U32::LE(0)
+///     ];
+///     let mut stream = Cursor::new(vec![0,0,0,0,1,0,0,0]);
+///     node.read(&mut stream).unwrap();
+///     assert_eq!(cast!(DataType::U32, node["depend"]).unwrap(), 1);
+///
+///     let mut stream = Cursor::new(vec![1,0,0,0,2,0,0,0]);
+///     node.read(&mut stream).unwrap();
+///     assert_ne!(cast!(DataType::U32, node["depend"]).unwrap(), 2);
+/// }
+/// ```
 pub struct Filter<T> {
     current: T,
     filter: Box<dyn Fn(&T) -> Option<HashSet<String>>>
 }
 
+/// The filter impl
+/// A filter work like a proxy pattern for an inner object
 impl<T> Filter<T> {
+    /// Create a new filter from a callback
+    /// Callback may return a list of field name taht will be skip
+    /// by the component reader
+    ///
+    /// # Example
+    /// ```
+    /// #[macro_use]
+    /// # extern crate rdp;
+    /// # use rdp::core::data::{Message, Component, Filter, U32, Skip};
+    /// # fn main() {
+    ///     let message = component![
+    ///         "flag" => Filter::new(U32::LE(1), |flag| {
+    ///             if flag.get() == 1 {
+    ///                 return Some(skip!["depend"]);
+    ///             }
+    ///             else {
+    ///                 return None;
+    ///             }
+    ///         }),
+    ///         "depend" => U32::LE(0)
+    ///     ];
+    ///     assert_eq!(message.length(), 4);
+    /// # }
+    /// ```
     pub fn new<F: 'static>(current: T, filter: F) -> Self
         where F: Fn(&T) -> Option<HashSet<String>> {
         Filter {
