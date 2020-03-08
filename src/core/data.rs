@@ -1,10 +1,8 @@
-use std::io::{Write, Read};
+use std::io::{Write, Read, Cursor};
 use core::error::{RdpResult, RdpErrorKind, RdpError, Error};
 use byteorder::{WriteBytesExt, ReadBytesExt, LittleEndian, BigEndian};
 use indexmap::IndexMap;
-use std::collections::HashSet;
-use std::borrow::BorrowMut;
-use std::ops::DerefMut;
+use std::collections::{HashSet, HashMap};
 
 
 /// All data type used
@@ -66,9 +64,6 @@ macro_rules! cast {
     })
 }
 
-/// Use for convenient import
-pub type Skip = HashSet<String>;
-
 /// Allow to a son to inform parent of something special
 ///
 /// IN tree type a son can control parser of a parent node
@@ -76,68 +71,9 @@ pub type Skip = HashSet<String>;
 ///
 /// This is control by the options function of Message Trait
 pub enum MessageOption {
-    SkipField(Option<Skip>),
+    SkipField(String),
     Size(String, usize),
     None
-}
-
-/// Skip a set of field
-///
-/// Allow a son to inform a parent to skip reading or writing other fields
-///
-/// # Example
-/// ```
-/// # #[macro_use]
-/// # extern crate rdp;
-/// # use rdp::core::data::Message;
-/// # use rdp::core::data::{Filter, U32, Component, Skip, U16};
-/// # use std::io::Cursor;
-/// # fn main() {
-///     let message = component!(
-///         "Flags" => Filter::new(U32::LE(0), |flag| {
-///             if flag.get() == 1 {
-///                 return Some(skip!("Version".to_string()))
-///             }
-///             return None
-///         }),
-///         "Version" => U16::LE(0)
-///     );
-///     let mut s = Cursor::new(Vec::new());
-///     message.write(&mut s);
-///     assert_eq!(s.get_ref().len(), 6)
-/// # }
-/// ```
-///
-/// Test when skipping is activated
-/// # Example
-/// ```
-/// # #[macro_use]
-/// # extern crate rdp;
-/// # use rdp::core::data::Message;
-/// # use rdp::core::data::{Filter, U32, Component, Skip, U16};
-/// # use std::io::Cursor;
-/// # fn main() {
-///     let message = component!(
-///         "Flags" => Filter::new(U32::LE(1), |flag| {
-///             if flag.get() == 1 {
-///                 return Some(skip!("Version".to_string()))
-///             }
-///             return None
-///         }),
-///         "Version" => U16::LE(0)
-///     );
-///     let mut s = Cursor::new(Vec::new());
-///     message.write(&mut s);
-///     assert_eq!(s.get_ref().len(), 4)
-/// # }
-/// ```
-#[macro_export]
-macro_rules! skip {
-    ($( $key: expr ),*) => {{
-         let mut set = Skip::new();
-         $( set.insert($key.to_string()) ; )*
-         set
-    }}
 }
 
 /// All is a message
@@ -360,31 +296,39 @@ impl Message for Component {
             if filtering_key.contains(name) {
                 continue;
             }
-            if let MessageOption::SkipField(Some(x)) = value.options() {
-                for field in x {
-                    filtering_key.insert(field);
-                }
-            }
             value.write(writer)?;
+            if let MessageOption::SkipField(field) = value.options() {
+                filtering_key.insert(field);
+            }
         }
         Ok(())
     }
 
     fn read(&mut self, reader: &mut dyn Read) -> RdpResult<()>{
         let mut filtering_key = HashSet::new();
+        let mut dynamic_size = HashMap::new();
         for (name, value) in self.into_iter() {
             // ignore filtering keys
             if filtering_key.contains(name) {
                 continue;
             }
 
-            value.read(reader)?;
+            if dynamic_size.contains_key(name) {
+                let mut local =vec![0; dynamic_size[name]];
+                reader.read_exact(&mut local);
 
-            if let MessageOption::SkipField(Some(x)) = value.options() {
-                for field in x {
-                    filtering_key.insert(field);
-                }
+                value.read(&mut Cursor::new(local))?;
             }
+            else {
+                value.read(reader)?;
+            }
+
+            match value.options() {
+                MessageOption::SkipField(field) => { filtering_key.insert(field); },
+                MessageOption::Size(field, size) => { dynamic_size.insert(field, size); },
+                MessageOption::None => ()
+            }
+
         }
         Ok(())
     }
@@ -397,10 +341,8 @@ impl Message for Component {
             if filtering_key.contains(name) {
                 continue;
             }
-            if let MessageOption::SkipField(Some(x)) = value.options() {
-                for field in x {
-                    filtering_key.insert(field);
-                }
+            if let MessageOption::SkipField(field) = value.options() {
+                filtering_key.insert(field);
             }
             sum += value.length();
         }
@@ -576,16 +518,16 @@ impl Message for Vec<u8> {
 /// ```
 /// # #[macro_use]
 /// # extern crate rdp;
-/// # use rdp::core::data::{Message, Filter, Component, U32, Skip, DataType};
+/// # use rdp::core::data::{Message, DynOption, Component, U32, DataType, MessageOption};
 /// # use rdp::core::error::{Error, RdpError, RdpResult, RdpErrorKind};
 /// # use std::io::Cursor;
 /// # fn main() {
 ///     let mut node = component![
-///         "flag" => Filter::new(U32::LE(0), |flag| {
+///         "flag" => DynOption::new(U32::LE(0), |flag| {
 ///             if flag.get() == 1 {
-///                 return Some(skip!("depend"));
+///                 return MessageOption::SkipField("depend".to_string());
 ///             }
-///             return None;
+///             return MessageOption::None;
 ///         }),
 ///         "depend" => U32::LE(0)
 ///     ];
@@ -598,31 +540,32 @@ impl Message for Vec<u8> {
 ///     assert_ne!(cast!(DataType::U32, node["depend"]).unwrap(), 2);
 /// }
 /// ```
-pub struct Filter<T> {
+pub struct DynOption<T> {
     current: T,
-    filter: Box<dyn Fn(&T) -> Option<HashSet<String>>>
+    filter: Box<dyn Fn(&T) -> MessageOption>
 }
 
 /// The filter impl
 /// A filter work like a proxy pattern for an inner object
-impl<T> Filter<T> {
+impl<T> DynOption<T> {
     /// Create a new filter from a callback
     /// Callback may return a list of field name taht will be skip
     /// by the component reader
     ///
+    /// The following example add a dynamic skip option
     /// # Example
     /// ```
     /// #[macro_use]
     /// # extern crate rdp;
-    /// # use rdp::core::data::{Message, Component, Filter, U32, Skip};
+    /// # use rdp::core::data::{Message, Component, DynOption, U32, MessageOption};
     /// # fn main() {
     ///     let message = component![
-    ///         "flag" => Filter::new(U32::LE(1), |flag| {
+    ///         "flag" => DynOption::new(U32::LE(1), |flag| {
     ///             if flag.get() == 1 {
-    ///                 return Some(skip!["depend"]);
+    ///                 return MessageOption::SkipField("depend".to_string());
     ///             }
     ///             else {
-    ///                 return None;
+    ///                 return MessageOption::None;
     ///             }
     ///         }),
     ///         "depend" => U32::LE(0)
@@ -630,16 +573,39 @@ impl<T> Filter<T> {
     ///     assert_eq!(message.length(), 4);
     /// # }
     /// ```
+    ///
+    /// The next example use dynamic option to set a size to a value
+    ///
+    /// # Example
+    /// ```
+    /// #[macro_use]
+    /// # extern crate rdp;
+    /// # use rdp::core::data::{Message, Component, DynOption, U32, MessageOption, DataType};
+    /// # use rdp::core::error::{Error, RdpError, RdpResult, RdpErrorKind};
+    /// # use std::io::{Cursor};
+    /// # fn main() {
+    ///     let mut message = component![
+    ///         "Type" => DynOption::new(U32::LE(0), |flag| {
+    ///             MessageOption::Size("Value".to_string(), flag.get() as usize)
+    ///         }),
+    ///         "Value" => Vec::<u8>::new()
+    ///     ];
+    ///     let mut stream = Cursor::new(vec![1,0,0,0,1]);
+    ///     message.read(&mut stream).unwrap();
+    ///     println!("{:?}", cast!(DataType::Slice, message["Value"]).unwrap());
+    ///     assert_eq!(cast!(DataType::Slice, message["Value"]).unwrap().len(), 1);
+    /// # }
+    /// ```
     pub fn new<F: 'static>(current: T, filter: F) -> Self
-        where F: Fn(&T) -> Option<HashSet<String>> {
-        Filter {
+        where F: Fn(&T) -> MessageOption {
+        DynOption {
             current,
             filter : Box::new(filter)
         }
     }
 }
 
-impl<T: Message> Message for Filter<T> {
+impl<T: Message> Message for DynOption<T> {
     fn write(&self, writer: &mut dyn Write) -> RdpResult<()> {
         self.current.write(writer)
     }
@@ -657,9 +623,10 @@ impl<T: Message> Message for Filter<T> {
     }
 
     fn options(&self) -> MessageOption {
-        MessageOption::SkipField((self.filter)(&self.current))
+        (self.filter)(&self.current)
     }
 }
+
 
 #[cfg(test)]
 mod test {

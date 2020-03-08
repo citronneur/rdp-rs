@@ -1,7 +1,9 @@
 use super::sspi::{AuthenticationProtocol};
-use core::data::{Message, Component, U16, U32, Trame, Filter, Skip, Check, DataType};
+use core::data::{Message, Component, U16, U32, Trame, DynOption, Check, DataType, MessageOption};
 use std::io::{Cursor};
 use core::error::{RdpResult, RdpError, RdpErrorKind, Error};
+use std::collections::HashMap;
+use md4::{Md4, Digest};
 
 #[repr(u32)]
 enum Negotiate {
@@ -64,11 +66,11 @@ fn negotiate_message(flags: u32) -> Component {
     component!(
         "Signature" => b"NTLMSSP\x00".to_vec(),
         "MessageType" => U32::LE(0x00000001),
-        "NegotiateFlags" => Filter::new(U32::LE(flags), |node| {
+        "NegotiateFlags" => DynOption::new(U32::LE(flags), |node| {
             if node.get() & (Negotiate::NtlmsspNegociateVersion as u32) == 0 {
-                return Some(skip!("Version".to_string()))
+                return MessageOption::SkipField("Version".to_string())
             }
-            return None
+            return MessageOption::None
         }),
         "DomainNameLen" => U16::LE(0),
         "DomainNameMaxLen" => U16::LE(0),
@@ -88,11 +90,11 @@ fn challenge_message() -> Component {
         "TargetNameLen" => U16::LE(0),
         "TargetNameLenMax" => U16::LE(0),
         "TargetNameBufferOffset" => U32::LE(0),
-        "NegotiateFlags" => Filter::new(U32::LE(0), |node| {
+        "NegotiateFlags" => DynOption::new(U32::LE(0), |node| {
             if node.get() & (Negotiate::NtlmsspNegociateVersion as u32) == 0 {
-                return Some(skip!("Version".to_string()))
+                return MessageOption::SkipField("Version".to_string())
             }
-            return None
+            return MessageOption::None
         }),
         "ServerChallenge" => vec![0; 8],
         "Reserved" => vec![0; 8],
@@ -104,20 +106,89 @@ fn challenge_message() -> Component {
     ]
 }
 
-fn av_pair() -> Component {
-    component![
-        "AvId" => U16::LE(0),
-        "AvLen" => U16::LE(0),
-        "Value" => Vec::<u8>::new()
-    ]
-}
-
+/// This function is a shortcut to get a particular field from the payload field
 fn get_payload_field(message: &Component, length: u16, buffer_offset: u32) -> RdpResult<&[u8]> {
     let payload = cast!(DataType::Slice, message["Payload"])?;
     let offset = message.length() as usize - payload.len();
     let start = buffer_offset as usize - offset;
     let end = start + length as usize;
     Ok(&payload[start..end])
+}
+
+
+#[repr(u16)]
+#[derive(Eq, PartialEq, Hash, Debug)]
+enum AvId {
+    MsvAvEOL = 0x0000,
+    MsvAvNbComputerName = 0x0001,
+    MsvAvNbDomainName = 0x0002,
+    MsvAvDnsComputerName = 0x0003,
+    MsvAvDnsDomainName = 0x0004,
+    MsvAvDnsTreeName = 0x0005,
+    MsvAvFlags = 0x0006,
+    MsvAvTimestamp = 0x0007,
+    MsvAvSingleHost = 0x0008,
+    MsvAvTargetName = 0x0009,
+    MsvChannelBindings = 0x000A
+}
+
+impl AvId {
+    fn from(code: u16) -> RdpResult<AvId> {
+        match code {
+            0x0000 => Ok(AvId::MsvAvEOL),
+            0x0001 => Ok(AvId::MsvAvNbComputerName),
+            0x0002 => Ok(AvId::MsvAvNbDomainName),
+            0x0003 => Ok(AvId::MsvAvDnsComputerName),
+            0x0004 => Ok(AvId::MsvAvDnsDomainName),
+            0x0005 => Ok(AvId::MsvAvDnsTreeName),
+            0x0006 => Ok(AvId::MsvAvFlags),
+            0x0007 => Ok(AvId::MsvAvTimestamp),
+            0x0008 => Ok(AvId::MsvAvSingleHost),
+            0x0009 => Ok(AvId::MsvAvTargetName),
+            0x000A => Ok(AvId::MsvChannelBindings),
+            _ => Err(Error::RdpError(RdpError::new(RdpErrorKind::InvalidCast, "Invalid convertion for AvId")))
+        }
+    }
+}
+
+/// Av Pair is a Key Value pair structure
+/// present during NTLM exchange
+/// There is a lot of meta information about server
+/// https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-nlmp/83f5e789-660d-4781-8491-5f8c6641f75e?redirectedfrom=MSDN
+fn av_pair() -> Component {
+    component![
+        "AvId" => U16::LE(0),
+        "AvLen" => DynOption::new(U16::LE(0), |node| {
+            MessageOption::Size("Value".to_string(), node.get() as usize)
+        }),
+        "Value" => Vec::<u8>::new()
+    ]
+}
+
+/// Read all AvId structure into the stream
+///
+/// The format expect to wait the AvId::MsvAvEOL id
+/// return all avid key value pair from a stream
+fn read_target_info(data: &[u8]) -> RdpResult<HashMap<AvId, Vec<u8>>> {
+    let mut stream = Cursor::new(data);
+    let mut result = HashMap::new();
+    while true {
+        let mut element = av_pair();
+        element.read(&mut stream);
+        let av_id = AvId::from(cast!(DataType::U16, element["AvId"])?)?;
+        if av_id == AvId::MsvAvEOL {
+            break;
+        }
+
+        result.insert(av_id, cast!(DataType::Slice, element["Value"])?.to_vec());
+    }
+    return Ok(result);
+}
+
+fn md4(data: &[u8]) -> Vec<u8>{
+    let mut hasher = Md4::new();
+    hasher.input(data);
+    hasher.result().to_vec()
 }
 
 pub struct Ntlm {
@@ -163,11 +234,15 @@ impl AuthenticationProtocol  for Ntlm {
             cast!(DataType::U32, result["TargetNameBufferOffset"])?
         )?;
 
-        let target_info = get_payload_field(
-            &result,
-            cast!(DataType::U16, result["TargetInfoLen"])?,
-            cast!(DataType::U32, result["TargetInfoBufferOffset"])?
+        let target_info = read_target_info(
+            get_payload_field(
+                &result,
+                cast!(DataType::U16, result["TargetInfoLen"])?,
+                cast!(DataType::U32, result["TargetInfoBufferOffset"])?
+            )?
         )?;
+
+
 
         println!("foo {:?}", target_info);
         Ok(())
