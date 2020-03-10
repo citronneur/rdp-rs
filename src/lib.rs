@@ -5,6 +5,7 @@ extern crate native_tls;
 extern crate md4;
 extern crate hmac;
 extern crate md5;
+extern crate rand;
 
 #[macro_use]
 pub mod core;

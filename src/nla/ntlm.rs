@@ -6,7 +6,7 @@ use std::collections::HashMap;
 use md4::{Md4, Digest};
 use hmac::{Hmac, Mac};
 use md5::Md5;
-use std::ops::Add;
+use rand::Rng;
 
 #[repr(u32)]
 enum Negotiate {
@@ -301,6 +301,13 @@ fn compute_response_v2(
     (nt_challenge_response, lm_challenge_response, session_base_key)
 }
 
+/// This is a function described in specification
+///
+/// This is just ton follow specification
+fn kx_key_v2(session_base_key: &[u8], lm_challenge_response: &[u8], server_challenge: &[u8]) -> &[u8] {
+    session_base_key
+}
+
 pub struct Ntlm {
     response_key_nt: Vec<u8>,
     response_key_lm: Vec<u8>
@@ -364,11 +371,17 @@ impl AuthenticationProtocol  for Ntlm {
         )?;
 
         let timestamp = if target_info.contains_key(&AvId::MsvAvTimestamp) {
-           target_info[&AvId::MsvAvTimestamp].clone()
+            target_info[&AvId::MsvAvTimestamp].clone()
         }
         else {
-            vec![0,1]
+            panic!("no timestamp available")
         };
+
+        // generate client challenge
+        let mut rng = rand::thread_rng();
+        let client_challenge : Vec<u8> = (0..64).map(|_| rng.gen()).collect();
+
+        let response = compute_response_v2(&self.response_key_nt, &self.response_key_lm, &server_challenge, &client_challenge, &timestamp, &target_name);
 
         println!("foo {:?}", target_info);
         Ok(())
