@@ -81,7 +81,7 @@ impl<S: Read + Write> Client<S> {
     pub fn start_nla(self) -> RdpResult<Client<S>> {
 
         let mut link = self.transport.start_ssl()?;
-        let ntlm_layer = Ntlm::new(&"".to_string(), &"sylvain".to_string(), &"sylvain".to_string());
+        let ntlm_layer = Ntlm::new("".to_string(), "sylvain".to_string(), "sylvain".to_string());
 
         let x = create_ts_request(ntlm_layer.create_negotiate_message()?);
 

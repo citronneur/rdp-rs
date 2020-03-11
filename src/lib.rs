@@ -6,6 +6,7 @@ extern crate md4;
 extern crate hmac;
 extern crate md5;
 extern crate rand;
+extern crate crypto;
 
 #[macro_use]
 pub mod core;

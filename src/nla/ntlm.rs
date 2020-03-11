@@ -5,8 +5,10 @@ use core::error::{RdpResult, RdpError, RdpErrorKind, Error};
 use std::collections::HashMap;
 use md4::{Md4, Digest};
 use hmac::{Hmac, Mac};
-use md5::Md5;
-use rand::Rng;
+use md5::{Md5};
+use core::rnd::{random};
+use crypto::rc4::{Rc4};
+use crypto::symmetriccipher::SynchronousStreamCipher;
 
 #[repr(u32)]
 enum Negotiate {
@@ -304,11 +306,23 @@ fn compute_response_v2(
 /// This is a function described in specification
 ///
 /// This is just ton follow specification
-fn kx_key_v2(session_base_key: &[u8], lm_challenge_response: &[u8], server_challenge: &[u8]) -> &[u8] {
-    session_base_key
+fn kx_key_v2(session_base_key: &[u8], lm_challenge_response: &[u8], server_challenge: &[u8]) -> Vec<u8> {
+    session_base_key.to_vec()
+}
+
+/// This a one shot RC4 function
+///
+/// This a convenient method to follow specification
+fn rc4k(key: &[u8], plaintext: &[u8]) -> Vec<u8> {
+    let mut result = vec![0; plaintext.len()];
+    let mut rc4_handle = Rc4::new(key);
+    rc4_handle.process(&plaintext, &mut result);
+    result
 }
 
 pub struct Ntlm {
+    domain: String,
+    user: String,
     response_key_nt: Vec<u8>,
     response_key_lm: Vec<u8>
 }
@@ -323,10 +337,12 @@ impl Ntlm {
     /// ```rust, ignore
     /// let auth_layer = Ntlm::new("domain".to_string(), "user".to_string(), "password".to_string())
     /// ```
-    pub fn new(domain: &String, user: &String, password: &String) -> Self {
+    pub fn new(domain: String, user: String, password: String) -> Self {
         Ntlm {
-            response_key_nt: ntowfv2(password, user, domain),
-            response_key_lm: lmowfv2(password, user, domain)
+            response_key_nt: ntowfv2(&password, &user, &domain),
+            response_key_lm: lmowfv2(&password, &user, &domain),
+            domain,
+            user,
         }
     }
 }
@@ -378,12 +394,32 @@ impl AuthenticationProtocol  for Ntlm {
         };
 
         // generate client challenge
-        let mut rng = rand::thread_rng();
-        let client_challenge : Vec<u8> = (0..64).map(|_| rng.gen()).collect();
+        let client_challenge = random(64);
 
         let response = compute_response_v2(&self.response_key_nt, &self.response_key_lm, &server_challenge, &client_challenge, &timestamp, &target_name);
+        let nt_challenge_response = response.0;
+        let lm_challenge_response = response.1;
+        let session_base_key = response.2;
+        let key_exchange_key = kx_key_v2(&session_base_key, &lm_challenge_response, &server_challenge);
+        let exported_session_key = random(128);
+        let encrypted_random_session_key = rc4k(&key_exchange_key, &exported_session_key);
+        
+        let is_unicode = cast!(DataType::U32, result["NegotiateFlags"])? & Negotiate::NtlmsspNegociateUnicode as u32 == 1;
 
-        println!("foo {:?}", target_info);
+        let domain = if is_unicode {
+            unicode(&self.domain)
+        } else {
+            self.domain.as_bytes().to_vec()
+        };
+
+        let user = if is_unicode {
+            unicode(&self.user)
+        } else {
+            self.user.as_bytes().to_vec()
+        };
+
+
+
         Ok(())
     }
 }
@@ -397,7 +433,7 @@ mod test {
     #[test]
     fn test_ntlmv2_negotiate_message() {
         let mut buffer = Cursor::new(Vec::new());
-        Ntlm::new(&"".to_string(), &"".to_string(), &"".to_string()).create_negotiate_message().unwrap().write(&mut buffer).unwrap();
+        Ntlm::new("".to_string(), "".to_string(), "".to_string()).create_negotiate_message().unwrap().write(&mut buffer).unwrap();
         assert_eq!(buffer.get_ref().as_slice(), [78, 84, 76, 77, 83, 83, 80, 0, 1, 0, 0, 0, 53, 130, 8, 96, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
     }
 
@@ -438,5 +474,11 @@ mod test {
         assert_eq!(response.0, [0xb4, 0x23, 0x84, 0xf, 0x6e, 0x83, 0xc1, 0x5a, 0x45, 0x4f, 0x4c, 0x92, 0x7a, 0xf2, 0xc3, 0x3e, 0x1, 0x1, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x65, 0x64, 0x0, 0x0, 0x0, 0x0, 0x66]);
         assert_eq!(response.1, [0x56, 0xba, 0xff, 0x2d, 0x98, 0xbe, 0xcd, 0xa5, 0x6d, 0xe6, 0x17, 0x89, 0xe1, 0xed, 0xca, 0xae, 0x64]);
         assert_eq!(response.2, [0x40, 0x3b, 0x33, 0xe5, 0x24, 0x34, 0x3c, 0xc3, 0x24, 0xa0, 0x4d, 0x77, 0x75, 0x34, 0xa4, 0xd0]);
+    }
+
+    /// Test of rc4k function
+    #[test]
+    fn test_rc4k() {
+        assert_eq!(rc4k(b"foo", b"bar"), [201, 67, 159])
     }
 }
