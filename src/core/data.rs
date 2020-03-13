@@ -628,6 +628,12 @@ impl<T: Message> Message for DynOption<T> {
 }
 
 
+pub fn to_vec(message: &Message) -> Vec<u8> {
+    let mut stream = Cursor::new(Vec::new());
+    message.write(&mut stream);
+    stream.into_inner()
+}
+
 #[cfg(test)]
 mod test {
     use super::*;

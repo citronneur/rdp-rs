@@ -1,5 +1,6 @@
 use nla::asn1::{ASN1, Sequence, ExplicitTag, SequenceOf, ASN1Type, OctetString};
-use core::error::{RdpError, RdpErrorKind, Error};
+use core::error::{RdpError, RdpErrorKind, Error, RdpResult};
+use num_bigint::BigUint;
 use yasna::Tag;
 
 pub fn create_ts_request(nego: Vec<u8>) -> Vec<u8> {
@@ -14,6 +15,23 @@ pub fn create_ts_request(nego: Vec<u8>) -> Vec<u8> {
     ];
     yasna::construct_der(|writer| {
         ts_request.write_asn1(writer);
+    })
+}
+
+pub fn create_ts_challenge(nego: &[u8], pub_key_auth: &[u8]) -> Vec<u8> {
+    let ts_challenge = sequence![
+        "version" => ExplicitTag::new(Tag::context(0), 2),
+        "negoTokens" => ExplicitTag::new(Tag::context(1),
+            sequence_of![
+                sequence![
+                    "negoToken" => ExplicitTag::new(Tag::context(0), nego.to_vec() as OctetString)
+                ]
+            ]),
+        "pubKeyAuth" => ExplicitTag::new(Tag::context(3), pub_key_auth.to_vec() as OctetString)
+    ];
+
+    yasna::construct_der(|writer| {
+        ts_challenge.write_asn1(writer);
     })
 }
 
@@ -39,6 +57,23 @@ pub fn read_ts_request(stream: &[u8]) -> Vec<u8> {
     let first_nego_tokens = cast!(ASN1Type::Sequence, nego_tokens.inner[0]).unwrap();
     let nego_token = cast!(ASN1Type::OctetString, first_nego_tokens["negoToken"]).unwrap();
     nego_token.to_vec()
+}
+
+pub fn read_public_certificate(stream: &[u8]) -> RdpResult<Sequence> {
+    let mut certificate = sequence![
+        "unknown" => BigUint::from_bytes_be(b"\x00"),
+        "modulus" => BigUint::from_bytes_be(b"\x00"),
+        "publicExponent" => BigUint::from_bytes_be(b"\x00")
+    ];
+
+    yasna::parse_der(stream, |reader| {
+        if let Err(Error::ASN1Error(e)) = certificate.read_asn1(reader) {
+            return Err(e)
+        }
+        Ok(())
+    })?;
+
+    Ok(certificate)
 }
 
 #[cfg(test)]

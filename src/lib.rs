@@ -7,6 +7,7 @@ extern crate hmac;
 extern crate md5;
 extern crate rand;
 extern crate crypto;
+extern crate num_bigint;
 
 #[macro_use]
 pub mod core;

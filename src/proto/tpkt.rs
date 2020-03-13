@@ -1,10 +1,11 @@
 use core::link::{Link};
 use core::data::{Message, U16, Component, Trame};
 use core::error::{RdpResult, RdpError, RdpErrorKind, Error};
+use nla::asn1::ASN1Type;
 use std::io::{Cursor, Write, Read};
 use nla::ntlm::Ntlm;
 use nla::sspi::AuthenticationProtocol;
-use nla::cssp::{create_ts_request, read_ts_request};
+use nla::cssp::{create_ts_request, read_ts_request, create_ts_challenge, read_public_certificate};
 
 /// TPKT action header
 /// # see : https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-rdpbcgr/b8e7c588-51cb-455b-bb73-92d480903133
@@ -81,15 +82,34 @@ impl<S: Read + Write> Client<S> {
     pub fn start_nla(self) -> RdpResult<Client<S>> {
 
         let mut link = self.transport.start_ssl()?;
-        let ntlm_layer = Ntlm::new("".to_string(), "sylvain".to_string(), "sylvain".to_string());
+        let mut ntlm_layer = Ntlm::new("".to_string(), "sylvain".to_string(), "sylvain".to_string());
 
-        let x = create_ts_request(ntlm_layer.create_negotiate_message()?);
+        // send connection request
+        let request = create_ts_request(ntlm_layer.create_negotiate_message()?);
+        link.send(request)?;
 
-        link.send(x)?;
+        // receive challenge
+        let response = read_ts_request(&(link.recv(0)?));
+        let challenge_payload = ntlm_layer.read_challenge_message(&response)?;
 
-        // try to receive all available data
-        ntlm_layer.read_challenge_message(read_ts_request(link.recv(0)?.as_slice()).as_slice());
+        // now we need to build the security interface for auth protocol
+        let mut security_interface = ntlm_layer.build_security_interface();
 
+        let certificate = if let Some(certificate) = link.get_peer_certificate()? {
+            certificate
+        }
+        else {
+            return Err(Error::RdpError(RdpError::new(RdpErrorKind::InvalidProtocol, "Unable to retrieve SSL peer certificate")))
+        };
+        println!("{:?}", certificate.to_der()?);
+        let parsed_cert = read_public_certificate(&certificate.to_der()?)?;
+        println!("{:?}", cast!(ASN1Type::BigUint, parsed_cert["publicExponent"])?);
+
+        let challenge = create_ts_challenge(&challenge_payload, &(security_interface.gss_wrapex(&(certificate.to_der()?))));
+
+        link.send(challenge)?;
+
+        println!("{:?}", link.recv(0)?);
         Ok(Client::new(link))
     }
 }

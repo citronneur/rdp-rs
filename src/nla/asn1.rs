@@ -1,12 +1,14 @@
 use yasna::{Tag, DERWriter, BERReader, ASN1Error, ASN1ErrorKind};
 use core::error::{RdpResult, RdpError, Error};
 use indexmap::map::IndexMap;
+use num_bigint::BigUint;
 
 pub enum ASN1Type<'a> {
     Sequence(&'a Sequence),
     SequenceOf(&'a SequenceOf),
     U32(u32),
-    OctetString(&'a OctetString)
+    OctetString(&'a OctetString),
+    BigUint(&'a BigUint)
 }
 
 pub trait ASN1 {
@@ -156,6 +158,7 @@ impl ASN1 for Sequence {
     fn read_asn1(&mut self, reader: BERReader) -> RdpResult<()> {
         reader.read_sequence(|sequence_reader| {
             for (_name, child) in self.into_iter() {
+                println!("{:?}", _name);
                 if let Err(Error::ASN1Error(e)) = child.read_asn1(sequence_reader.next()) {
                     return Err(e)
                 }
@@ -168,6 +171,22 @@ impl ASN1 for Sequence {
         ASN1Type::Sequence(self)
     }
 }
+
+impl ASN1 for BigUint {
+    fn write_asn1(&self, writer: DERWriter) -> RdpResult<()> {
+        writer.write_biguint(self);
+        Ok(())
+    }
+    fn read_asn1(&mut self, reader: BERReader) -> RdpResult<()> {
+        println!("foo");
+        *self = reader.read_biguint()?;
+        Ok(())
+    }
+    fn visit(&self) -> ASN1Type {
+        ASN1Type::BigUint(self)
+    }
+}
+
 
 #[macro_export]
 macro_rules! sequence {

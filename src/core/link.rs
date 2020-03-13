@@ -2,7 +2,7 @@ extern crate native_tls;
 
 use core::error::{RdpResult, Error, RdpError, RdpErrorKind};
 use std::io::{Cursor, Read, Write};
-use self::native_tls::{TlsConnector, TlsStream};
+use self::native_tls::{TlsConnector, TlsStream, Certificate};
 use core::data::{Message};
 
 pub enum Stream<S> {
@@ -77,5 +77,14 @@ impl<S: Read + Write> Link<S> {
             return Ok(Link::new(Stream::Ssl(connector.connect("", stream)?)))
         }
         Err(Error::RdpError(RdpError::new(RdpErrorKind::NotImplemented, "start_ssl on ssl stream is forbidden")))
+    }
+
+    pub fn get_peer_certificate(&self) -> RdpResult<Option<Certificate>> {
+        if let Stream::Ssl(stream) = &self.stream {
+            Ok(stream.peer_certificate()?)
+        }
+        else {
+            Err(Error::RdpError(RdpError::new(RdpErrorKind::InvalidData, "get peer certificate on non ssl link is impossible")))
+        }
     }
 }
