@@ -10,6 +10,7 @@ use core::rnd::{random};
 use crypto::rc4::{Rc4};
 use crypto::symmetriccipher::SynchronousStreamCipher;
 use crypto::ed25519::signature;
+use std::path::Component::CurDir;
 
 #[repr(u32)]
 enum Negotiate {
@@ -119,28 +120,33 @@ fn challenge_message() -> Component {
 /// separatly the packet and the payload
 fn authenticate_message(lm_challenge_response: &[u8], nt_challenge_response:&[u8], domain: &[u8], user: &[u8], workstation: &[u8], encrypted_random_session_key: &[u8], flags: u32) -> (Component, Vec<u8>) {
     let payload = [lm_challenge_response.to_vec(), nt_challenge_response.to_vec(), domain.to_vec(), user.to_vec(), workstation.to_vec(), encrypted_random_session_key.to_vec()].concat();
+    let offset = if flags & (Negotiate::NtlmsspNegociateVersion as u32) == 0 {
+        80
+    } else {
+        88
+    };
 
     (component![
         "Signature" => Check::new(b"NTLMSSP\x00".to_vec()),
         "MessageType" => Check::new(U32::LE(3)),
         "LmChallengeResponseLen" => U16::LE(lm_challenge_response.len() as u16),
         "LmChallengeResponseMaxLen" => U16::LE(lm_challenge_response.len() as u16),
-        "LmChallengeResponseBufferOffset" => U32::LE(0),
+        "LmChallengeResponseBufferOffset" => U32::LE(offset),
         "NtChallengeResponseLen" => U16::LE(nt_challenge_response.len() as u16),
         "NtChallengeResponseMaxLen" => U16::LE(nt_challenge_response.len() as u16),
-        "NtChallengeResponseBufferOffset" => U32::LE(lm_challenge_response.len() as u32),
+        "NtChallengeResponseBufferOffset" => U32::LE(offset + lm_challenge_response.len() as u32),
         "DomainNameLen" => U16::LE(domain.len() as u16),
         "DomainNameMaxLen" => U16::LE(domain.len() as u16),
-        "DomainNameBufferOffset" => U32::LE((lm_challenge_response.len() + nt_challenge_response.len()) as u32),
+        "DomainNameBufferOffset" => U32::LE(offset + (lm_challenge_response.len() + nt_challenge_response.len()) as u32),
         "UserNameLen" => U16::LE(user.len() as u16),
         "UserNameMaxLen" => U16::LE(user.len() as u16),
-        "UserNameBufferOffset" => U32::LE((lm_challenge_response.len() + nt_challenge_response.len() + domain.len()) as u32),
+        "UserNameBufferOffset" => U32::LE(offset + (lm_challenge_response.len() + nt_challenge_response.len() + domain.len()) as u32),
         "WorkstationLen" => U16::LE(workstation.len() as u16),
         "WorkstationMaxLen" => U16::LE(workstation.len() as u16),
-        "WorkstationBufferOffset" => U32::LE((lm_challenge_response.len() + nt_challenge_response.len() + domain.len() + user.len()) as u32),
+        "WorkstationBufferOffset" => U32::LE(offset + (lm_challenge_response.len() + nt_challenge_response.len() + domain.len() + user.len()) as u32),
         "EncryptedRandomSessionLen" => U16::LE(encrypted_random_session_key.len() as u16),
         "EncryptedRandomSessionMaxLen" => U16::LE(encrypted_random_session_key.len() as u16),
-        "EncryptedRandomSessionBufferOffset" => U32::LE((lm_challenge_response.len() + nt_challenge_response.len() + domain.len() + user.len() + workstation.len()) as u32),
+        "EncryptedRandomSessionBufferOffset" => U32::LE(offset + (lm_challenge_response.len() + nt_challenge_response.len() + domain.len() + user.len() + workstation.len()) as u32),
         "NegotiateFlags" => DynOption::new(U32::LE(flags), |node| {
             if node.get() & (Negotiate::NtlmsspNegociateVersion as u32) == 0 {
                 return MessageOption::SkipField("Version".to_string())
@@ -487,6 +493,7 @@ impl AuthenticationProtocol  for Ntlm {
     }
 
     fn read_challenge_message(&mut self, request: &[u8]) -> RdpResult<Vec<u8>> {
+
         let mut stream = Cursor::new(request);
         let mut result = challenge_message();
         result.read(&mut stream);
@@ -495,8 +502,8 @@ impl AuthenticationProtocol  for Ntlm {
 
         let target_name = get_payload_field(
             &result,
-            cast!(DataType::U16, result["TargetNameLen"])?,
-            cast!(DataType::U32, result["TargetNameBufferOffset"])?
+            cast!(DataType::U16, result["TargetInfoLen"])?,
+            cast!(DataType::U32, result["TargetInfoBufferOffset"])?
         )?;
 
         let target_info = read_target_info(
@@ -515,14 +522,15 @@ impl AuthenticationProtocol  for Ntlm {
         };
 
         // generate client challenge
-        let client_challenge = random(64);
+        let client_challenge = random(8);
 
         let response = compute_response_v2(&self.response_key_nt, &self.response_key_lm, &server_challenge, &client_challenge, &timestamp, &target_name);
         let nt_challenge_response = response.0;
         let lm_challenge_response = response.1;
         let session_base_key = response.2;
         let key_exchange_key = kx_key_v2(&session_base_key, &lm_challenge_response, &server_challenge);
-        self.exported_session_key = Some(random(128));
+        self.exported_session_key = Some(random(16));
+
         let encrypted_random_session_key = rc4k(&key_exchange_key, self.exported_session_key.as_ref().unwrap());
         
         let is_unicode = cast!(DataType::U32, result["NegotiateFlags"])? & Negotiate::NtlmsspNegociateUnicode as u32 == 1;
@@ -542,7 +550,7 @@ impl AuthenticationProtocol  for Ntlm {
         let auth_message_compute = authenticate_message(&lm_challenge_response, &nt_challenge_response, &domain, &user, b"", &encrypted_random_session_key, cast!(DataType::U32, result["NegotiateFlags"])?);
 
         // need to write a tmp message to compute MIC and then include it into final message
-        let tmp_final_auth_message = to_vec(&trame![to_vec(&auth_message_compute.0), vec![0, 16], auth_message_compute.1.clone()]);
+        let tmp_final_auth_message = to_vec(&trame![to_vec(&auth_message_compute.0), vec![0; 16], auth_message_compute.1.clone()]);
 
         let signature = mic(self.exported_session_key.as_ref().unwrap(), self.negotiate_message.as_ref().unwrap(), request, &tmp_final_auth_message);
         Ok(to_vec(&trame![auth_message_compute.0, signature, auth_message_compute.1]))
@@ -595,17 +603,49 @@ impl NTLMv2SecurityInterface {
 }
 
 impl GenericSecurityService for NTLMv2SecurityInterface {
-    fn gss_wrapex(&mut self, data: &[u8]) -> Vec<u8> {
-
+    /// This is the main encrypt function
+    /// This will also compute the signing
+    ///
+    /// # Example
+    /// ```
+    /// extern crate crypto;
+    /// use rdp::nla::ntlm::NTLMv2SecurityInterface;
+    /// use crypto::rc4::Rc4;
+    /// use rdp::nla::sspi::GenericSecurityService;
+    /// let mut interface = NTLMv2SecurityInterface::new(Rc4::new(b"encrypt"), Rc4::new(b"decrypt"), b"signing".to_vec(), b"verify".to_vec());
+    /// assert_eq!(interface.gss_wrapex(b"foo"), [1, 0, 0, 0, 142, 146, 37, 160, 247, 244, 100, 58, 0, 0, 0, 0, 87, 164, 208])
+    /// ```
+    fn gss_wrapex(&mut self, data: &[u8]) -> RdpResult<Vec<u8>> {
         let mut encrypted_data = vec![0; data.len()];
         self.encrypt.process(data, &mut encrypted_data);
         let signature = mac(&mut self.encrypt, &self.signing_key, self.seq_num, data);
         self.seq_num = self.seq_num + 1;
-        to_vec(&trame![encrypted_data, signature])
+        Ok(to_vec(&trame![signature, encrypted_data]))
     }
 
-    fn gss_unwrapex(&mut self, data: &[u8]) -> Vec<u8> {
-        unimplemented!()
+    fn gss_unwrapex(&mut self, data: &[u8]) -> RdpResult<Vec<u8>> {
+        let mut signature = message_signature_ex(None, None);
+        let mut payload = Vec::<u8>::new();
+
+        let mut stream = Cursor::new(data);
+        signature.read(&mut stream)?;
+        payload.read(&mut stream)?;
+
+        let mut plaintext_payload = vec![0; payload.len()];
+        self.decrypt.process(&payload, &mut plaintext_payload);
+
+        let checksum = cast!(DataType::Slice, signature["Checksum"])?;
+        let mut plaintext_checksum = vec![0; checksum.len()];
+        self.decrypt.process(checksum, &mut plaintext_checksum);
+
+        // compute signature
+        let seq_num = to_vec(&U32::LE(cast!(DataType::U32, signature["SeqNum"])?));
+        let computed_checksum = hmac_md5(&self.verify_key, &[seq_num, plaintext_payload.clone()].concat());
+
+        if plaintext_checksum.as_slice() != &(computed_checksum[0..8]) {
+            return Err(Error::RdpError(RdpError::new(RdpErrorKind::InvalidChecksum, "Invalid checksum on NTLMv2")))
+        }
+        Ok(plaintext_payload)
     }
 }
 
@@ -678,7 +718,7 @@ mod test {
     #[test]
     fn test_seal_key() {
         assert_eq!(seal_key(b"foo", true), [20, 213, 185, 176, 168, 142, 134, 244, 36, 249, 89, 247, 180, 36, 162, 101]);
-        assert_eq!(seal_key(b"foo", false), [64, 125, 160, 17, 144, 165, 62, 226, 22, 125, 128, 31, 103, 141, 55, 40])
+        assert_eq!(seal_key(b"foo", false), [64, 125, 160, 17, 144, 165, 62, 226, 22, 125, 128, 31, 103, 141, 55, 40]);
     }
 
     /// Test signature function
@@ -686,4 +726,16 @@ mod test {
     fn test_mac() {
         assert_eq!(mac(&mut Rc4::new(b"foo"), b"bar", 0, b"data"), [1, 0, 0, 0, 77, 211, 144, 84, 51, 242, 202, 176, 0, 0, 0, 0])
     }
+
+    /// Test challenge message
+    #[test]
+    fn test_auth_message() {
+        let result = authenticate_message(b"foo", b"foo", b"domain", b"user", b"workstation", b"foo", 0);
+        let compare_result = [to_vec(&result.0), vec![0; 16], result.1].concat();
+        assert_eq!(compare_result[0..32], [78, 84, 76, 77, 83, 83, 80, 0, 3, 0, 0, 0, 3, 0, 3, 0, 80, 0, 0, 0, 3, 0, 3, 0, 83, 0, 0, 0, 6, 0, 6, 0]);
+        assert_eq!(compare_result[32..64], [86, 0, 0, 0, 4, 0, 4, 0, 92, 0, 0, 0, 11, 0, 11, 0, 96, 0, 0, 0, 3, 0, 3, 0, 107, 0, 0, 0, 0, 0, 0, 0]);
+        assert_eq!(compare_result[64..96], [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 102, 111, 111, 102, 111, 111, 100, 111, 109, 97, 105, 110, 117, 115, 101, 114]);
+        assert_eq!(compare_result[96..110], [119, 111, 114, 107, 115, 116, 97, 116, 105, 111, 110, 102, 111, 111]);
+    }
+
 }

@@ -8,6 +8,7 @@ extern crate md5;
 extern crate rand;
 extern crate crypto;
 extern crate num_bigint;
+extern crate x509_parser;
 
 #[macro_use]
 pub mod core;

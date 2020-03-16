@@ -5,7 +5,7 @@ use nla::asn1::ASN1Type;
 use std::io::{Cursor, Write, Read};
 use nla::ntlm::Ntlm;
 use nla::sspi::AuthenticationProtocol;
-use nla::cssp::{create_ts_request, read_ts_request, create_ts_challenge, read_public_certificate};
+use nla::cssp::{create_ts_request, read_ts_server_challenge, create_ts_authenticate, read_public_certificate, read_ts_validate};
 
 /// TPKT action header
 /// # see : https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-rdpbcgr/b8e7c588-51cb-455b-bb73-92d480903133
@@ -89,7 +89,8 @@ impl<S: Read + Write> Client<S> {
         link.send(request)?;
 
         // receive challenge
-        let response = read_ts_request(&(link.recv(0)?));
+        let response = read_ts_server_challenge(&(link.recv(0)?));
+
         let challenge_payload = ntlm_layer.read_challenge_message(&response)?;
 
         // now we need to build the security interface for auth protocol
@@ -101,15 +102,16 @@ impl<S: Read + Write> Client<S> {
         else {
             return Err(Error::RdpError(RdpError::new(RdpErrorKind::InvalidProtocol, "Unable to retrieve SSL peer certificate")))
         };
-        println!("{:?}", certificate.to_der()?);
-        let parsed_cert = read_public_certificate(&certificate.to_der()?)?;
-        println!("{:?}", cast!(ASN1Type::BigUint, parsed_cert["publicExponent"])?);
 
-        let challenge = create_ts_challenge(&challenge_payload, &(security_interface.gss_wrapex(&(certificate.to_der()?))));
+        let der = certificate.to_der()?;
+        let parsed_cert = read_public_certificate(&der)?;
+
+        let challenge = create_ts_authenticate(&challenge_payload, &(security_interface.gss_wrapex(parsed_cert.tbs_certificate.subject_pki.subject_public_key.data)?));
 
         link.send(challenge)?;
 
-        println!("{:?}", link.recv(0)?);
+        let inc_pub_key = security_interface.gss_unwrapex(&(read_ts_validate(&(link.recv(0)?))?))?;
+
         Ok(Client::new(link))
     }
 }

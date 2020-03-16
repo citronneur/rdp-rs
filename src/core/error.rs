@@ -16,7 +16,8 @@ pub enum RdpErrorKind {
     InvalidAutomata,
     InvalidProtocol,
     InvalidCast,
-    InvalidConst
+    InvalidConst,
+    InvalidChecksum
 }
 
 #[derive(Debug)]

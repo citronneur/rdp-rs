@@ -158,7 +158,6 @@ impl ASN1 for Sequence {
     fn read_asn1(&mut self, reader: BERReader) -> RdpResult<()> {
         reader.read_sequence(|sequence_reader| {
             for (_name, child) in self.into_iter() {
-                println!("{:?}", _name);
                 if let Err(Error::ASN1Error(e)) = child.read_asn1(sequence_reader.next()) {
                     return Err(e)
                 }

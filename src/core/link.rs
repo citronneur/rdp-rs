@@ -26,12 +26,11 @@ impl<S: Read + Write> Stream<S> {
         }
     }
 
-    pub fn write(&mut self, buffer: &[u8]) -> RdpResult<()> {
-        match self {
+    pub fn write(&mut self, buffer: &[u8]) -> RdpResult<usize> {
+        Ok(match self {
             Stream::Raw(e) => e.write(buffer)?,
             Stream::Ssl(e) => e.write(buffer)?
-        };
-        Ok(())
+        })
     }
 }
 
@@ -50,13 +49,13 @@ impl<S: Read + Write> Link<S> {
     where T: Message {
         let mut buffer = Cursor::new(Vec::new());
         message.write(&mut buffer)?;
-        self.stream.write(buffer.get_ref().as_slice())?;
+        self.stream.write(buffer.into_inner().as_slice())?;
         Ok(())
     }
 
     pub fn recv(&mut self, expected_size: usize) -> RdpResult<Vec<u8>> {
         if expected_size == 0 {
-            let mut buffer = vec![0; 1512];
+            let mut buffer = vec![0; 1500];
             let size = self.stream.read(&mut buffer)?;
             buffer.resize(size, 0);
             Ok(buffer)
@@ -71,6 +70,9 @@ impl<S: Read + Write> Link<S> {
     pub fn start_ssl(self) -> RdpResult<Link<S>> {
         let mut builder = TlsConnector::builder();
         builder.danger_accept_invalid_certs(true);
+        builder.use_sni(false);
+        builder.danger_accept_invalid_hostnames(true);
+
         let connector = builder.build()?;
 
         if let Stream::Raw(stream) = self.stream {

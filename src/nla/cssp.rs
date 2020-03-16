@@ -2,6 +2,7 @@ use nla::asn1::{ASN1, Sequence, ExplicitTag, SequenceOf, ASN1Type, OctetString};
 use core::error::{RdpError, RdpErrorKind, Error, RdpResult};
 use num_bigint::BigUint;
 use yasna::Tag;
+use x509_parser::{parse_x509_der, X509Certificate};
 
 pub fn create_ts_request(nego: Vec<u8>) -> Vec<u8> {
     let ts_request = sequence![
@@ -18,7 +19,7 @@ pub fn create_ts_request(nego: Vec<u8>) -> Vec<u8> {
     })
 }
 
-pub fn create_ts_challenge(nego: &[u8], pub_key_auth: &[u8]) -> Vec<u8> {
+pub fn create_ts_authenticate(nego: &[u8], pub_key_auth: &[u8]) -> Vec<u8> {
     let ts_challenge = sequence![
         "version" => ExplicitTag::new(Tag::context(0), 2),
         "negoTokens" => ExplicitTag::new(Tag::context(1),
@@ -36,7 +37,7 @@ pub fn create_ts_challenge(nego: &[u8], pub_key_auth: &[u8]) -> Vec<u8> {
 }
 
 
-pub fn read_ts_request(stream: &[u8]) -> Vec<u8> {
+pub fn read_ts_server_challenge(stream: &[u8]) -> Vec<u8> {
     let mut ts_request = sequence![
         "version" => ExplicitTag::new(Tag::context(0), 2),
         "negoTokens" => ExplicitTag::new(Tag::context(1),
@@ -59,21 +60,25 @@ pub fn read_ts_request(stream: &[u8]) -> Vec<u8> {
     nego_token.to_vec()
 }
 
-pub fn read_public_certificate(stream: &[u8]) -> RdpResult<Sequence> {
-    let mut certificate = sequence![
-        "unknown" => BigUint::from_bytes_be(b"\x00"),
-        "modulus" => BigUint::from_bytes_be(b"\x00"),
-        "publicExponent" => BigUint::from_bytes_be(b"\x00")
+pub fn read_public_certificate(stream: &[u8]) -> RdpResult<X509Certificate> {
+    let res = parse_x509_der(stream).unwrap();
+    Ok(res.1)
+}
+
+pub fn read_ts_validate(request: &[u8]) -> RdpResult<Vec<u8>> {
+    let mut ts_challenge = sequence![
+        "version" => ExplicitTag::new(Tag::context(0), 2),
+        "pubKeyAuth" => ExplicitTag::new(Tag::context(3), OctetString::new())
     ];
 
-    yasna::parse_der(stream, |reader| {
-        if let Err(Error::ASN1Error(e)) = certificate.read_asn1(reader) {
+    let x = yasna::parse_der(request, |reader| {
+        if let Err(Error::ASN1Error(e)) = ts_challenge.read_asn1(reader) {
             return Err(e)
         }
         Ok(())
-    })?;
-
-    Ok(certificate)
+    });
+    let pubkey = cast!(ASN1Type::OctetString, ts_challenge["pubKeyAuth"])?;
+    Ok(pubkey.to_vec())
 }
 
 #[cfg(test)]
