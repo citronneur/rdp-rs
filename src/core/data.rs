@@ -592,7 +592,6 @@ impl<T> DynOption<T> {
     ///     ];
     ///     let mut stream = Cursor::new(vec![1,0,0,0,1]);
     ///     message.read(&mut stream).unwrap();
-    ///     println!("{:?}", cast!(DataType::Slice, message["Value"]).unwrap());
     ///     assert_eq!(cast!(DataType::Slice, message["Value"]).unwrap().len(), 1);
     /// # }
     /// ```

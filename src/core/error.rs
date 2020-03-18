@@ -17,7 +17,9 @@ pub enum RdpErrorKind {
     InvalidProtocol,
     InvalidCast,
     InvalidConst,
-    InvalidChecksum
+    InvalidChecksum,
+    InvalidOptionalField,
+    PossibleMITM
 }
 
 #[derive(Debug)]
@@ -72,6 +74,18 @@ impl From<SslError> for Error {
 impl From<ASN1Error> for Error {
     fn from(e: ASN1Error) -> Error {
         Error::ASN1Error(e)
+    }
+}
+
+/// Try options is waiting try trait for the next rust
+#[macro_export]
+macro_rules! try_option {
+    ($val: expr, $expr: expr) => {
+         if let Some(x) = $val {
+            Ok(x)
+         } else {
+            Err(Error::RdpError(RdpError::new(RdpErrorKind::InvalidOptionalField, $expr)))
+         }
     }
 }
 

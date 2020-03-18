@@ -613,7 +613,7 @@ impl GenericSecurityService for NTLMv2SecurityInterface {
     /// use crypto::rc4::Rc4;
     /// use rdp::nla::sspi::GenericSecurityService;
     /// let mut interface = NTLMv2SecurityInterface::new(Rc4::new(b"encrypt"), Rc4::new(b"decrypt"), b"signing".to_vec(), b"verify".to_vec());
-    /// assert_eq!(interface.gss_wrapex(b"foo"), [1, 0, 0, 0, 142, 146, 37, 160, 247, 244, 100, 58, 0, 0, 0, 0, 87, 164, 208])
+    /// assert_eq!(interface.gss_wrapex(b"foo").unwrap(), [1, 0, 0, 0, 142, 146, 37, 160, 247, 244, 100, 58, 0, 0, 0, 0, 87, 164, 208])
     /// ```
     fn gss_wrapex(&mut self, data: &[u8]) -> RdpResult<Vec<u8>> {
         let mut encrypted_data = vec![0; data.len()];

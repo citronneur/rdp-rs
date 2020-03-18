@@ -5,7 +5,7 @@ use nla::asn1::ASN1Type;
 use std::io::{Cursor, Write, Read};
 use nla::ntlm::Ntlm;
 use nla::sspi::AuthenticationProtocol;
-use nla::cssp::{create_ts_request, read_ts_server_challenge, create_ts_authenticate, read_public_certificate, read_ts_validate};
+use nla::cssp::{create_ts_request, read_ts_server_challenge, create_ts_authenticate, read_public_certificate, read_ts_validate, cssp_connect};
 
 /// TPKT action header
 /// # see : https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-rdpbcgr/b8e7c588-51cb-455b-bb73-92d480903133
@@ -80,38 +80,9 @@ impl<S: Read + Write> Client<S> {
     }
 
     pub fn start_nla(self) -> RdpResult<Client<S>> {
-
         let mut link = self.transport.start_ssl()?;
         let mut ntlm_layer = Ntlm::new("".to_string(), "sylvain".to_string(), "sylvain".to_string());
-
-        // send connection request
-        let request = create_ts_request(ntlm_layer.create_negotiate_message()?);
-        link.send(request)?;
-
-        // receive challenge
-        let response = read_ts_server_challenge(&(link.recv(0)?));
-
-        let challenge_payload = ntlm_layer.read_challenge_message(&response)?;
-
-        // now we need to build the security interface for auth protocol
-        let mut security_interface = ntlm_layer.build_security_interface();
-
-        let certificate = if let Some(certificate) = link.get_peer_certificate()? {
-            certificate
-        }
-        else {
-            return Err(Error::RdpError(RdpError::new(RdpErrorKind::InvalidProtocol, "Unable to retrieve SSL peer certificate")))
-        };
-
-        let der = certificate.to_der()?;
-        let parsed_cert = read_public_certificate(&der)?;
-
-        let challenge = create_ts_authenticate(&challenge_payload, &(security_interface.gss_wrapex(parsed_cert.tbs_certificate.subject_pki.subject_public_key.data)?));
-
-        link.send(challenge)?;
-
-        let inc_pub_key = security_interface.gss_unwrapex(&(read_ts_validate(&(link.recv(0)?))?))?;
-
+        cssp_connect(&mut link, &mut ntlm_layer)?;
         Ok(Client::new(link))
     }
 }
