@@ -1,9 +1,9 @@
 extern crate native_tls;
 
-use core::error::{RdpResult, Error, RdpError, RdpErrorKind};
+use model::error::{RdpResult, Error, RdpError, RdpErrorKind};
 use std::io::{Cursor, Read, Write};
 use self::native_tls::{TlsConnector, TlsStream, Certificate};
-use core::data::{Message};
+use model::data::{Message};
 
 pub enum Stream<S> {
     Raw(S),

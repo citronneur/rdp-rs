@@ -1,5 +1,5 @@
 use yasna::{Tag, DERWriter, BERReader, ASN1Error, ASN1ErrorKind};
-use core::error::{RdpResult, RdpError, Error};
+use model::error::{RdpResult, RdpError, Error};
 use indexmap::map::IndexMap;
 use num_bigint::BigUint;
 

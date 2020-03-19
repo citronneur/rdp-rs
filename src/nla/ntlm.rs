@@ -1,12 +1,12 @@
 use nla::sspi::{AuthenticationProtocol, GenericSecurityService};
-use core::data::{Message, Component, U16, U32, Trame, DynOption, Check, DataType, MessageOption, to_vec};
+use model::data::{Message, Component, U16, U32, Trame, DynOption, Check, DataType, MessageOption, to_vec};
 use std::io::{Cursor, ErrorKind};
-use core::error::{RdpResult, RdpError, RdpErrorKind, Error};
+use model::error::{RdpResult, RdpError, RdpErrorKind, Error};
 use std::collections::HashMap;
 use md4::{Md4, Digest};
 use hmac::{Hmac, Mac};
 use md5::{Md5};
-use core::rnd::{random};
+use model::rnd::{random};
 use crypto::rc4::{Rc4};
 use crypto::symmetriccipher::SynchronousStreamCipher;
 use crypto::ed25519::signature;
@@ -436,9 +436,9 @@ fn seal_key(exported_session_key: &[u8], is_client: bool) -> Vec<u8> {
 fn mac(rc4_handle: &mut Rc4, signing_key: &[u8], seq_num: u32, data: &[u8]) -> Vec<u8> {
 
     let signature = hmac_md5(signing_key, &[to_vec(&U32::LE(seq_num)).as_slice(), data].concat());
-    let mut encryped_signature = vec![0; signature.len()];
+    let mut encryped_signature = vec![0; 8];
 
-    rc4_handle.process(&signature, &mut encryped_signature);
+    rc4_handle.process(&signature[0..8], &mut encryped_signature);
 
     to_vec(&message_signature_ex(Some(&encryped_signature), Some(seq_num)))
 }
@@ -446,10 +446,12 @@ fn mac(rc4_handle: &mut Rc4, signing_key: &[u8], seq_num: u32, data: &[u8]) -> V
 pub struct Ntlm {
     domain: String,
     user: String,
+    password: String,
     response_key_nt: Vec<u8>,
     response_key_lm: Vec<u8>,
     negotiate_message: Option<Vec<u8>>,
-    exported_session_key: Option<Vec<u8>>
+    exported_session_key: Option<Vec<u8>>,
+    is_unicode: bool
 }
 
 impl Ntlm {
@@ -468,8 +470,10 @@ impl Ntlm {
             response_key_lm: lmowfv2(&password, &user, &domain),
             domain,
             user,
+            password,
             negotiate_message: None,
-            exported_session_key: None
+            exported_session_key: None,
+            is_unicode: false
         }
     }
 }
@@ -496,7 +500,7 @@ impl AuthenticationProtocol  for Ntlm {
 
         let mut stream = Cursor::new(request);
         let mut result = challenge_message();
-        result.read(&mut stream);
+        result.read(&mut stream)?;
 
         let server_challenge = cast!(DataType::Slice, result["ServerChallenge"])?;
 
@@ -533,19 +537,10 @@ impl AuthenticationProtocol  for Ntlm {
 
         let encrypted_random_session_key = rc4k(&key_exchange_key, self.exported_session_key.as_ref().unwrap());
         
-        let is_unicode = cast!(DataType::U32, result["NegotiateFlags"])? & Negotiate::NtlmsspNegociateUnicode as u32 == 1;
+        self.is_unicode = cast!(DataType::U32, result["NegotiateFlags"])? & Negotiate::NtlmsspNegociateUnicode as u32 == 1;
 
-        let domain = if is_unicode {
-            unicode(&self.domain)
-        } else {
-            self.domain.as_bytes().to_vec()
-        };
-
-        let user = if is_unicode {
-            unicode(&self.user)
-        } else {
-            self.user.as_bytes().to_vec()
-        };
+        let domain = self.get_domain_name();
+        let user = self.get_user_name();
 
         let auth_message_compute = authenticate_message(&lm_challenge_response, &nt_challenge_response, &domain, &user, b"", &encrypted_random_session_key, cast!(DataType::U32, result["NegotiateFlags"])?);
 
@@ -556,7 +551,7 @@ impl AuthenticationProtocol  for Ntlm {
         Ok(to_vec(&trame![auth_message_compute.0, signature, auth_message_compute.1]))
     }
 
-    fn build_security_interface(&self) -> Box<GenericSecurityService> {
+    fn build_security_interface(&self) -> Box<dyn GenericSecurityService> {
         let client_signing_key = sign_key(self.exported_session_key.as_ref().unwrap(), true);
         let server_signing_key = sign_key(self.exported_session_key.as_ref().unwrap(), false);
         let client_sealing_key = seal_key(self.exported_session_key.as_ref().unwrap(), true);
@@ -570,6 +565,33 @@ impl AuthenticationProtocol  for Ntlm {
                 server_signing_key
             )
         )
+    }
+
+    /// Retrieve the domain name encoded as expected during negotiate payload
+    fn get_domain_name(&self) -> Vec<u8> {
+        if self.is_unicode {
+            unicode(&self.domain)
+        } else {
+            self.domain.as_bytes().to_vec()
+        }
+    }
+
+    /// Retrieve the user name encoded as expected during negotiate payload
+    fn get_user_name(&self) -> Vec<u8> {
+        if self.is_unicode {
+            unicode(&self.user)
+        } else {
+            self.user.as_bytes().to_vec()
+        }
+    }
+
+    /// Retrieve the password encoded as expected during negotiate payload
+    fn get_password(&self) -> Vec<u8> {
+        if self.is_unicode {
+            unicode(&self.password)
+        } else {
+            self.password.as_bytes().to_vec()
+        }
     }
 }
 
@@ -613,7 +635,8 @@ impl GenericSecurityService for NTLMv2SecurityInterface {
     /// use crypto::rc4::Rc4;
     /// use rdp::nla::sspi::GenericSecurityService;
     /// let mut interface = NTLMv2SecurityInterface::new(Rc4::new(b"encrypt"), Rc4::new(b"decrypt"), b"signing".to_vec(), b"verify".to_vec());
-    /// assert_eq!(interface.gss_wrapex(b"foo").unwrap(), [1, 0, 0, 0, 142, 146, 37, 160, 247, 244, 100, 58, 0, 0, 0, 0, 87, 164, 208])
+    /// assert_eq!(interface.gss_wrapex(b"foo").unwrap(), [1, 0, 0, 0, 142, 146, 37, 160, 247, 244, 100, 58, 0, 0, 0, 0, 87, 164, 208]);
+    /// assert_eq!(interface.gss_wrapex(b"foo").unwrap(), [1, 0, 0, 0, 162, 95, 77, 158, 159, 36, 8, 240, 1, 0, 0, 0, 153, 3, 250])
     /// ```
     fn gss_wrapex(&mut self, data: &[u8]) -> RdpResult<Vec<u8>> {
         let mut encrypted_data = vec![0; data.len()];
@@ -640,6 +663,7 @@ impl GenericSecurityService for NTLMv2SecurityInterface {
 
         // compute signature
         let seq_num = to_vec(&U32::LE(cast!(DataType::U32, signature["SeqNum"])?));
+
         let computed_checksum = hmac_md5(&self.verify_key, &[seq_num, plaintext_payload.clone()].concat());
 
         if plaintext_checksum.as_slice() != &(computed_checksum[0..8]) {
@@ -738,4 +762,16 @@ mod test {
         assert_eq!(compare_result[96..110], [119, 111, 114, 107, 115, 116, 97, 116, 105, 111, 110, 102, 111, 111]);
     }
 
+    #[test]
+    fn test_rc4() {
+        let mut key = Rc4::new(b"foo");
+        let plaintext1 = b"bar";
+        let mut cipher1 = vec![0; plaintext1.len()];
+        key.process(plaintext1, &mut cipher1);
+        assert_eq!(cipher1, [201, 67, 159]);
+        let plaintext2 = b"bar";
+        let mut cipher2 = vec![0; plaintext2.len()];
+        key.process(plaintext2, &mut cipher2);
+        assert_eq!(cipher2, [75, 169, 19]);
+    }
 }

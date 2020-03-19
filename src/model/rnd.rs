@@ -4,7 +4,7 @@ use rand::Rng;
 ///
 /// # Example
 /// ```
-/// use rdp::core::rnd::random;
+/// use rdp::model::rnd::random;
 /// let vector = random(128);
 /// assert_eq!(vector.len(), 128);
 /// ```

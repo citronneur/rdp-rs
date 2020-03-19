@@ -1,5 +1,5 @@
 use std::io::{Write, Read, Cursor};
-use core::error::{RdpResult, RdpErrorKind, RdpError, Error};
+use model::error::{RdpResult, RdpErrorKind, RdpError, Error};
 use byteorder::{WriteBytesExt, ReadBytesExt, LittleEndian, BigEndian};
 use indexmap::IndexMap;
 use std::collections::{HashSet, HashMap};
@@ -14,7 +14,7 @@ use std::collections::{HashSet, HashMap};
 /// ```
 /// # #[macro_use]
 /// # extern crate rdp;
-/// # use rdp::core::data::{DataType, Component, U32};
+/// # use rdp::model::data::{DataType, Component, U32};
 /// # fn main() {
 /// let message = component!(
 ///     "header" => U32::LE(1234)
@@ -46,8 +46,8 @@ pub enum DataType<'a> {
 /// ```
 /// # #[macro_use]
 /// # extern crate rdp;
-/// # use rdp::core::data::{Component, DataType, U32};
-/// # use rdp::core::error::{Error, RdpError, RdpResult, RdpErrorKind};
+/// # use rdp::model::data::{Component, DataType, U32};
+/// # use rdp::model::error::{Error, RdpError, RdpResult, RdpErrorKind};
 /// # fn main() {
 /// let message = component!(
 ///     "header" => U32::LE(1234)
@@ -118,7 +118,7 @@ impl Message for u8 {
     ///
     /// ```
     /// # extern crate rdp;
-    /// # use rdp::core::data::Message;
+    /// # use rdp::model::data::Message;
     /// # use std::io::Cursor;
     /// # fn main() {
     ///     let mut s = Cursor::new(Vec::new());
@@ -136,7 +136,7 @@ impl Message for u8 {
     ///
     /// ```
     /// # extern crate rdp;
-    /// # use rdp::core::data::Message;
+    /// # use rdp::model::data::Message;
     /// # use std::io::Cursor;
     /// # fn main () {
     ///     let mut stream = Cursor::new(vec![8]);
@@ -155,7 +155,7 @@ impl Message for u8 {
     /// # Example
     /// ```
     /// # extern crate rdp;
-    /// # use rdp::core::data::Message;
+    /// # use rdp::model::data::Message;
     /// # fn main() {
     ///     let x : u8 = 0;
     ///     assert_eq!(x.length(), 1);
@@ -172,7 +172,7 @@ impl Message for u8 {
     ///
     /// ```
     /// # extern crate rdp;
-    /// # use rdp::core::data::{Message, DataType};
+    /// # use rdp::model::data::{Message, DataType};
     /// # fn main() {
     ///     let x : u8 = 8;
     ///     if let DataType::U8(value) = x.visit() {
@@ -205,7 +205,7 @@ impl Message for u8 {
 /// ```
 /// # #[macro_use]
 /// # extern crate rdp;
-/// # use rdp::core::data::{Trame, U32};
+/// # use rdp::model::data::{Trame, U32};
 /// # fn main() {
 ///     let t = trame! [0 as u8, U32::BE(4)];
 /// # }
@@ -218,7 +218,7 @@ pub type Trame = Vec<Box<dyn Message>>;
 /// ```
 /// # #[macro_use]
 /// # extern crate rdp;
-/// # use rdp::core::data::{Trame, U32};
+/// # use rdp::model::data::{Trame, U32};
 /// # fn main() {
 ///     let t = trame! [0 as u8, U32::BE(4)];
 /// # }
@@ -518,8 +518,8 @@ impl Message for Vec<u8> {
 /// ```
 /// # #[macro_use]
 /// # extern crate rdp;
-/// # use rdp::core::data::{Message, DynOption, Component, U32, DataType, MessageOption};
-/// # use rdp::core::error::{Error, RdpError, RdpResult, RdpErrorKind};
+/// # use rdp::model::data::{Message, DynOption, Component, U32, DataType, MessageOption};
+/// # use rdp::model::error::{Error, RdpError, RdpResult, RdpErrorKind};
 /// # use std::io::Cursor;
 /// # fn main() {
 ///     let mut node = component![
@@ -557,7 +557,7 @@ impl<T> DynOption<T> {
     /// ```
     /// #[macro_use]
     /// # extern crate rdp;
-    /// # use rdp::core::data::{Message, Component, DynOption, U32, MessageOption};
+    /// # use rdp::model::data::{Message, Component, DynOption, U32, MessageOption};
     /// # fn main() {
     ///     let message = component![
     ///         "flag" => DynOption::new(U32::LE(1), |flag| {
@@ -580,9 +580,9 @@ impl<T> DynOption<T> {
     /// ```
     /// #[macro_use]
     /// # extern crate rdp;
-    /// # use rdp::core::data::{Message, Component, DynOption, U32, MessageOption, DataType};
-    /// # use rdp::core::error::{Error, RdpError, RdpResult, RdpErrorKind};
-    /// # use std::io::{Cursor};
+    /// # use rdp::model::data::{Message, Component, DynOption, U32, MessageOption, DataType};
+    /// # use rdp::model::error::{Error, RdpError, RdpResult, RdpErrorKind};
+    /// # use std::io::Cursor;
     /// # fn main() {
     ///     let mut message = component![
     ///         "Type" => DynOption::new(U32::LE(0), |flag| {
@@ -627,7 +627,7 @@ impl<T: Message> Message for DynOption<T> {
 }
 
 
-pub fn to_vec(message: &Message) -> Vec<u8> {
+pub fn to_vec(message: &dyn Message) -> Vec<u8> {
     let mut stream = Cursor::new(Vec::new());
     message.write(&mut stream);
     stream.into_inner()

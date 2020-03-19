@@ -19,6 +19,7 @@ pub enum RdpErrorKind {
     InvalidConst,
     InvalidChecksum,
     InvalidOptionalField,
+    InvalidSize,
     PossibleMITM
 }
 

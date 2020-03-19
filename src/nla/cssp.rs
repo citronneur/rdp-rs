@@ -1,10 +1,10 @@
 use nla::asn1::{ASN1, Sequence, ExplicitTag, SequenceOf, ASN1Type, OctetString};
-use core::error::{RdpError, RdpErrorKind, Error, RdpResult};
-use num_bigint::BigUint;
+use model::error::{RdpError, RdpErrorKind, Error, RdpResult};
+use num_bigint::{BigUint, BigInt};
 use yasna::Tag;
 use x509_parser::{parse_x509_der, X509Certificate};
 use nla::sspi::AuthenticationProtocol;
-use core::link::Link;
+use model::link::Link;
 use std::io::{Read, Write};
 
 /// Create a ts request as expected by the specification
@@ -134,6 +134,38 @@ pub fn read_ts_validate(request: &[u8]) -> RdpResult<Vec<u8>> {
     Ok(pubkey.to_vec())
 }
 
+fn create_ts_credentials(domain: Vec<u8>, user: Vec<u8>, password: Vec<u8>) -> Vec<u8> {
+    let ts_password_creds = sequence![
+        "domainName" => ExplicitTag::new(Tag::context(0), domain as OctetString),
+        "userName" => ExplicitTag::new(Tag::context(1), user as OctetString),
+        "password" => ExplicitTag::new(Tag::context(2), password as OctetString)
+    ];
+
+    let ts_password_cred_encoded = yasna::construct_der(|writer| {
+        ts_password_creds.write_asn1(writer);
+    });
+
+    let ts_credentials = sequence![
+        "credType" => ExplicitTag::new(Tag::context(0), 1),
+        "credentials" => ExplicitTag::new(Tag::context(1), ts_password_cred_encoded as OctetString)
+    ];
+
+    yasna::construct_der(|writer| {
+        ts_credentials.write_asn1(writer);
+    })
+}
+
+fn create_ts_authinfo(auth_info: Vec<u8>) -> Vec<u8> {
+    let ts_authinfo = sequence![
+        "version" => ExplicitTag::new(Tag::context(0), 2),
+        "authInfo" => ExplicitTag::new(Tag::context(2), auth_info)
+    ];
+
+    yasna::construct_der(|writer| {
+        ts_authinfo.write_asn1(writer);
+    })
+}
+
 /// This the main function for CSSP protocol
 /// It will use the raw link layer and the selected authenticate protocol
 /// to perform the NLA authenticate
@@ -162,11 +194,36 @@ pub fn cssp_connect<S: Read + Write>(link: &mut Link<S>, authentication_protocol
     // now server respond normally with the original public key incremented by one
     let inc_pub_key = security_interface.gss_unwrapex(&(read_ts_validate(&(link.recv(0)?))?))?;
 
-    // Actually i don't work when public key end with 255 ...
-    // TODO use bigint parser
-    if inc_pub_key[0] != certificate.tbs_certificate.subject_pki.subject_public_key.data[0] + 1 {
+    // Check possible man in the middle using cssp
+    if BigUint::from_bytes_le(&inc_pub_key) != BigUint::from_bytes_le(certificate.tbs_certificate.subject_pki.subject_public_key.data) + BigUint::new(vec![1]) {
         return Err(Error::RdpError(RdpError::new(RdpErrorKind::PossibleMITM, "Man in the middle detected")))
     }
-    
+
+    // compute the last message with encoded credentials
+    let domain = authentication_protocol.get_domain_name();
+    let user = authentication_protocol.get_user_name();
+    let password = authentication_protocol.get_password();
+
+    let credentials = create_ts_authinfo(security_interface.gss_wrapex(&create_ts_credentials(domain, user, password))?);
+    link.send(credentials)?;
+
     Ok(())
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn test_create_ts_credentials() {
+        let credentials = create_ts_credentials(b"domain".to_vec(), b"user".to_vec(), b"password".to_vec());
+        let result =  [48, 41, 160, 3, 2, 1, 1, 161, 34, 4, 32, 48, 30, 160, 8, 4, 6, 100, 111, 109, 97, 105, 110, 161, 6, 4, 4, 117, 115, 101, 114, 162, 10, 4, 8, 112, 97, 115, 115, 119, 111, 114, 100];
+        assert_eq!(credentials[0..32], result[0..32]);
+        assert_eq!(credentials[33..43], result[33..43]);
+    }
+
+    #[test]
+    fn test_create_ts_authinfo() {
+        assert_eq!(create_ts_authinfo(b"foo".to_vec()), [48, 12, 160, 3, 2, 1, 2, 162, 5, 4, 3, 102, 111, 111])
+    }
 }

@@ -11,6 +11,6 @@ extern crate num_bigint;
 extern crate x509_parser;
 
 #[macro_use]
+pub mod model;
 pub mod core;
-pub mod proto;
 pub mod nla;

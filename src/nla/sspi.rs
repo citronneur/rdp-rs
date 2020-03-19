@@ -1,4 +1,4 @@
-use core::error::RdpResult;
+use model::error::RdpResult;
 
 /// This is a trait use by authentication
 /// protocol to provide a context
@@ -27,4 +27,13 @@ pub trait AuthenticationProtocol {
     /// We can built the associated security interface
     /// to the underlying authenticate protocole
     fn build_security_interface(&self) -> Box<dyn GenericSecurityService>;
+
+    /// Get domain name encoded as expected in the negotiated payload
+    fn get_domain_name(&self) -> Vec<u8>;
+
+    /// Get user name encoded as expected in the negotiated payload
+    fn get_user_name(&self) -> Vec<u8>;
+
+    /// Get password encoded as expected in the negotiated payload
+    fn get_password(&self) -> Vec<u8>;
 }

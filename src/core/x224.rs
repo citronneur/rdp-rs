@@ -1,6 +1,6 @@
-use proto::tpkt::Client as TpktClient;
-use core::data::{Message, Check, U16, U32, Component, DataType, Trame};
-use core::error::{Error, RdpError, RdpResult, RdpErrorKind};
+use core::tpkt::Client as TpktClient;
+use model::data::{Message, Check, U16, U32, Component, DataType, Trame};
+use model::error::{Error, RdpError, RdpResult, RdpErrorKind};
 use std::io::{Cursor, Read, Write};
 use std::option::{Option};
 
@@ -85,13 +85,15 @@ pub fn client_x224_connection_pdu(
 }
 
 pub struct Client<S> {
-    transport: TpktClient<S>
+    transport: TpktClient<S>,
+    pub selected_protocol: Protocols
 }
 
 impl<S: Read + Write> Client<S> {
-    pub fn new (transport: TpktClient<S>) -> Self {
+    pub fn new (transport: TpktClient<S>, selected_protocol: Protocols) -> Self {
         Client {
-            transport
+            transport,
+            selected_protocol
         }
     }
 }
@@ -110,9 +112,9 @@ impl<S: Read + Write> Connector<S> {
     pub fn connect(mut self) -> RdpResult<Client<S>> {
         self.send_connection_request()?;
         match self.recv_connection_confirm()? {
-            Protocols::ProtocolHybrid => Ok(Client::new(self.transport.start_nla()?)),
-            Protocols::ProtocolSSL => Ok(Client::new(self.transport.start_ssl()?)),
-            Protocols::ProtocolRDP => Ok(Client::new(self.transport)),
+            Protocols::ProtocolHybrid => Ok(Client::new(self.transport.start_nla()?,Protocols::ProtocolHybrid)),
+            Protocols::ProtocolSSL => Ok(Client::new(self.transport.start_ssl()?, Protocols::ProtocolSSL)),
+            Protocols::ProtocolRDP => Ok(Client::new(self.transport, Protocols::ProtocolRDP)),
             _ => Err(Error::RdpError(RdpError::new(RdpErrorKind::InvalidProtocol, "Security protocol not handled")))
         }
     }

@@ -1,4 +1,4 @@
-use proto::x224;
+use core::x224;
 pub struct RdpClient<S> {
     x224 : x224::Client<S>
 }

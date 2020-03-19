@@ -1,9 +1,9 @@
 
 extern crate rdp;
-use rdp::core::link::{Link, Stream};
-use rdp::proto::tpkt;
-use rdp::proto::x224;
-use rdp::proto::client::RdpClient;
+use rdp::model::link::{Link, Stream};
+use rdp::core::tpkt;
+use rdp::core::x224;
+use rdp::core::client::RdpClient;
 use std::net::{SocketAddr, TcpStream};
 
 fn main() {

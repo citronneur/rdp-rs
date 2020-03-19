@@ -1,6 +1,6 @@
-use core::link::{Link};
-use core::data::{Message, U16, Component, Trame};
-use core::error::{RdpResult, RdpError, RdpErrorKind, Error};
+use model::link::{Link};
+use model::data::{Message, U16, Component, Trame};
+use model::error::{RdpResult, RdpError, RdpErrorKind, Error};
 use nla::asn1::ASN1Type;
 use std::io::{Cursor, Write, Read};
 use nla::ntlm::Ntlm;
@@ -83,6 +83,7 @@ impl<S: Read + Write> Client<S> {
         let mut link = self.transport.start_ssl()?;
         let mut ntlm_layer = Ntlm::new("".to_string(), "sylvain".to_string(), "sylvain".to_string());
         cssp_connect(&mut link, &mut ntlm_layer)?;
+        link.recv(0)?;
         Ok(Client::new(link))
     }
 }
@@ -91,7 +92,7 @@ impl<S: Read + Write> Client<S> {
 mod test {
     use super::*;
     use std::io::Cursor;
-    use core::data::{U32, DataType};
+    use model::data::{U32, DataType};
 
     /// Test the tpkt header type in write context
     #[test]
