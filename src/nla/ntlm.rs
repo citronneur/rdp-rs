@@ -9,8 +9,6 @@ use md5::{Md5};
 use model::rnd::{random};
 use crypto::rc4::{Rc4};
 use crypto::symmetriccipher::SynchronousStreamCipher;
-use crypto::ed25519::signature;
-use std::path::Component::CurDir;
 
 #[repr(u32)]
 enum Negotiate {

@@ -12,5 +12,6 @@ extern crate x509_parser;
 
 #[macro_use]
 pub mod model;
-pub mod core;
+#[macro_use]
 pub mod nla;
+pub mod core;

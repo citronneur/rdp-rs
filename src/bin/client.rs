@@ -3,6 +3,8 @@ extern crate rdp;
 use rdp::model::link::{Link, Stream};
 use rdp::core::tpkt;
 use rdp::core::x224;
+use rdp::core::mcs;
+use rdp::core::gcc::KeyboardLayout;
 use rdp::core::client::RdpClient;
 use std::net::{SocketAddr, TcpStream};
 
@@ -18,6 +20,8 @@ fn main() {
     let tpkt = tpkt::Client::new(tcp);
     let x224_connector = x224::Connector::new(tpkt);
     let x224 = x224_connector.connect().unwrap();
-    let _rdp_client =  RdpClient::new(x224);
+    let mut mcs = mcs::Client::new(x224, 1280, 800, KeyboardLayout::French);
+    mcs.connect().unwrap();
+    //let _rdp_client =  RdpClient::new(x224);
 
 }

@@ -1,11 +1,9 @@
 use model::link::{Link};
 use model::data::{Message, U16, Component, Trame};
 use model::error::{RdpResult, RdpError, RdpErrorKind, Error};
-use nla::asn1::ASN1Type;
 use std::io::{Cursor, Write, Read};
 use nla::ntlm::Ntlm;
-use nla::sspi::AuthenticationProtocol;
-use nla::cssp::{create_ts_request, read_ts_server_challenge, create_ts_authenticate, read_public_certificate, read_ts_validate, cssp_connect};
+use nla::cssp::cssp_connect;
 
 /// TPKT action header
 /// # see : https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-rdpbcgr/b8e7c588-51cb-455b-bb73-92d480903133
@@ -83,7 +81,6 @@ impl<S: Read + Write> Client<S> {
         let mut link = self.transport.start_ssl()?;
         let mut ntlm_layer = Ntlm::new("".to_string(), "sylvain".to_string(), "sylvain".to_string());
         cssp_connect(&mut link, &mut ntlm_layer)?;
-        link.recv(0)?;
         Ok(Client::new(link))
     }
 }

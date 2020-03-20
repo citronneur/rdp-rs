@@ -84,6 +84,14 @@ pub fn client_x224_connection_pdu(
     ]
 }
 
+fn x224_header() -> Component {
+    component![
+        "header" => 2 as u8,
+        "messageType" => MessageType::X224TPDUData as u8,
+        "separator" => Check::new(0x80 as u8)
+    ]
+}
+
 pub struct Client<S> {
     transport: TpktClient<S>,
     pub selected_protocol: Protocols
@@ -95,6 +103,18 @@ impl<S: Read + Write> Client<S> {
             transport,
             selected_protocol
         }
+    }
+
+    pub fn send<T: 'static>(&mut self, message: T) -> RdpResult<()>
+    where T: Message {
+        self.transport.send(trame![x224_header(), message])
+    }
+
+    pub fn recv(&mut self) -> RdpResult<Cursor<Vec<u8>>> {
+        let mut s = Cursor::new(self.transport.read()?);
+        let mut x224_header = x224_header();
+        x224_header.read(&mut s)?;
+        Ok(s)
     }
 }
 

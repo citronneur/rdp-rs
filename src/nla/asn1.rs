@@ -8,7 +8,8 @@ pub enum ASN1Type<'a> {
     SequenceOf(&'a SequenceOf),
     U32(u32),
     OctetString(&'a OctetString),
-    BigUint(&'a BigUint)
+    BigUint(&'a BigUint),
+    BOOL(bool)
 }
 
 pub trait ASN1 {
@@ -130,6 +131,42 @@ impl<T: ASN1> ASN1 for ExplicitTag<T> {
     }
 }
 
+pub struct ImplicitTag<T> {
+    tag: Tag,
+    inner: T
+}
+
+impl<T> ImplicitTag<T> {
+    pub fn new(tag: Tag, inner: T) -> Self {
+        ImplicitTag {
+            tag,
+            inner
+        }
+    }
+}
+
+impl<T: ASN1> ASN1 for ImplicitTag<T> {
+    fn write_asn1(&self, writer: DERWriter) -> RdpResult<()> {
+        writer.write_tagged_implicit(self.tag, |writer| {
+            self.inner.write_asn1(writer);
+            Ok(())
+        })
+    }
+    fn read_asn1(&mut self, reader: BERReader) -> RdpResult<()> {
+        reader.read_tagged_implicit(self.tag, |tag_reader| {
+            if let Err(Error::ASN1Error(e)) =  self.inner.read_asn1(tag_reader) {
+                return Err(e)
+            }
+            Ok(())
+        })?;
+        Ok(())
+    }
+
+    fn visit(&self) -> ASN1Type {
+        self.inner.visit()
+    }
+}
+
 impl ASN1 for u32 {
     fn write_asn1(&self, writer: DERWriter) -> RdpResult<()> {
         writer.write_u32(*self);
@@ -141,6 +178,20 @@ impl ASN1 for u32 {
     }
     fn visit(&self) -> ASN1Type {
         ASN1Type::U32(*self)
+    }
+}
+
+impl ASN1 for bool {
+    fn write_asn1(&self, writer: DERWriter) -> RdpResult<()> {
+        writer.write_bool(*self);
+        Ok(())
+    }
+    fn read_asn1(&mut self, reader: BERReader) -> RdpResult<()> {
+        *self = reader.read_bool()?;
+        Ok(())
+    }
+    fn visit(&self) -> ASN1Type {
+        ASN1Type::BOOL(*self)
     }
 }
 
@@ -170,22 +221,6 @@ impl ASN1 for Sequence {
         ASN1Type::Sequence(self)
     }
 }
-
-impl ASN1 for BigUint {
-    fn write_asn1(&self, writer: DERWriter) -> RdpResult<()> {
-        writer.write_biguint(self);
-        Ok(())
-    }
-    fn read_asn1(&mut self, reader: BERReader) -> RdpResult<()> {
-        println!("foo");
-        *self = reader.read_biguint()?;
-        Ok(())
-    }
-    fn visit(&self) -> ASN1Type {
-        ASN1Type::BigUint(self)
-    }
-}
-
 
 #[macro_export]
 macro_rules! sequence {

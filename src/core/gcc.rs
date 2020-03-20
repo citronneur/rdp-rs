@@ -1,6 +1,11 @@
-use model::data::{Component, U32, U16, Trame, to_vec};
+use model::data::{Component, U32, U16, Trame, to_vec, Message};
 use model::unicode::Unicode;
+use model::error::RdpResult;
+use core::per;
+use std::io::Cursor;
 
+const T124_02_98_OID: [u8; 6] = [ 0, 0, 20, 124, 0, 1 ];
+const H221_CS_KEY: [u8; 4] = *b"Duca";
 /// RDP protocol version
 /// https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-rdpbcgr/00f1da4a-ee9c-421a-852f-c19f92343d73?redirectedfrom=MSDN
 #[repr(u32)]
@@ -28,6 +33,7 @@ enum Sequence {
 /// Keyboard layout
 /// https://docs.microsoft.com/en-us/previous-versions/windows/it-pro/windows-vista/cc766503(v=ws.10)?redirectedfrom=MSDN
 #[repr(u32)]
+#[derive(Copy, Clone)]
 pub enum KeyboardLayout {
     Arabic = 0x00000401,
     Bulgarian = 0x00000402,
@@ -120,8 +126,23 @@ enum EncryptionLevel {
     Fips = 0x00000004
 }
 
+#[repr(u16)]
+pub enum MessageType  {
+    //server -> client
+    ScCore = 0x0C01,
+    ScSecurity = 0x0C02,
+    ScNet = 0x0C03,
+    //client -> server
+    CsCore = 0xC001,
+    CsSecurity = 0xC002,
+    CsNet = 0xC003,
+    CsCluster = 0xC004,
+    CsMonitor = 0xC005
+}
+
 /// In case of client
 /// This is all mandatory fields need by client core data
+#[derive(Copy, Clone)]
 pub struct ClientCoreData {
     pub width: u16,
     pub height: u16,
@@ -180,7 +201,7 @@ pub fn client_security_data() -> Component {
     ]
 }
 
-
+/// Actually we have no more classic channel
 pub fn channel_def(name: &String, options: u32) -> Component {
     component![
         "name"=> name.as_bytes().to_vec(),
@@ -188,9 +209,34 @@ pub fn channel_def(name: &String, options: u32) -> Component {
     ]
 }
 
+/// Actually we have no more channel than the classic one
 pub fn client_network_data(channel_def_array: Trame) -> Component {
     component![
         "channelCount" => U32::LE(channel_def_array.len() as u32),
         "channelDefArray" => to_vec(&channel_def_array)
     ]
+}
+
+pub fn block(data_type: MessageType, data: Component) -> Component {
+    component![
+        "type" => U16::LE(data_type as u16),
+        "length" => U16::LE(data.length() as u16 + 4),
+        "data" => data
+    ]
+}
+
+pub fn write_conference_create_request(user_data: &[u8]) ->RdpResult<Vec<u8>> {
+    let mut result = Cursor::new(vec![]);
+    per::write_choice(0, &mut result)?;
+    per::write_object_identifier(&T124_02_98_OID, &mut result)?;
+    per::write_length(user_data.len() as u16 + 14, &mut result)?;
+    per::write_choice(0, &mut result)?;
+    per::write_selection(0x08, &mut result)?;
+    per::write_numeric_string(b"1", 1, &mut result)?;
+    per::write_padding(1, &mut result)?;
+    per::write_number_of_set(1, &mut result)?;
+    per::write_choice(0xc0, &mut result)?;
+    per::write_octet_stream(&H221_CS_KEY, 4,&mut result)?;
+    per::write_octet_stream(user_data, 0, &mut result)?;
+    Ok(result.into_inner())
 }
