@@ -20,7 +20,8 @@ pub enum RdpErrorKind {
     InvalidChecksum,
     InvalidOptionalField,
     InvalidSize,
-    PossibleMITM
+    PossibleMITM,
+    RejectedByServer
 }
 
 #[derive(Debug)]
@@ -78,6 +79,8 @@ impl From<ASN1Error> for Error {
     }
 }
 
+pub type RdpResult<T> = Result<T, Error>;
+
 /// Try options is waiting try trait for the next rust
 #[macro_export]
 macro_rules! try_option {
@@ -90,4 +93,3 @@ macro_rules! try_option {
     }
 }
 
-pub type RdpResult<T> = Result<T, Error>;

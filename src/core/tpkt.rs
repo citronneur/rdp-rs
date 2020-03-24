@@ -46,7 +46,7 @@ impl<S: Read + Write> Client<S> {
     pub fn send<T: 'static>(&mut self, message: T) -> RdpResult<()>
     where T: Message {
         self.transport.send(
-            trame![
+            &trame![
                 tpkt_header(message.length() as u16),
                 message
             ]

@@ -1,6 +1,6 @@
 use nla::sspi::{AuthenticationProtocol, GenericSecurityService};
 use model::data::{Message, Component, U16, U32, Trame, DynOption, Check, DataType, MessageOption, to_vec};
-use std::io::{Cursor, ErrorKind};
+use std::io::{Cursor};
 use model::error::{RdpResult, RdpError, RdpErrorKind, Error};
 use std::collections::HashMap;
 use md4::{Md4, Digest};
@@ -242,7 +242,7 @@ fn message_signature_ex(check_sum: Option<&[u8]>, seq_num: Option<u32>) -> Compo
 fn read_target_info(data: &[u8]) -> RdpResult<HashMap<AvId, Vec<u8>>> {
     let mut stream = Cursor::new(data);
     let mut result = HashMap::new();
-    while true {
+    loop {
         let mut element = av_pair();
         element.read(&mut stream);
         let av_id = AvId::from(cast!(DataType::U16, element["AvId"])?)?;
@@ -386,7 +386,7 @@ fn compute_response_v2(
 /// This is a function described in specification
 ///
 /// This is just ton follow specification
-fn kx_key_v2(session_base_key: &[u8], lm_challenge_response: &[u8], server_challenge: &[u8]) -> Vec<u8> {
+fn kx_key_v2(session_base_key: &[u8], _lm_challenge_response: &[u8], _server_challenge: &[u8]) -> Vec<u8> {
     session_base_key.to_vec()
 }
 

@@ -45,8 +45,7 @@ impl<S: Read + Write> Link<S> {
         }
     }
 
-    pub fn send<T>(&mut self, message: T) -> RdpResult<()>
-    where T: Message {
+    pub fn send(&mut self, message: &dyn Message) -> RdpResult<()> {
         let mut buffer = Cursor::new(Vec::new());
         message.write(&mut buffer)?;
         self.stream.write(buffer.into_inner().as_slice())?;

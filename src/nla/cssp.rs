@@ -1,6 +1,6 @@
-use nla::asn1::{ASN1, Sequence, ExplicitTag, SequenceOf, ASN1Type, OctetString};
+use nla::asn1::{ASN1, Sequence, ExplicitTag, SequenceOf, ASN1Type, OctetString, Integer};
 use model::error::{RdpError, RdpErrorKind, Error, RdpResult};
-use num_bigint::{BigUint, BigInt};
+use num_bigint::{BigUint};
 use yasna::Tag;
 use x509_parser::{parse_x509_der, X509Certificate};
 use nla::sspi::AuthenticationProtocol;
@@ -20,7 +20,7 @@ use std::io::{Read, Write};
 /// ```
 pub fn create_ts_request(nego: Vec<u8>) -> Vec<u8> {
     let ts_request = sequence![
-        "version" => ExplicitTag::new(Tag::context(0), 2),
+        "version" => ExplicitTag::new(Tag::context(0), 2 as Integer),
         "negoTokens" => ExplicitTag::new(Tag::context(1),
             sequence_of![
                 sequence![
@@ -51,7 +51,7 @@ pub fn create_ts_request(nego: Vec<u8>) -> Vec<u8> {
 /// ```
 pub fn read_ts_server_challenge(stream: &[u8]) -> RdpResult<Vec<u8>> {
     let mut ts_request = sequence![
-        "version" => ExplicitTag::new(Tag::context(0), 2),
+        "version" => ExplicitTag::new(Tag::context(0), 2 as Integer),
         "negoTokens" => ExplicitTag::new(Tag::context(1),
             SequenceOf::reader(Box::new(|| {
                 Box::new(sequence![
@@ -60,12 +60,14 @@ pub fn read_ts_server_challenge(stream: &[u8]) -> RdpResult<Vec<u8>> {
             }))
          )
     ];
-    let x = yasna::parse_der(stream, |reader| {
+
+    yasna::parse_der(stream, |reader| {
         if let Err(Error::ASN1Error(e)) = ts_request.read_asn1(reader) {
             return Err(e)
         }
         Ok(())
     })?;
+
     let nego_tokens = cast!(ASN1Type::SequenceOf, ts_request["negoTokens"]).unwrap();
     let first_nego_tokens = cast!(ASN1Type::Sequence, nego_tokens.inner[0]).unwrap();
     let nego_token = cast!(ASN1Type::OctetString, first_nego_tokens["negoToken"]).unwrap();
@@ -86,7 +88,7 @@ pub fn read_ts_server_challenge(stream: &[u8]) -> RdpResult<Vec<u8>> {
 /// ```
 pub fn create_ts_authenticate(nego: Vec<u8>, pub_key_auth: Vec<u8>) -> Vec<u8> {
     let ts_challenge = sequence![
-        "version" => ExplicitTag::new(Tag::context(0), 2),
+        "version" => ExplicitTag::new(Tag::context(0), 2 as Integer),
         "negoTokens" => ExplicitTag::new(Tag::context(1),
             sequence_of![
                 sequence![
@@ -120,7 +122,7 @@ pub fn read_public_certificate(stream: &[u8]) -> RdpResult<X509Certificate> {
 /// ```
 pub fn read_ts_validate(request: &[u8]) -> RdpResult<Vec<u8>> {
     let mut ts_challenge = sequence![
-        "version" => ExplicitTag::new(Tag::context(0), 2),
+        "version" => ExplicitTag::new(Tag::context(0), 2 as Integer),
         "pubKeyAuth" => ExplicitTag::new(Tag::context(3), OctetString::new())
     ];
 
@@ -146,7 +148,7 @@ fn create_ts_credentials(domain: Vec<u8>, user: Vec<u8>, password: Vec<u8>) -> V
     });
 
     let ts_credentials = sequence![
-        "credType" => ExplicitTag::new(Tag::context(0), 1),
+        "credType" => ExplicitTag::new(Tag::context(0), 1 as Integer),
         "credentials" => ExplicitTag::new(Tag::context(1), ts_password_cred_encoded as OctetString)
     ];
 
@@ -157,7 +159,7 @@ fn create_ts_credentials(domain: Vec<u8>, user: Vec<u8>, password: Vec<u8>) -> V
 
 fn create_ts_authinfo(auth_info: Vec<u8>) -> Vec<u8> {
     let ts_authinfo = sequence![
-        "version" => ExplicitTag::new(Tag::context(0), 2),
+        "version" => ExplicitTag::new(Tag::context(0), 2 as Integer),
         "authInfo" => ExplicitTag::new(Tag::context(2), auth_info)
     ];
 
@@ -172,7 +174,7 @@ fn create_ts_authinfo(auth_info: Vec<u8>) -> Vec<u8> {
 pub fn cssp_connect<S: Read + Write>(link: &mut Link<S>, authentication_protocol: &mut dyn AuthenticationProtocol) -> RdpResult<()> {
     // first step is to send the negotiate message from authentication protocol
     let negotiate_message = create_ts_request(authentication_protocol.create_negotiate_message()?);
-    link.send(negotiate_message)?;
+    link.send(&negotiate_message)?;
 
     // now receive server challenge
     let server_challenge = read_ts_server_challenge(&(link.recv(0)?))?;
@@ -189,7 +191,7 @@ pub fn cssp_connect<S: Read + Write>(link: &mut Link<S>, authentication_protocol
 
     // Now we can send back our challenge payload wit the public key encoded
     let challenge = create_ts_authenticate(client_challenge, security_interface.gss_wrapex(certificate.tbs_certificate.subject_pki.subject_public_key.data)?);
-    link.send(challenge)?;
+    link.send(&challenge)?;
 
     // now server respond normally with the original public key incremented by one
     let inc_pub_key = security_interface.gss_unwrapex(&(read_ts_validate(&(link.recv(0)?))?))?;
@@ -205,7 +207,7 @@ pub fn cssp_connect<S: Read + Write>(link: &mut Link<S>, authentication_protocol
     let password = authentication_protocol.get_password();
 
     let credentials = create_ts_authinfo(security_interface.gss_wrapex(&create_ts_credentials(domain, user, password))?);
-    link.send(credentials)?;
+    link.send(&credentials)?;
 
     Ok(())
 }

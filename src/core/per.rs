@@ -1,8 +1,6 @@
 use model::data::{Message, U16, Trame, U32};
 use std::io::{Read, Write};
 use model::error::{RdpResult, Error, RdpError, RdpErrorKind};
-use std::panic::resume_unwind;
-use std::cmp::min;
 
 
 /// PER encoding length
@@ -24,7 +22,7 @@ pub fn read_length(s: &mut dyn Read) -> RdpResult<u16> {
         byte = byte & !0x80;
         size = (byte as u16) << 8 ;
         byte.read(s)?;
-        size += (byte as u16);
+        size += byte as u16;
         Ok(size)
     }
     else {

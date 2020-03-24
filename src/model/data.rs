@@ -33,7 +33,8 @@ pub enum DataType<'a> {
     U32(u32),
     U16(u16),
     U8(u8),
-    Slice(&'a [u8])
+    Slice(&'a [u8]),
+    None
 }
 
 
@@ -626,11 +627,242 @@ impl<T: Message> Message for DynOption<T> {
     }
 }
 
-
+/// Serialize a message into Vector
 pub fn to_vec(message: &dyn Message) -> Vec<u8> {
     let mut stream = Cursor::new(Vec::new());
     message.write(&mut stream);
     stream.into_inner()
+}
+
+
+#[macro_export]
+macro_rules! is_none {
+    ($expr:expr) => (match $expr.visit() {
+        DataType::None => true,
+        _ => false
+    })
+}
+
+
+/// This is an optional fields
+/// Actually always write but read if and only if the reader
+/// buffer could read the size of inner Message
+impl<T: Message> Message for Option<T> {
+    /// Write an optional message
+    /// Actually always try to write
+    ///
+    /// # Example
+    /// ```
+    /// use std::io::Cursor;
+    /// use rdp::model::data::Message;
+    /// let mut s1 = Cursor::new(vec![]);
+    /// Some(4).write(&mut s1);
+    /// assert_eq!(s1.into_inner(), [4]);
+    /// let mut s2 = Cursor::new(vec![]);
+    /// Option::<u8>::None.write(&mut s2);
+    /// assert_eq!(s2.into_inner(), [])
+    /// ```
+    fn write(&self, writer: &mut dyn Write) -> RdpResult<()> {
+        Ok(if let Some(value) = self {
+            value.write(writer)?
+        })
+    }
+
+    /// Read an optional field
+    /// Read the value if and only if there is enough space in the
+    /// reader
+    ///
+    /// # Example
+    /// ```
+    /// #[macro_use]
+    /// # extern crate rdp;
+    /// # use std::io::Cursor;
+    /// # use rdp::model::error::{Error, RdpError, RdpResult, RdpErrorKind};
+    /// # use rdp::model::data::{U32, Message, DataType, Component};
+    /// # fn main() {
+    ///     let mut s1 = Cursor::new(vec![1, 0, 0, 0]);
+    ///     let mut x = Some(U32::LE(0));
+    ///     x.read(&mut s1);
+    ///     assert_eq!(1, cast!(DataType::U32, x).unwrap());
+    ///
+    ///     let mut s2 = Cursor::new(vec![1, 0, 0]);
+    ///     let mut y = Some(U32::LE(0));
+    ///     y.read(&mut s2);
+    ///     assert!(y == None);
+    ///
+    ///     let mut s3 = Cursor::new(vec![1, 0, 0]);
+    ///     // case in component
+    ///     let mut z = component![
+    ///         "optional" => Some(U32::LE(0))
+    ///     ];
+    ///     z.read(&mut s3);
+    ///     assert!(is_none!(z["optional"]))
+    /// # }
+    /// ```
+    fn read(&mut self, reader: &mut dyn Read) -> RdpResult<()> {
+        if let Some(value) = self {
+            let mut buffer = vec![0 as u8; value.length() as usize];
+
+            // Try to read exactly the expected number of bytes
+            match reader.read_exact(&mut buffer) {
+                Ok(()) => {
+                    let mut cursor = Cursor::new(buffer);
+                    value.read(&mut cursor);
+                }
+                Err(_) => {
+                    *self = None
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// This compute the length of the optionaln field
+    /// # Example
+    /// ```
+    /// use rdp::model::data::{U32, Message};
+    /// assert_eq!(Some(U32::LE(4)).length(), 4);
+    /// assert_eq!(Option::<U32>::None.length(), 0);
+    /// ```
+    fn length(&self) -> u64 {
+        if let Some(value) = self {
+            value.length()
+        }
+        else {
+            0
+        }
+    }
+
+    /// Visitor pattern for optional field
+    /// # Example
+    /// ```
+    /// #[macro_use]
+    /// # extern crate rdp;
+    /// # use rdp::model::data::{U32, Message, DataType};
+    /// # use rdp::model::error::{Error, RdpError, RdpResult, RdpErrorKind};
+    /// # fn main() {
+    ///     assert_eq!(4, cast!(DataType::U32, Some(U32::LE(4))).unwrap());
+    ///     assert!(is_none!(Option::<U32>::None));
+    /// # }
+    /// ```
+    fn visit(&self) -> DataType {
+        if let Some(value) = self {
+            value.visit()
+        }
+        else {
+            DataType::None
+        }
+    }
+
+    fn options(&self) -> MessageOption {
+        MessageOption::None
+    }
+}
+
+/// Array dynamic trame
+/// Means during read operation it will call
+/// A factory callback to fill the result trame
+pub struct Array<T> {
+    inner: Trame,
+    factory: Box<dyn Fn() -> T>
+}
+
+impl<T: Message> Array<T> {
+    /// Create a new dynamic array
+    /// This kind of array array are filled until the end
+    /// of the stream, or sub stream if you use DynOption
+    /// # Example
+    /// ```
+    /// #[macro_use]
+    /// # extern crate rdp;
+    /// # use std::io::Cursor;
+    /// # use rdp::model::data::{U16, Array, Message, DataType};
+    /// # use rdp::model::error::{Error, RdpError, RdpResult, RdpErrorKind};
+    /// # fn main() {
+    ///     let mut s = Cursor::new(vec![0, 0, 1, 0]);
+    ///     let mut dyn_array = Array::new(|| U16::LE(0));
+    ///     dyn_array.read(&mut s);
+    ///     assert_eq!(dyn_array.as_ref().len(), 2);
+    ///     assert_eq!(cast!(DataType::U16, dyn_array.as_ref()[0]).unwrap(), 0);
+    ///     assert_eq!(cast!(DataType::U16, dyn_array.as_ref()[1]).unwrap(), 1);
+    /// # }
+    /// ```
+    pub fn new<F: 'static>(factory: F) -> Self
+    where F: Fn() -> T{
+        Array {
+            inner: trame![],
+            factory: Box::new(factory)
+        }
+    }
+
+}
+
+/// Implement tye message trait for Array
+impl<T: 'static + Message> Message for Array<T> {
+    /// Write an array
+    /// You may not use even if it works prefer using trame object
+    fn write(&self, writer: &mut dyn Write) -> RdpResult<()> {
+        self.inner.write(writer)
+    }
+
+    /// Read a dynamic array
+    ///
+    /// # Example
+    /// ```
+    /// use std::io::Cursor;
+    /// use rdp::model::data::{U16, Array, Message};
+    /// let mut s = Cursor::new(vec![0, 0, 1, 0]);
+    /// let mut dyn_array = Array::new(|| U16::LE(0));
+    /// dyn_array.read(&mut s);
+    /// assert_eq!(dyn_array.as_ref().len(), 2)
+    /// ```
+    fn read(&mut self, reader: &mut dyn Read) -> RdpResult<()> {
+        // Read dynamically until the end
+        loop {
+            let mut element = Some((self.factory)());
+            element.read(reader)?;
+            if let Some(e) = element {
+                self.inner.push(Box::new(e))
+            } else {
+                break;
+            }
+        }
+        Ok(())
+    }
+
+    /// This is the length of the inner trame
+    ///
+    /// # Example
+    /// ```
+    /// use std::io::Cursor;
+    /// use rdp::model::data::{U16, Array, Message};
+    /// let mut s = Cursor::new(vec![0, 0, 1, 0]);
+    /// let mut dyn_array = Array::new(|| U16::LE(0));
+    /// dyn_array.read(&mut s);
+    /// assert_eq!(dyn_array.length(), 4)
+    /// ```
+    fn length(&self) -> u64 {
+        self.inner.length()
+    }
+
+    /// Visit the inner trame
+    /// It's means always return a slice
+    /// Prefer using as_ref and visit
+    fn visit(&self) -> DataType {
+        self.inner.visit()
+    }
+
+    /// This kind of message have no option
+    fn options(&self) -> MessageOption {
+        MessageOption::None
+    }
+}
+
+/// Convenient method to get access to the inner type
+impl<T> AsRef<Trame> for Array<T> {
+    fn as_ref(&self) -> &Trame {
+        &self.inner
+    }
 }
 
 #[cfg(test)]
