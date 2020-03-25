@@ -29,7 +29,7 @@ pub fn create_ts_request(nego: Vec<u8>) -> Vec<u8> {
             ])
     ];
     yasna::construct_der(|writer| {
-        ts_request.write_asn1(writer);
+        ts_request.write_asn1(writer).unwrap();
     })
 }
 
@@ -99,7 +99,7 @@ pub fn create_ts_authenticate(nego: Vec<u8>, pub_key_auth: Vec<u8>) -> Vec<u8> {
     ];
 
     yasna::construct_der(|writer| {
-        ts_challenge.write_asn1(writer);
+        ts_challenge.write_asn1(writer).unwrap();
     })
 }
 
@@ -126,12 +126,12 @@ pub fn read_ts_validate(request: &[u8]) -> RdpResult<Vec<u8>> {
         "pubKeyAuth" => ExplicitTag::new(Tag::context(3), OctetString::new())
     ];
 
-    let x = yasna::parse_der(request, |reader| {
+    yasna::parse_der(request, |reader| {
         if let Err(Error::ASN1Error(e)) = ts_challenge.read_asn1(reader) {
             return Err(e)
         }
         Ok(())
-    });
+    })?;
     let pubkey = cast!(ASN1Type::OctetString, ts_challenge["pubKeyAuth"])?;
     Ok(pubkey.to_vec())
 }
@@ -144,7 +144,7 @@ fn create_ts_credentials(domain: Vec<u8>, user: Vec<u8>, password: Vec<u8>) -> V
     ];
 
     let ts_password_cred_encoded = yasna::construct_der(|writer| {
-        ts_password_creds.write_asn1(writer);
+        ts_password_creds.write_asn1(writer).unwrap();
     });
 
     let ts_credentials = sequence![
@@ -153,7 +153,7 @@ fn create_ts_credentials(domain: Vec<u8>, user: Vec<u8>, password: Vec<u8>) -> V
     ];
 
     yasna::construct_der(|writer| {
-        ts_credentials.write_asn1(writer);
+        ts_credentials.write_asn1(writer).unwrap();
     })
 }
 
@@ -164,7 +164,7 @@ fn create_ts_authinfo(auth_info: Vec<u8>) -> Vec<u8> {
     ];
 
     yasna::construct_der(|writer| {
-        ts_authinfo.write_asn1(writer);
+        ts_authinfo.write_asn1(writer).unwrap()
     })
 }
 

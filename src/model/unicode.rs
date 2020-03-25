@@ -10,7 +10,7 @@ impl Unicode for String {
         let mut result = Cursor::new(Vec::new());
         for c in self.encode_utf16() {
             let encode_char = U16::LE(c);
-            encode_char.write(&mut result);
+            encode_char.write(&mut result).unwrap();
         }
         return result.into_inner()
     }

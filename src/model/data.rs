@@ -316,7 +316,7 @@ impl Message for Component {
 
             if dynamic_size.contains_key(name) {
                 let mut local =vec![0; dynamic_size[name]];
-                reader.read_exact(&mut local);
+                reader.read_exact(&mut local)?;
 
                 value.read(&mut Cursor::new(local))?;
             }
@@ -630,7 +630,7 @@ impl<T: Message> Message for DynOption<T> {
 /// Serialize a message into Vector
 pub fn to_vec(message: &dyn Message) -> Vec<u8> {
     let mut stream = Cursor::new(Vec::new());
-    message.write(&mut stream);
+    message.write(&mut stream).unwrap();
     stream.into_inner()
 }
 
@@ -707,7 +707,7 @@ impl<T: Message> Message for Option<T> {
             match reader.read_exact(&mut buffer) {
                 Ok(()) => {
                     let mut cursor = Cursor::new(buffer);
-                    value.read(&mut cursor);
+                    value.read(&mut cursor)?;
                 }
                 Err(_) => {
                     *self = None

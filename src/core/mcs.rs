@@ -1,12 +1,13 @@
 use core::x224;
 use model::error::{RdpResult, Error, RdpError, RdpErrorKind};
 use core::gcc::{KeyboardLayout, client_core_data, ClientData, ServerData, client_security_data, client_network_data, block_header, write_conference_create_request, MessageType, read_conference_create_response};
-use model::data::{Trame, to_vec, Message, DataType};
+use model::data::{Trame, to_vec, Message, DataType, U16};
 use nla::asn1::{Sequence, ImplicitTag, OctetString, Enumerate, ASN1Type, Integer, to_der, from_ber};
 use yasna::{Tag};
 use std::io::{Write, Read, BufRead, Cursor};
 use core::per;
 
+#[allow(dead_code)]
 #[repr(u8)]
 enum DomainMCSPDU {
     ErectDomainRequest = 1,
@@ -66,6 +67,70 @@ fn mcs_pdu_header(pdu: Option<DomainMCSPDU>, options: Option<u8>) -> u8 {
     (pdu.unwrap_or(DomainMCSPDU::AttachUserConfirm) as u8) << 2 | options.unwrap_or(0)
 }
 
+/// Read attach user confirm
+fn read_attach_user_confirm(buffer: &mut dyn Read) -> RdpResult<u16> {
+    let mut confirm = trame![0 as u8, Vec::<u8>::new()];
+    confirm.read(buffer)?;
+    if cast!(DataType::U8, confirm[0])? >> 2 != mcs_pdu_header(Some(DomainMCSPDU::AttachUserConfirm), None) >> 2 {
+        return Err(Error::RdpError(RdpError::new(RdpErrorKind::InvalidData, "MCS: unexpected header on recv_attach_user_confirm")));
+    }
+
+    let mut request = Cursor::new(cast!(DataType::Slice, confirm[1])?);
+    if per::read_enumerates(&mut request)? != 0 {
+        return Err(Error::RdpError(RdpError::new(RdpErrorKind::RejectedByServer, "MCS: recv_attach_user_confirm user rejected by server")));
+    }
+    Ok(per::read_integer_16(1001, &mut request)?)
+}
+
+/// Attach the user to the current session
+fn attach_user_request() -> u8 {
+    mcs_pdu_header(Some(DomainMCSPDU::AttachUserRequest), None)
+}
+
+
+/// Create a new domain for MCS layer
+fn erect_domain_request() -> RdpResult<Trame> {
+    let mut result = Cursor::new(vec![]);
+    per::write_integer(0, &mut result)?;
+    per::write_integer(0, &mut result)?;
+    Ok(trame![
+        mcs_pdu_header(Some(DomainMCSPDU::ErectDomainRequest), None),
+        result.into_inner()
+    ])
+}
+
+/// Ask to join a new channel
+fn channel_join_request(user_id: Option<u16>, channel_id: Option<u16>) -> RdpResult<Trame> {
+    Ok(trame![
+        mcs_pdu_header(Some(DomainMCSPDU::ChannelJoinRequest), None),
+        U16::BE(user_id.unwrap_or(1001) - 1001),
+        U16::BE(channel_id.unwrap_or(0))
+    ])
+}
+
+fn read_channel_join_confirm(user_id: u16, channel_id: u16, buffer: &mut dyn Read) -> RdpResult<bool> {
+    let mut confirm = trame![0 as u8, Vec::<u8>::new()];
+    confirm.read(buffer)?;
+    if cast!(DataType::U8, confirm[0])? >> 2 != mcs_pdu_header(Some(DomainMCSPDU::ChannelJoinConfirm), None) >> 2 {
+        return Err(Error::RdpError(RdpError::new(RdpErrorKind::InvalidData, "MCS: unexpected header on read_channel_join_confirm")));
+    }
+
+    let mut request = Cursor::new(cast!(DataType::Slice, confirm[1])?);
+    let confirm = per::read_enumerates(&mut request)?;
+    let confirm_user_id = per::read_integer_16(1001, &mut request)?;
+    let confirm_channel_id = per::read_integer_16(0, &mut request)?;
+
+    if user_id != confirm_user_id {
+        return Err(Error::RdpError(RdpError::new(RdpErrorKind::InvalidData, "MCS: read_channel_join_confirm invalid user id")));
+    }
+
+    if channel_id != confirm_channel_id {
+        return Err(Error::RdpError(RdpError::new(RdpErrorKind::InvalidData, "MCS: read_channel_join_confirm invalid channel_id")));
+    }
+
+    Ok(confirm == 0)
+}
+
 pub struct Client<S> {
     x224: x224::Client<S>,
     client_data: ClientData,
@@ -112,43 +177,49 @@ impl<S: Read + Write> Client<S> {
         Ok(())
     }
 
-    fn send_erect_domain_request(&mut self) -> RdpResult<()> {
-        let mut result = Cursor::new(vec![]);
-        per::write_integer(0, &mut result)?;
-        per::write_integer(0, &mut result)?;
-        self.x224.send(trame![
-            mcs_pdu_header(Some(DomainMCSPDU::ErectDomainRequest), None),
-            result.into_inner()
-        ])
-    }
-
-    fn send_attach_user_request(&mut self) -> RdpResult<()> {
-        self.x224.send(trame![mcs_pdu_header(Some(DomainMCSPDU::AttachUserRequest), None)])
-    }
-
-    fn recv_attach_user_confirm(&mut self) -> RdpResult<u16> {
-        let mut buffer = self.x224.recv()?;
-        let mut confirm = trame![0 as u8, Vec::<u8>::new()];
-        confirm.read(&mut buffer)?;
-        if cast!(DataType::U8, confirm[0])? >> 2 != mcs_pdu_header(Some(DomainMCSPDU::AttachUserConfirm), None) >> 2 {
-            return Err(Error::RdpError(RdpError::new(RdpErrorKind::InvalidData, "MCS: unexpected header on recv_attach_user_confirm")));
-        }
-
-        let mut request = Cursor::new(cast!(DataType::Slice, confirm[1])?);
-        if per::read_enumerates(&mut request)? != 0 {
-            return Err(Error::RdpError(RdpError::new(RdpErrorKind::RejectedByServer, "MCS: recv_attach_user_confirm user rejected by server")));
-        }
-        Ok(per::read_integer_16(1001, &mut request)?)
-    }
-
     pub fn connect(&mut self) -> RdpResult<()> {
         self.send_connect_initial()?;
         self.recv_connect_response()?;
-        self.send_erect_domain_request()?;
-        self.send_attach_user_request()?;
-        let user_id = self.recv_attach_user_confirm()?;
-        println!("user id: {:?}", user_id);
-        self.x224.recv()?;
+        self.x224.send(erect_domain_request()?)?;
+        self.x224.send(attach_user_request())?;
+        let user_id = read_attach_user_confirm(&mut self.x224.recv()?)?;
+
+        // Create list of requested channels
+        for channel_id in &[1003, user_id] {
+            self.x224.send(channel_join_request(Some(user_id), Some(*channel_id))?)?;
+            if !read_channel_join_confirm(user_id, *channel_id, &mut self.x224.recv()?)? {
+                println!("Server reject channel id {:?}", channel_id);
+            }
+        }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    // Test of read read_attach_user_confirm
+    #[test]
+    fn test_read_attach_user_confirm() {
+        assert_eq!(read_attach_user_confirm(&mut Cursor::new(vec![46, 0, 0, 3])).unwrap(), 1004)
+    }
+
+    // Attach user request payload
+    #[test]
+    fn test_attach_user_request() {
+        assert_eq!(attach_user_request(), 40)
+    }
+
+    // Test of the new domain request
+    #[test]
+    fn test_erect_domain_request() {
+        assert_eq!(to_vec(&erect_domain_request().unwrap()), [4, 1, 0, 1, 0])
+    }
+
+    // Test format of the channel join request
+    #[test]
+    fn test_channel_join_request() {
+         assert_eq!(to_vec(&channel_join_request(None, None).unwrap()), [56, 0, 0, 0, 0])
     }
 }

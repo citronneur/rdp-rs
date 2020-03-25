@@ -44,7 +44,7 @@ impl ASN1 for SequenceOf {
     fn write_asn1(&self, writer: DERWriter) -> RdpResult<()> {
         writer.write_sequence_of(|sequence| {
             for child in &self.inner {
-                child.write_asn1(sequence.next());
+                child.write_asn1(sequence.next()).unwrap();
             }
         });
         Ok(())
@@ -113,7 +113,7 @@ impl<T> ExplicitTag<T> {
 impl<T: ASN1> ASN1 for ExplicitTag<T> {
     fn write_asn1(&self, writer: DERWriter) -> RdpResult<()> {
         writer.write_tagged(self.tag, |writer| {
-            self.inner.write_asn1(writer);
+            self.inner.write_asn1(writer).unwrap();
             Ok(())
         })
     }
@@ -149,7 +149,7 @@ impl<T> ImplicitTag<T> {
 impl<T: ASN1> ASN1 for ImplicitTag<T> {
     fn write_asn1(&self, writer: DERWriter) -> RdpResult<()> {
         writer.write_tagged_implicit(self.tag, |writer| {
-            self.inner.write_asn1(writer);
+            self.inner.write_asn1(writer).unwrap();
             Ok(())
         })
     }
@@ -204,7 +204,7 @@ impl ASN1 for Sequence {
     fn write_asn1(&self, writer: DERWriter) -> RdpResult<()> {
         writer.write_sequence(|sequence| {
             for (_name, child) in self.iter() {
-                child.write_asn1(sequence.next());
+                child.write_asn1(sequence.next()).unwrap();
             };
         });
         Ok(())
@@ -244,7 +244,7 @@ impl ASN1 for Enumerate {
 /// Serialize an ASN1 message into der stream
 pub fn to_der(message: &dyn ASN1) -> Vec<u8> {
     yasna::construct_der(|writer| {
-        message.write_asn1(writer);
+        message.write_asn1(writer).unwrap();
     })
 }
 

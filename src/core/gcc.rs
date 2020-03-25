@@ -12,6 +12,7 @@ const H221_SC_KEY: [u8; 4] = *b"McDn";
 /// RDP protocol version
 /// https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-rdpbcgr/00f1da4a-ee9c-421a-852f-c19f92343d73?redirectedfrom=MSDN
 #[repr(u32)]
+#[allow(dead_code)]
 enum Version {
     RdpVersion = 0x00080001,
     RdpVersion5plus = 0x00080004
@@ -21,6 +22,7 @@ enum Version {
 /// This flag is deprecated
 /// https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-rdpbcgr/00f1da4a-ee9c-421a-852f-c19f92343d73?redirectedfrom=MSDN
 #[repr(u16)]
+#[allow(dead_code)]
 enum ColorDepth {
     RnsUdColor8BPP = 0xCA01,
     RnsUdColor16BPP555 = 0xCA02,
@@ -62,6 +64,7 @@ pub enum KeyboardLayout {
 /// Keyboard type
 /// Ibm101102Keys is the most common keyboard type
 #[repr(u32)]
+#[allow(dead_code)]
 enum KeyboardType {
     IbmPcXt83Key  = 0x00000001,
     Olivetti  = 0x00000002,
@@ -73,6 +76,7 @@ enum KeyboardType {
 }
 
 #[repr(u16)]
+#[allow(dead_code)]
 enum HighColor {
     HighColor4BPP = 0x0004,
     HighColor8BPP = 0x0008,
@@ -85,6 +89,7 @@ enum HighColor {
 /// Supported color depth
 /// https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-rdpbcgr/00f1da4a-ee9c-421a-852f-c19f92343d73?redirectedfrom=MSDN
 #[repr(u16)]
+#[allow(dead_code)]
 enum Support {
     RnsUd24BPPSupport = 0x0001,
     RnsUd16BPPSupport = 0x0002,
@@ -95,6 +100,7 @@ enum Support {
 /// Negotiation of some capability for pdu layer
 /// https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-rdpbcgr/00f1da4a-ee9c-421a-852f-c19f92343d73?redirectedfrom=MSDN
 #[repr(u16)]
+#[allow(dead_code)]
 enum CapabilityFlag {
     RnsUdCsSupportErrinfoPDU = 0x0001,
     RnsUdCsWant32BPPSession = 0x0002,
@@ -112,6 +118,7 @@ enum CapabilityFlag {
 /// Supported encryption method
 /// https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-rdpbcgr/6b58e11e-a32b-4903-b736-339f3cfe46ec?redirectedfrom=MSDN
 #[repr(u32)]
+#[allow(dead_code)]
 enum EncryptionMethod {
     EncryptionFlag40bit = 0x00000001,
     EncryptionFlag128bit = 0x00000002,
@@ -121,6 +128,7 @@ enum EncryptionMethod {
 
 /// Encryption level
 /// https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-rdpbcgr/3e86b68d-3e2e-4433-b486-878875778f4b?redirectedfrom=MSDN
+#[allow(dead_code)]
 enum EncryptionLevel {
     None = 0x00000000,
     Low = 0x00000001,
@@ -315,7 +323,7 @@ pub fn read_conference_create_response(cc_response: &mut dyn Read) -> RdpResult<
         }
 
         let mut buffer = vec![0 as u8; (cast!(DataType::U16, header["length"])? - header.length() as u16) as usize];
-        sub.read_exact(&mut buffer);
+        sub.read_exact(&mut buffer)?;
 
         match MessageType::from(cast!(DataType::U16, header["type"])?) {
             MessageType::ScCore => {
@@ -337,7 +345,7 @@ pub fn read_conference_create_response(cc_response: &mut dyn Read) -> RdpResult<
         }
     }
 
-    /// All section are important
+    // All section are important
     Ok(ServerData{
         early_capability_flags: cast!(DataType::U32, result[&MessageType::ScCore]["earlyCapabilityFlags"])?,
         channel_ids: cast!(DataType::Trame, result[&MessageType::ScNet]["channelIdArray"])?.into_iter().map(|x| cast!(DataType::U16, x).unwrap()).collect()

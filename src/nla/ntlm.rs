@@ -11,6 +11,7 @@ use crypto::rc4::{Rc4};
 use crypto::symmetriccipher::SynchronousStreamCipher;
 
 #[repr(u32)]
+#[allow(dead_code)]
 enum Negotiate {
     NtlmsspNegociate56 = 0x80000000,
     NtlmsspNegociateKeyExch = 0x40000000,
@@ -36,12 +37,14 @@ enum Negotiate {
 }
 
 #[repr(u8)]
+#[allow(dead_code)]
 enum MajorVersion {
     WindowsMajorVersion5 = 0x05,
     WindowsMajorVersion6 = 0x06
 }
 
 #[repr(u8)]
+#[allow(dead_code)]
 enum MinorVersion {
     WindowsMinorVersion0 = 0x00,
     WindowsMinorVersion1 = 0x01,
@@ -244,7 +247,7 @@ fn read_target_info(data: &[u8]) -> RdpResult<HashMap<AvId, Vec<u8>>> {
     let mut result = HashMap::new();
     loop {
         let mut element = av_pair();
-        element.read(&mut stream);
+        element.read(&mut stream)?;
         let av_id = AvId::from(cast!(DataType::U16, element["AvId"])?)?;
         if av_id == AvId::MsvAvEOL {
             break;
@@ -311,7 +314,7 @@ fn unicode(data: &String) -> Vec<u8> {
     let mut result = Cursor::new(Vec::new());
     for c in data.encode_utf16() {
         let encode_char = U16::LE(c);
-        encode_char.write(&mut result);
+        encode_char.write(&mut result).unwrap();
     }
     return result.into_inner()
 }

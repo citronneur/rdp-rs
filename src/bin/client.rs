@@ -5,7 +5,6 @@ use rdp::core::tpkt;
 use rdp::core::x224;
 use rdp::core::mcs;
 use rdp::core::gcc::KeyboardLayout;
-use rdp::core::client::RdpClient;
 use std::net::{SocketAddr, TcpStream};
 
 fn main() {

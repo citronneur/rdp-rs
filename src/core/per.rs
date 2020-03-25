@@ -17,10 +17,9 @@ use model::error::{RdpResult, Error, RdpError, RdpErrorKind};
 pub fn read_length(s: &mut dyn Read) -> RdpResult<u16> {
     let mut byte: u8 = 0;
     byte.read(s)?;
-    let mut size: u16 = 0;
     if byte & 0x80 != 0 {
         byte = byte & !0x80;
-        size = (byte as u16) << 8 ;
+        let mut size = (byte as u16) << 8 ;
         byte.read(s)?;
         size += byte as u16;
         Ok(size)
@@ -232,13 +231,13 @@ pub fn read_integer(s: &mut dyn Read) -> RdpResult<u32> {
 /// ```
 pub fn write_integer(integer: u32, s: &mut dyn Write) -> RdpResult<()> {
     if integer < 0xFF {
-        write_length(1, s);
+        write_length(1, s)?;
         (integer as u8).write(s)?;
     } else if integer < 0xFFFF {
-        write_length(2, s);
+        write_length(2, s)?;
         U16::BE(integer as u16).write(s)?;
     } else {
-        write_length(4, s);
+        write_length(4, s)?;
         U32::BE(integer).write(s)?;
     };
     Ok(())

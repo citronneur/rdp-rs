@@ -73,7 +73,7 @@ impl<S: Read + Write> Client<S> {
         Ok(self.transport.recv(size.get() as usize - 4)?)
     }
 
-    pub fn start_ssl(mut self) -> RdpResult<Client<S>> {
+    pub fn start_ssl(self) -> RdpResult<Client<S>> {
         Ok(Client::new(self.transport.start_ssl()?))
     }
 
@@ -100,7 +100,7 @@ mod test {
             x
         ];
         let mut buffer = Cursor::new(Vec::new());
-        message.write(&mut buffer);
+        message.write(&mut buffer).unwrap();
         assert_eq!(buffer.get_ref().as_slice(), [3, 0, 0, 8, 0, 0, 0, 1]);
     }
 
@@ -109,7 +109,7 @@ mod test {
     fn test_read_tpkt_header() {
         let mut message =  tpkt_header(0);
         let mut buffer = Cursor::new([3, 0, 0, 8, 0, 0, 0, 1]);
-        message.read(&mut buffer);
+        message.read(&mut buffer).unwrap();
         assert_eq!(cast!(DataType::U16, message["size"]).unwrap(), 8);
         assert_eq!(cast!(DataType::U8, message["action"]).unwrap(), Action::FastPathActionX224 as u8);
     }
