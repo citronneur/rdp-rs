@@ -9,11 +9,11 @@ use std::net::{SocketAddr, TcpStream};
 
 fn main() {
 
-    /// global.connect(mcs)
-    /// clipboard.connect(mcs)
-    /// match mcs.recv()? {
-    ///     Global(m) => (global_callback)(global.recv(m)?),
-    /// }
+    // global.connect(mcs)
+    // clipboard.connect(mcs)
+    // match mcs.recv()? {
+    //     Global(m) => (global_callback)(global.recv(m)?),
+    // }
     let addr = "127.0.0.1:33389".parse::<SocketAddr>().unwrap();
     let tcp = Link::new( Stream::Raw(TcpStream::connect(&addr).unwrap()));
     let tpkt = tpkt::Client::new(tcp);

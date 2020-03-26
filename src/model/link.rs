@@ -88,4 +88,9 @@ impl<S: Read + Write> Link<S> {
             Err(Error::RdpError(RdpError::new(RdpErrorKind::InvalidData, "get peer certificate on non ssl link is impossible")))
         }
     }
+
+    #[cfg(feature = "integration")]
+    pub fn get_stream(self) -> Stream<S> {
+        self.stream
+    }
 }

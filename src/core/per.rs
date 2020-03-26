@@ -34,21 +34,21 @@ pub fn read_length(s: &mut dyn Read) -> RdpResult<u16> {
 /// ```
 /// use std::io::Cursor;
 /// use rdp::core::per::write_length;
+/// use rdp::model::data::Message;
 /// let mut s = Cursor::new(vec![]);
-/// write_length(0x10, &mut s);
+/// write_length(0x10).unwrap().write(&mut s).unwrap();
 /// assert_eq!(s.into_inner(), [0x10]);
 /// let mut s2 = Cursor::new(vec![]);
-/// write_length(0x110, &mut s2);
+/// write_length(0x110).unwrap().write(&mut s2).unwrap();
 /// assert_eq!(s2.into_inner(), [0x81, 0x10]);
 /// ```
-pub fn write_length(length: u16, s: &mut dyn Write) -> RdpResult<()> {
+pub fn write_length(length: u16) -> RdpResult<Trame> {
     if length > 0x7f {
-        U16::BE(length | 0x8000).write(s)?;
+        Ok(trame![U16::BE(length | 0x8000)])
     }
     else {
-        (length as u8).write(s)?;
+        Ok(trame![length as u8])
     }
-    Ok(())
 }
 
 /// Read a choice value in PER encoded stream
@@ -231,13 +231,13 @@ pub fn read_integer(s: &mut dyn Read) -> RdpResult<u32> {
 /// ```
 pub fn write_integer(integer: u32, s: &mut dyn Write) -> RdpResult<()> {
     if integer < 0xFF {
-        write_length(1, s)?;
+        write_length(1)?.write(s)?;
         (integer as u8).write(s)?;
     } else if integer < 0xFFFF {
-        write_length(2, s)?;
+        write_length(2)?.write(s)?;
         U16::BE(integer as u16).write(s)?;
     } else {
-        write_length(4, s)?;
+        write_length(4)?.write(s)?;
         U32::BE(integer).write(s)?;
     };
     Ok(())
@@ -363,7 +363,7 @@ pub fn write_numeric_string(string: &[u8], minimum: usize,  s: &mut dyn Write) -
         length -= minimum;
     }
 
-    write_length(length as u16, s)?;
+    write_length(length as u16)?.write(s)?;
 
     for i in 0..string.len() {
         let mut c1 = string[i];
@@ -426,7 +426,7 @@ pub fn write_octet_stream(octet_string: &[u8], minimum: usize, s: &mut dyn Write
         length = octet_string.len() - minimum;
     }
 
-    write_length(length as u16, s)?;
+    write_length(length as u16)?.write(s)?;
 
     octet_string.to_vec().write(s)?;
     Ok(())

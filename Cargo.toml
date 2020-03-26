@@ -11,6 +11,11 @@ path = "src/lib.rs"
 name = "rdp-rs-client"
 path = "src/bin/client.rs"
 
+[features]
+# The reason we do this is because doctests don't get cfg(test)
+# See: https://github.com/rust-lang/cargo/issues/4669
+integration = []
+
 [dependencies]
 native-tls = "^0.2"
 byteorder = "^1.3"

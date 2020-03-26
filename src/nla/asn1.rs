@@ -3,6 +3,8 @@ use model::error::{RdpResult, Error};
 use indexmap::map::IndexMap;
 use num_bigint::BigUint;
 
+/// Enum all possible value
+/// In an ASN 1 tree
 pub enum ASN1Type<'a> {
     Sequence(&'a Sequence),
     SequenceOf(&'a SequenceOf),

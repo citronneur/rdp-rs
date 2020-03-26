@@ -6,6 +6,7 @@ use nla::asn1::{Sequence, ImplicitTag, OctetString, Enumerate, ASN1Type, Integer
 use yasna::{Tag};
 use std::io::{Write, Read, BufRead, Cursor};
 use core::per;
+use std::collections::HashMap;
 
 #[allow(dead_code)]
 #[repr(u8)]
@@ -134,7 +135,9 @@ fn read_channel_join_confirm(user_id: u16, channel_id: u16, buffer: &mut dyn Rea
 pub struct Client<S> {
     x224: x224::Client<S>,
     client_data: ClientData,
-    server_data: Option<ServerData>
+    server_data: Option<ServerData>,
+    user_id: Option<u16>,
+    channel_ids : HashMap<String, u16>
 }
 
 impl<S: Read + Write> Client<S> {
@@ -148,7 +151,9 @@ impl<S: Read + Write> Client<S> {
                 server_selected_protocol: x224.selected_protocol as u32
             },
             server_data: None,
-            x224
+            x224,
+            user_id: None,
+            channel_ids: HashMap::new()
         }
     }
 
@@ -170,28 +175,49 @@ impl<S: Read + Write> Client<S> {
         let mut connect_response = connect_response(None);
         from_ber(&mut connect_response, self.x224.recv()?.fill_buf()?)?;
 
-        // Get user data
+        // Get server data
         // Read conference create response
         let cc_response = cast!(ASN1Type::OctetString, connect_response.inner["userData"])?;
         self.server_data = Some(read_conference_create_response(&mut Cursor::new(cc_response))?);
         Ok(())
     }
 
+    /// Connect the MCS channel
+    /// Ask connection for each channel requested
+    /// and confirmed by server
     pub fn connect(&mut self) -> RdpResult<()> {
         self.send_connect_initial()?;
         self.recv_connect_response()?;
         self.x224.send(erect_domain_request()?)?;
         self.x224.send(attach_user_request())?;
-        let user_id = read_attach_user_confirm(&mut self.x224.recv()?)?;
+        self.user_id = Some(read_attach_user_confirm(&mut self.x224.recv()?)?);
+
+        // Add static channel
+        self.channel_ids.insert("global".to_string(), 1001);
+        self.channel_ids.insert("user".to_string(), self.user_id.unwrap());
 
         // Create list of requested channels
-        for channel_id in &[1003, user_id] {
-            self.x224.send(channel_join_request(Some(user_id), Some(*channel_id))?)?;
-            if !read_channel_join_confirm(user_id, *channel_id, &mut self.x224.recv()?)? {
+        // Actually only the two static main channel are requested
+        for channel_id in self.channel_ids.values() {
+            self.x224.send(channel_join_request(self.user_id, Some(*channel_id))?)?;
+            if !read_channel_join_confirm(self.user_id.unwrap(), *channel_id, &mut self.x224.recv()?)? {
                 println!("Server reject channel id {:?}", channel_id);
             }
         }
         Ok(())
+    }
+
+    /// Send a message to a connected channel
+    pub fn send<T: 'static>(&mut self, channel_name: &String, message: T) -> RdpResult<()>
+    where T: Message {
+        self.x224.send(trame![
+            mcs_pdu_header(Some(DomainMCSPDU::SendDataIndication), None),
+            U16::BE(self.user_id.unwrap() - 1001),
+            U16::BE(self.channel_ids[channel_name]),
+            0x70 as u8,
+            per::write_length(message.length() as u16)?,
+            message
+        ])
     }
 }
 

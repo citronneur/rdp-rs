@@ -29,7 +29,11 @@ fn tpkt_header(size: u16) -> Component {
 ///
 /// # Example
 /// ```
-/// let tpkt_client = Client::new(upper_layer);
+/// use std::io::Cursor;
+/// use rdp::model::link::{Link, Stream};
+/// use rdp::core::tpkt::Client;
+/// let mut stream = Cursor::new(vec![]);
+/// let tpkt_client = Client::new(Link::new(Stream::Raw(stream)));
 /// ```
 pub struct Client<S> {
     transport: Link<S>
@@ -43,6 +47,31 @@ impl<S: Read + Write> Client<S> {
         }
     }
 
+    /// Send a message to the link layer
+    /// with appropriate header
+    /// Move to avoid copy
+    ///
+    /// # Example
+    /// ```
+    /// #[macro_use]
+    /// # extern crate rdp;
+    /// # use rdp::core::tpkt;
+    /// # use rdp::model::link;
+    /// # use std::io::Cursor;
+    /// # use rdp::model::data::{U16, Trame, U32};
+    /// # fn main() {
+    ///     let mut tpkt = tpkt::Client::new(link::Link::new(link::Stream::Raw(Cursor::new(vec![]))));
+    ///     tpkt.send(trame![U16::BE(4), U32::LE(3)]).unwrap();
+    ///     // get_link and get_stream are not available on Crate
+    ///     // only use for integration test [features = integration]
+    ///     if let link::Stream::Raw(e) = tpkt.get_link().get_stream() {
+    ///         assert_eq!(e.into_inner(), [3, 0, 0, 10, 0, 4, 3, 0, 0, 0])
+    ///     }
+    ///     else {
+    ///         panic!("Must not happen")
+    ///     }
+    /// }
+    /// ```
     pub fn send<T: 'static>(&mut self, message: T) -> RdpResult<()>
     where T: Message {
         self.transport.send(
@@ -53,6 +82,18 @@ impl<S: Read + Write> Client<S> {
         )
     }
 
+    /// Read a payload from the underlying layer
+    /// Check the tpkt header and provide a well
+    /// formed payload
+    ///
+    /// # Example
+    /// ```
+    /// use rdp::core::tpkt;
+    /// use rdp::model::link;
+    /// use std::io::Cursor;
+    /// let mut tpkt = tpkt::Client::new(link::Link::new(link::Stream::Raw(Cursor::new(vec![3, 0, 0, 10, 0, 4, 3, 0, 0, 0]))));
+    /// assert_eq!(tpkt.read().unwrap(), [0, 4, 3, 0, 0, 0])
+    /// ```
     pub fn read(&mut self) -> RdpResult<Vec<u8>> {
         let mut buffer = Cursor::new(self.transport.recv(2)?);
         let mut action: u8 = 0;
@@ -73,15 +114,24 @@ impl<S: Read + Write> Client<S> {
         Ok(self.transport.recv(size.get() as usize - 4)?)
     }
 
+    /// This function transform the link layer with
+    /// raw data stream into a SSL data stream
     pub fn start_ssl(self) -> RdpResult<Client<S>> {
         Ok(Client::new(self.transport.start_ssl()?))
     }
 
+    /// This function is used when NLA
+    /// Authentication is needed
     pub fn start_nla(self) -> RdpResult<Client<S>> {
         let mut link = self.transport.start_ssl()?;
         let mut ntlm_layer = Ntlm::new("".to_string(), "sylvain".to_string(), "sylvain".to_string());
         cssp_connect(&mut link, &mut ntlm_layer)?;
         Ok(Client::new(link))
+    }
+
+    #[cfg(feature = "integration")]
+    pub fn get_link(self) -> Link<S> {
+        self.transport
     }
 }
 

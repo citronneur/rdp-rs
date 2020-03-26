@@ -282,7 +282,7 @@ pub fn write_conference_create_request(user_data: &[u8]) ->RdpResult<Vec<u8>> {
     let mut result = Cursor::new(vec![]);
     per::write_choice(0, &mut result)?;
     per::write_object_identifier(&T124_02_98_OID, &mut result)?;
-    per::write_length(user_data.len() as u16 + 14, &mut result)?;
+    per::write_length(user_data.len() as u16 + 14)?.write(&mut result)?;
     per::write_choice(0, &mut result)?;
     per::write_selection(0x08, &mut result)?;
     per::write_numeric_string(b"1", 1, &mut result)?;

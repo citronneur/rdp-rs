@@ -75,7 +75,7 @@ pub fn client_x224_connection_pdu(
     protocols: Option<u32>) -> Component {
     let negotiation = rdp_neg_req(
         neg_type,
-        if let Some(p) = protocols {p} else {0}
+        protocols.unwrap_or(0)
     );
 
     component![
