@@ -1,6 +1,6 @@
 use core::x224;
 use model::error::{RdpResult, Error, RdpError, RdpErrorKind};
-use core::gcc::{KeyboardLayout, client_core_data, ClientData, ServerData, client_security_data, client_network_data, block_header, write_conference_create_request, MessageType, read_conference_create_response};
+use core::gcc::{KeyboardLayout, client_core_data, ClientData, ServerData, client_security_data, client_network_data, block_header, write_conference_create_request, MessageType, read_conference_create_response, Version};
 use model::data::{Trame, to_vec, Message, DataType, U16};
 use nla::asn1::{Sequence, ImplicitTag, OctetString, Enumerate, ASN1Type, Integer, to_der, from_ber};
 use yasna::{Tag};
@@ -148,7 +148,8 @@ impl<S: Read + Write> Client<S> {
                 width,
                 height,
                 layout,
-                server_selected_protocol: x224.selected_protocol as u32
+                server_selected_protocol: x224.selected_protocol as u32,
+                rdp_version: Version::RdpVersion5plus
             },
             server_data: None,
             x224,
@@ -193,7 +194,7 @@ impl<S: Read + Write> Client<S> {
         self.user_id = Some(read_attach_user_confirm(&mut self.x224.recv()?)?);
 
         // Add static channel
-        self.channel_ids.insert("global".to_string(), 1001);
+        self.channel_ids.insert("global".to_string(), 1003);
         self.channel_ids.insert("user".to_string(), self.user_id.unwrap());
 
         // Create list of requested channels
@@ -204,6 +205,7 @@ impl<S: Read + Write> Client<S> {
                 println!("Server reject channel id {:?}", channel_id);
             }
         }
+
         Ok(())
     }
 
@@ -211,13 +213,44 @@ impl<S: Read + Write> Client<S> {
     pub fn send<T: 'static>(&mut self, channel_name: &String, message: T) -> RdpResult<()>
     where T: Message {
         self.x224.send(trame![
-            mcs_pdu_header(Some(DomainMCSPDU::SendDataIndication), None),
+            mcs_pdu_header(Some(DomainMCSPDU::SendDataRequest), None),
             U16::BE(self.user_id.unwrap() - 1001),
             U16::BE(self.channel_ids[channel_name]),
             0x70 as u8,
             per::write_length(message.length() as u16)?,
             message
         ])
+    }
+
+    /// Receive a message for a specific channel
+    pub fn recv(&mut self) -> RdpResult<(String, Cursor<Vec<u8>>)> {
+        let mut payload = self.x224.recv()?;
+        let mut header = mcs_pdu_header(None, None);
+        header.read(&mut payload)?;
+        if header >> 2 == DomainMCSPDU::DisconnectProviderUltimatum as u8 {
+            return Err(Error::RdpError(RdpError::new(RdpErrorKind::Disconnect, "MCS: Disconnect Provider Ultimatum")));
+        }
+
+        if header >> 2 != DomainMCSPDU::SendDataIndication as u8 {
+            return Err(Error::RdpError(RdpError::new(RdpErrorKind::InvalidData, "MCS: Invalid opcode")));
+        }
+
+        // Server user id
+        per::read_integer_16(1001, &mut payload)?;
+
+        let channel_id = per::read_integer_16(0, &mut payload)?;
+        let channel = self.channel_ids.iter().find(|x| *x.1 == channel_id).ok_or(Error::RdpError(RdpError::new(RdpErrorKind::Unknown, "MCS: unknown channel")))?;
+
+        per::read_enumerates(&mut payload)?;
+        per::read_length(&mut payload)?;
+
+        Ok((channel.0.clone(), payload))
+    }
+
+    /// This function check if the client
+    /// version protocol choose is 5+
+    pub fn is_rdp_version_5_plus(&self) -> bool {
+        self.server_data.as_ref().unwrap().rdp_version == Version::RdpVersion5plus
     }
 }
 

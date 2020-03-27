@@ -4,6 +4,7 @@ use rdp::model::link::{Link, Stream};
 use rdp::core::tpkt;
 use rdp::core::x224;
 use rdp::core::mcs;
+use rdp::core::sec;
 use rdp::core::gcc::KeyboardLayout;
 use std::net::{SocketAddr, TcpStream};
 
@@ -21,6 +22,9 @@ fn main() {
     let x224 = x224_connector.connect().unwrap();
     let mut mcs = mcs::Client::new(x224, 1280, 800, KeyboardLayout::French);
     mcs.connect().unwrap();
+
+    let mut sec = sec::Client::new(mcs);
+    sec.connect().unwrap();
     //let _rdp_client =  RdpClient::new(x224);
 
 }

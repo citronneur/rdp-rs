@@ -13,9 +13,21 @@ const H221_SC_KEY: [u8; 4] = *b"McDn";
 /// https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-rdpbcgr/00f1da4a-ee9c-421a-852f-c19f92343d73?redirectedfrom=MSDN
 #[repr(u32)]
 #[allow(dead_code)]
-enum Version {
+#[derive(Copy, Clone, Eq, PartialEq)]
+pub enum Version {
     RdpVersion = 0x00080001,
-    RdpVersion5plus = 0x00080004
+    RdpVersion5plus = 0x00080004,
+    Unknown
+}
+
+impl From<u32> for Version {
+    fn from(e: u32) -> Self {
+        match e {
+            0x00080001 => Version::RdpVersion5plus,
+            0x00080004 => Version::RdpVersion,
+            _ => Version::Unknown
+        }
+    }
 }
 
 /// Color depth
@@ -176,7 +188,8 @@ pub struct ClientData {
     pub width: u16,
     pub height: u16,
     pub layout: KeyboardLayout,
-    pub server_selected_protocol: u32
+    pub server_selected_protocol: u32,
+    pub rdp_version: Version
 }
 
 /// This is the first client specific data
@@ -185,9 +198,9 @@ pub struct ClientData {
 /// RDP they are not use
 /// https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-rdpbcgr/00f1da4a-ee9c-421a-852f-c19f92343d73?redirectedfrom=MSDN
 pub fn client_core_data(parameter: Option<ClientData>) -> Component {
-    let client_parameter = parameter.unwrap_or(ClientData { width: 0, height: 0, layout: KeyboardLayout::French, server_selected_protocol: 0});
+    let client_parameter = parameter.unwrap_or(ClientData { width: 0, height: 0, layout: KeyboardLayout::French, server_selected_protocol: 0, rdp_version: Version::RdpVersion5plus});
     component![
-        "version" => U32::LE(Version::RdpVersion5plus as u32),
+        "version" => U32::LE(client_parameter.rdp_version as u32),
         "desktopWidth" => U16::LE(client_parameter.width),
         "desktopHeight" => U16::LE(client_parameter.height),
         "colorDepth" => U16::LE(ColorDepth::RnsUdColor8BPP as u16),
@@ -296,7 +309,8 @@ pub fn write_conference_create_request(user_data: &[u8]) ->RdpResult<Vec<u8>> {
 
 pub struct ServerData {
     pub early_capability_flags: u32,
-    pub channel_ids: Vec<u16>
+    pub channel_ids: Vec<u16>,
+    pub rdp_version : Version
 }
 
 /// Read conference create response
@@ -348,6 +362,7 @@ pub fn read_conference_create_response(cc_response: &mut dyn Read) -> RdpResult<
     // All section are important
     Ok(ServerData{
         early_capability_flags: cast!(DataType::U32, result[&MessageType::ScCore]["earlyCapabilityFlags"])?,
-        channel_ids: cast!(DataType::Trame, result[&MessageType::ScNet]["channelIdArray"])?.into_iter().map(|x| cast!(DataType::U16, x).unwrap()).collect()
+        channel_ids: cast!(DataType::Trame, result[&MessageType::ScNet]["channelIdArray"])?.into_iter().map(|x| cast!(DataType::U16, x).unwrap()).collect(),
+        rdp_version: Version::from(cast!(DataType::U32, result[&MessageType::ScCore]["rdpVersion"])?)
     })
 }

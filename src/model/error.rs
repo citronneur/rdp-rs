@@ -21,7 +21,10 @@ pub enum RdpErrorKind {
     InvalidOptionalField,
     InvalidSize,
     PossibleMITM,
-    RejectedByServer
+    RejectedByServer,
+    Disconnect,
+    Unknown,
+    InvalidChannel
 }
 
 #[derive(Debug)]
