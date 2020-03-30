@@ -3,6 +3,7 @@ use model::error::{RdpResult, RdpErrorKind, RdpError, Error};
 use byteorder::{WriteBytesExt, ReadBytesExt, LittleEndian, BigEndian};
 use indexmap::IndexMap;
 use std::collections::{HashSet, HashMap};
+use std::fs::read;
 
 
 /// All data type used
@@ -317,7 +318,6 @@ impl Message for Component {
             if dynamic_size.contains_key(name) {
                 let mut local =vec![0; dynamic_size[name]];
                 reader.read_exact(&mut local)?;
-
                 value.read(&mut Cursor::new(local))?;
             }
             else {
@@ -701,17 +701,8 @@ impl<T: Message> Message for Option<T> {
     /// ```
     fn read(&mut self, reader: &mut dyn Read) -> RdpResult<()> {
         if let Some(value) = self {
-            let mut buffer = vec![0 as u8; value.length() as usize];
-
-            // Try to read exactly the expected number of bytes
-            match reader.read_exact(&mut buffer) {
-                Ok(()) => {
-                    let mut cursor = Cursor::new(buffer);
-                    value.read(&mut cursor)?;
-                }
-                Err(_) => {
-                    *self = None
-                }
+            if value.read(reader).is_err() {
+                *self = None
             }
         }
         Ok(())
@@ -795,6 +786,16 @@ impl<T: Message> Array<T> {
         }
     }
 
+    pub fn from_trame(inner: Trame) -> Self {
+        Array {
+            inner,
+            factory: Box::new(|| panic!("Try reading a non empty array"))
+        }
+    }
+
+    pub fn inner_length(&self) -> usize {
+        self.inner.len()
+    }
 }
 
 /// Implement tye message trait for Array

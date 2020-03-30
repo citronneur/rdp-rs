@@ -5,3 +5,7 @@ pub mod mcs;
 pub mod gcc;
 pub mod per;
 pub mod sec;
+pub mod license;
+pub mod channel;
+pub mod global;
+pub mod capability;

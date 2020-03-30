@@ -11,6 +11,7 @@ use yasna::ASN1Error;
 #[derive(Debug)]
 pub enum RdpErrorKind {
     InvalidData,
+    InvalidRespond,
     NotImplemented,
     ProtocolNegFailure,
     InvalidAutomata,
@@ -24,7 +25,8 @@ pub enum RdpErrorKind {
     RejectedByServer,
     Disconnect,
     Unknown,
-    InvalidChannel
+    InvalidChannel,
+    UnexpectedType
 }
 
 #[derive(Debug)]
@@ -92,6 +94,17 @@ macro_rules! try_option {
             Ok(x)
          } else {
             Err(Error::RdpError(RdpError::new(RdpErrorKind::InvalidOptionalField, $expr)))
+         }
+    }
+}
+
+#[macro_export]
+macro_rules! try_let {
+    ($ident: path, $val: expr) => {
+         if let $ident(x) = $val {
+            Ok(x)
+         } else {
+            Err(Error::RdpError(RdpError::new(RdpErrorKind::InvalidCast, "Invalid Cast")))
          }
     }
 }

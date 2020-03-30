@@ -1,4 +1,5 @@
 use core::mcs;
+use core::license;
 use model::error::{RdpResult, Error, RdpError, RdpErrorKind};
 use model::data::{Message, Component, U16, U32, DynOption, MessageOption, Trame, DataType};
 use std::io::{Write, Read, Cursor};
@@ -99,57 +100,30 @@ fn security_header() -> Component {
     ]
 }
 
-pub struct Client<T> {
-    mcs: mcs::Client<T>
-}
 
-impl<T: Read + Write> Client<T> {
-    pub fn new(mcs: mcs::Client<T>) -> Self {
-        Client {
-            mcs
-        }
-    }
-
-    /// Security layer need mcs layer and send all message through
-    /// the global channel
-    pub fn connect(&mut self) -> RdpResult<()> {
-        /// Send connection information
-        self.send_with_flag(SecurityFlag::SecInfoPkt, rdp_infos(self.mcs.is_rdp_version_5_plus()))?;
-
-        /// loop over license automata
-        loop {
-
-            let mut payload = self.mcs.recv()?;
-            if payload.0 != "global".to_string() {
-                return Err(Error::RdpError(RdpError::new(RdpErrorKind::InvalidChannel, "SEC: Receive wrong channel name during sec+lic connection step")))
-            }
-
-            if self.recv_license(&mut payload.1)? {
-                break;
-            }
-        }
-
-        Ok(())
-    }
-
-    /// Send a message to the global channel of MCS
-    /// With the appropriate flag
-    fn send_with_flag<M: 'static>(&mut self, flag: SecurityFlag, message: M) -> RdpResult<()>
-    where M: Message {
-        self.mcs.send(&"global".to_string(), trame![
-            U16::LE(flag as u16),
+/// Security layer need mcs layer and send all message through
+/// the global channel
+pub fn client_connect<T: Read + Write>(mcs: &mut mcs::Client<T>) -> RdpResult<()> {
+    mcs.send(
+        &"global".to_string(),
+        trame![
+            U16::LE(SecurityFlag::SecInfoPkt as u16),
             U16::LE(0),
-            message
-        ])
+            rdp_infos(mcs.is_rdp_version_5_plus())
+        ]
+    )?;
+
+    let (channel_name, mut stream) = mcs.recv()?;
+    let mut header = security_header();
+    header.read(&mut stream)?;
+    if cast!(DataType::U16, header["securityFlag"])? & SecurityFlag::SecLicensePkt as u16 == 0 {
+        return Err(Error::RdpError(RdpError::new(RdpErrorKind::InvalidData, "SEC: Invalid Licence packet")));
     }
 
-    fn recv_license(&self, s: &mut dyn Read) -> RdpResult<bool> {
-        let mut header = security_header();
-        header.read(s)?;
-        if cast!(DataType::U16, header["securityFlag"])? & SecurityFlag::SecLicensePkt as u16 == 0 {
-            return Err(Error::RdpError(RdpError::new(RdpErrorKind::InvalidData, "SEC: Invalid Licence packet")));
-        }
-
-        Ok(true)
-    }
+    license::client_connect(&mut stream)?;
+    Ok(())
 }
+
+
+
+
