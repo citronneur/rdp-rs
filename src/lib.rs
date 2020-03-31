@@ -9,6 +9,8 @@ extern crate rand;
 extern crate crypto;
 extern crate num_bigint;
 extern crate x509_parser;
+extern crate winit;
+extern crate winapi;
 
 #[macro_use]
 pub mod model;

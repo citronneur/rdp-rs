@@ -1,5 +1,6 @@
 use core::mcs;
 use core::license;
+use core::tpkt;
 use model::error::{RdpResult, Error, RdpError, RdpErrorKind};
 use model::data::{Message, Component, U16, U32, DynOption, MessageOption, Trame, DataType};
 use std::io::{Write, Read, Cursor};
@@ -7,6 +8,7 @@ use std::io::{Write, Read, Cursor};
 /// Security flag send as header flage in core ptotocol
 /// https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-rdpbcgr/e13405c5-668b-4716-94b2-1c2654ca1ad4?redirectedfrom=MSDN
 #[repr(u16)]
+#[allow(dead_code)]
 enum SecurityFlag {
     SecExchangePkt = 0x0001,
     SecTransportReq = 0x0002,
@@ -27,6 +29,7 @@ enum SecurityFlag {
 
 /// RDP option someone links to capabilities
 /// https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-rdpbcgr/732394f5-e2b5-4ac5-8a0a-35345386b0d1?redirectedfrom=MSDN
+#[allow(dead_code)]
 enum InfoFlag {
     InfoMouse = 0x00000001,
     InfoDisablectrlaltdel = 0x00000002,
@@ -49,6 +52,7 @@ enum InfoFlag {
     InfoCompressionTypeMask = 0x00001E00
 }
 
+#[allow(dead_code)]
 enum AfInet {
     AfInet = 0x00002,
     AfInet6 = 0x0017
@@ -113,7 +117,8 @@ pub fn client_connect<T: Read + Write>(mcs: &mut mcs::Client<T>) -> RdpResult<()
         ]
     )?;
 
-    let (channel_name, mut stream) = mcs.recv()?;
+    let (channel_name, mut payload) = mcs.recv()?;
+    let mut stream = try_let!(tpkt::Payload::Raw, payload)?;
     let mut header = security_header();
     header.read(&mut stream)?;
     if cast!(DataType::U16, header["securityFlag"])? & SecurityFlag::SecLicensePkt as u16 == 0 {

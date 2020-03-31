@@ -5,6 +5,12 @@ use std::io::{Cursor, Write, Read};
 use nla::ntlm::Ntlm;
 use nla::cssp::cssp_connect;
 
+/// TPKT must implement this two form of payload
+pub enum Payload {
+    Raw(Cursor<Vec<u8>>),
+    FastPath(u8, Cursor<Vec<u8>>)
+}
+
 /// TPKT action header
 /// # see : https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-rdpbcgr/b8e7c588-51cb-455b-bb73-92d480903133
 /// # see : https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-rdpbcgr/68b5ee54-d0d5-4d65-8d81-e1c4025f7597
@@ -94,24 +100,40 @@ impl<S: Read + Write> Client<S> {
     /// let mut tpkt = tpkt::Client::new(link::Link::new(link::Stream::Raw(Cursor::new(vec![3, 0, 0, 10, 0, 4, 3, 0, 0, 0]))));
     /// assert_eq!(tpkt.read().unwrap(), [0, 4, 3, 0, 0, 0])
     /// ```
-    pub fn read(&mut self) -> RdpResult<Vec<u8>> {
+    pub fn read(&mut self) -> RdpResult<Payload> {
         let mut buffer = Cursor::new(self.transport.recv(2)?);
         let mut action: u8 = 0;
         action.read(&mut buffer)?;
-        if action != Action::FastPathActionX224 as u8 {
-            return Err(Error::RdpError(RdpError::new(RdpErrorKind::NotImplemented, "FastPath packet is not implemented")))
-        }
-        // read padding
-        let mut padding: u8 = 0;
-        padding.read(&mut buffer)?;
-        // now wait extended header
-        buffer = Cursor::new(self.transport.recv(2)?);
+        if action == Action::FastPathActionX224 as u8 {
 
-        let mut size = U16::BE(0);
-        size.read(&mut buffer)?;
+            // read padding
+            let mut padding: u8 = 0;
+            padding.read(&mut buffer)?;
+            // now wait extended header
+            buffer = Cursor::new(self.transport.recv(2)?);
 
-        // now wait for body
-        Ok(self.transport.recv(size.get() as usize - 4)?)
+            let mut size = U16::BE(0);
+            size.read(&mut buffer)?;
+
+            // now wait for body
+            Ok(Payload::Raw(Cursor::new(self.transport.recv(size.get() as usize - 4)?)))
+
+        } else {
+            // fast path
+            let sec_flag = (action >> 6) & 0x3;
+            let mut short_length: u8 = 0;
+            short_length.read(&mut buffer)?;
+            if short_length & 0x80 != 0 {
+                let mut hi_length: u8 = 0;
+                hi_length.read(&mut Cursor::new(self.transport.recv(1)?))?;
+                let length :u16 = ((short_length & !0x80) as u16) << 8;
+                let length = length | hi_length as u16;
+                Ok(Payload::FastPath(sec_flag, Cursor::new(self.transport.recv(length as usize - 3)?)))
+            }
+            else {
+                Ok(Payload::FastPath(sec_flag, Cursor::new(self.transport.recv(short_length as usize - 2)?)))
+            }
+         }
     }
 
     /// This function transform the link layer with

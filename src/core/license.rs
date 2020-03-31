@@ -11,6 +11,7 @@ pub enum LicenseMessage {
 /// License preambule
 /// https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-rdpbcgr/73170ca2-5f82-4a2d-9d1b-b439f3d8dadc
 #[repr(u8)]
+#[allow(dead_code)]
 enum Preambule {
     PreambleVersion20 = 0x2,
     PreambleVersion30 = 0x3,

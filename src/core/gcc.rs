@@ -77,7 +77,7 @@ pub enum KeyboardLayout {
 /// Ibm101102Keys is the most common keyboard type
 #[repr(u32)]
 #[allow(dead_code)]
-enum KeyboardType {
+pub enum KeyboardType {
     IbmPcXt83Key  = 0x00000001,
     Olivetti  = 0x00000002,
     IbmPcAt84Key  = 0x00000003,
@@ -211,7 +211,7 @@ pub fn client_core_data(parameter: Option<ClientData>) -> Component {
         "keyboardType" => U32::LE(KeyboardType::Ibm101102Keys as u32),
         "keyboardSubType" => U32::LE(0),
         "keyboardFnKeys" => U32::LE(12),
-        "imeFileName" => vec![0; 64],
+        "imeFileName" => vec![0 as u8; 64],
         "postBeta2ColorDepth" => U16::LE(ColorDepth::RnsUdColor8BPP as u16),
         "clientProductId" => U16::LE(1),
         "serialNumber" => U32::LE(0),

@@ -793,8 +793,8 @@ impl<T: Message> Array<T> {
         }
     }
 
-    pub fn inner_length(&self) -> usize {
-        self.inner.len()
+    pub fn inner(&self) -> &Trame {
+        &self.inner
     }
 }
 
@@ -864,6 +864,13 @@ impl<T> AsRef<Trame> for Array<T> {
     fn as_ref(&self) -> &Trame {
         &self.inner
     }
+}
+
+#[macro_use]
+macro_rules! debug_value {
+    ($expr: expr) => {
+        DynOption::new($expr, |element| { println!("{:?}", element.get()); MessageOption::None })
+    };
 }
 
 #[cfg(test)]

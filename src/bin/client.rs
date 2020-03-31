@@ -1,44 +1,84 @@
 
 extern crate rdp;
-use rdp::model::link::{Link, Stream};
-use rdp::core::tpkt;
-use rdp::core::x224;
-use rdp::core::mcs;
-use rdp::core::sec;
-use rdp::core::global;
-use rdp::core::gcc::KeyboardLayout;
+extern crate winit;
+extern crate winapi;
+
+use winapi::um::winsock2::{select, fd_set, timeval};
+use std::ptr;
+use std::mem;
+use rdp::core::client::RdpClient;
+use std::os::windows::io::AsRawSocket;
+
+use winit::{
+    event::{Event, WindowEvent},
+    event_loop::{ControlFlow, EventLoop},
+    window::WindowBuilder,
+};
 use std::net::{SocketAddr, TcpStream};
-use std::collections::HashMap;
-use rdp::core::channel::RdpChannel;
+use std::io::Read;
+use std::os::raw::c_long;
+use std::time::{Instant};
+use std::ops::Add;
+use winapi::_core::time::Duration;
+
+#[inline]
+fn ms_to_timeval(timeout_ms: u64) -> timeval {
+    timeval {
+        tv_sec: 0,
+        tv_usec: 0
+    }
+}
+
+fn wait_for_fd(fd: usize) -> bool {
+    unsafe {
+        let mut raw_fds: fd_set = mem::zeroed();
+        raw_fds.fd_array[0] = fd;
+        raw_fds.fd_count = 1;
+        let result = select(0, &mut raw_fds, ptr::null_mut(), ptr::null_mut(), &ms_to_timeval(1));
+        result == 1
+    }
+}
 
 fn main() {
 
-    // global.connect(mcs)
-    // clipboard.connect(mcs)
-    // match mcs.recv()? {
-    //     Global(m) => (global_callback)(global.recv(m)?),
-    // }
+    //simple_logger::init().unwrap();
+    let event_loop = EventLoop::new();
+
+    let window = WindowBuilder::new()
+        .with_title("A fantastic window!")
+        .with_inner_size(winit::dpi::LogicalSize::new(800.0, 600.0))
+        .build(&event_loop)
+        .unwrap();
+
+    // tcp stuff
     let addr = "127.0.0.1:33389".parse::<SocketAddr>().unwrap();
-    let tcp = Link::new( Stream::Raw(TcpStream::connect(&addr).unwrap()));
-    let tpkt = tpkt::Client::new(tcp);
-    let x224_connector = x224::Connector::new(tpkt);
-    let x224 = x224_connector.connect().unwrap();
-    let mut mcs = mcs::Client::new(x224, 1280, 800, KeyboardLayout::French);
-    mcs.connect().unwrap();
+    let mut tcp = TcpStream::connect(&addr).unwrap();
+    let handle = tcp.as_raw_socket();
+    tcp.set_nodelay(true);
 
-    // state less connection
-    sec::client_connect(&mut mcs).unwrap();
+    //try connect
+    let mut rdp_client = RdpClient::new();
+    rdp_client.connect(tcp).unwrap();
 
-    // Now construct the main channel for RDP
-    let mut channels = HashMap::<String, Box<dyn RdpChannel<TcpStream>>>::new();
+    event_loop.run(move |event, _, control_flow| {
+        *control_flow = ControlFlow::WaitUntil(Instant::now().add(Duration::new(0, 25000000)));
 
-    // static channel
-    channels.insert("global".to_string(), Box::new(global::Client::new()));
+        if wait_for_fd(handle as usize) {
+            rdp_client.process(|event| {
+                println!("bitmap !!!")
+            }).unwrap();
+        }
 
-    // Channel processing
-    loop {
-        let (channel_name, mut message) = mcs.recv().unwrap();
-        channels.get_mut(&channel_name).unwrap().process(&mut message, &mut mcs).unwrap();
-    }
+        match event {
+            Event::WindowEvent {
+                event: WindowEvent::CloseRequested,
+                window_id,
+            } if window_id == window.id() => *control_flow = ControlFlow::Exit,
+            Event::MainEventsCleared => {
+                window.request_redraw();
+            }
+            _ => (),
+        }
+    });
 
 }

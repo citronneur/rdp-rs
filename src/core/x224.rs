@@ -1,4 +1,4 @@
-use core::tpkt::Client as TpktClient;
+use core::tpkt;
 use model::data::{Message, Check, U16, U32, Component, DataType, Trame};
 use model::error::{Error, RdpError, RdpResult, RdpErrorKind};
 use std::io::{Cursor, Read, Write};
@@ -93,12 +93,12 @@ fn x224_header() -> Component {
 }
 
 pub struct Client<S> {
-    transport: TpktClient<S>,
+    transport: tpkt::Client<S>,
     pub selected_protocol: Protocols
 }
 
 impl<S: Read + Write> Client<S> {
-    pub fn new (transport: TpktClient<S>, selected_protocol: Protocols) -> Self {
+    pub fn new (transport: tpkt::Client<S>, selected_protocol: Protocols) -> Self {
         Client {
             transport,
             selected_protocol
@@ -110,20 +110,29 @@ impl<S: Read + Write> Client<S> {
         self.transport.send(trame![x224_header(), message])
     }
 
-    pub fn recv(&mut self) -> RdpResult<Cursor<Vec<u8>>> {
-        let mut s = Cursor::new(self.transport.read()?);
-        let mut x224_header = x224_header();
-        x224_header.read(&mut s)?;
-        Ok(s)
+    pub fn recv(&mut self) -> RdpResult<tpkt::Payload> {
+        let mut s = self.transport.read()?;
+        match s {
+            tpkt::Payload::Raw(mut payload) => {
+                let mut x224_header = x224_header();
+                x224_header.read(&mut payload)?;
+                Ok(tpkt::Payload::Raw(payload))
+            },
+            tpkt::Payload::FastPath(flag, payload) => {
+                // nothing to do
+                Ok(tpkt::Payload::FastPath(flag, payload))
+            }
+        }
+
     }
 }
 
 pub struct Connector<S> {
-    transport: TpktClient<S>
+    transport: tpkt::Client<S>
 }
 
 impl<S: Read + Write> Connector<S> {
-    pub fn new (transport: TpktClient<S>) -> Self {
+    pub fn new (transport: tpkt::Client<S>) -> Self {
         Connector {
             transport
         }
@@ -149,7 +158,7 @@ impl<S: Read + Write> Connector<S> {
     }
 
     fn recv_connection_confirm(&mut self) -> RdpResult<Protocols> {
-        let mut buffer = Cursor::new(self.transport.read()?);
+        let mut buffer = try_let!(tpkt::Payload::Raw, self.transport.read()?)?;
 
         let mut confirm = client_x224_connection_pdu(NegotiationType::TypeRDPNegRsp, None);
         confirm.read(&mut buffer)?;
