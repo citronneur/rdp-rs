@@ -5,12 +5,12 @@ use core::tpkt;
 use core::sec;
 use core::global;
 use std::io::{Read, Write};
-use model::error::RdpResult;
+use model::error::{RdpResult, Error, RdpError, RdpErrorKind};
 use std::net::{SocketAddr, TcpStream};
 use model::link::{Link, Stream};
 use std::rc::Rc;
 use std::collections::HashMap;
-use core::channel::RdpChannel;
+use core::event::RdpEvent;
 
 pub struct RdpClientConfig {
     pub width: u16,
@@ -18,20 +18,16 @@ pub struct RdpClientConfig {
     pub layout: KeyboardLayout
 }
 
-pub enum RdpEvent {
-    Bitmap(Vec<u8>)
-}
-
-pub struct RdpClient<S, T> {
+pub struct RdpClient<S> {
     mcs: Option<mcs::Client<S>>,
-    channels: HashMap<String, Box<dyn RdpChannel<S, T>>>
+    global: Option<global::Client>
 }
 
-impl<S: Read + Write, T: Fn(RdpEvent)> RdpClient<S, T> {
+impl<S: Read + Write> RdpClient<S> {
     pub fn new() -> Self {
         RdpClient {
             mcs: None,
-            channels: HashMap::<String, Box<dyn RdpChannel<S, T>>>::new()
+            global: None
         }
     }
 
@@ -52,20 +48,21 @@ impl<S: Read + Write, T: Fn(RdpEvent)> RdpClient<S, T> {
         // state less connection
         sec::client_connect(&mut self.mcs.as_mut().unwrap())?;
 
-        // static channel
-        self.channels.insert(
-            "global".to_string(),
-            Box::new(global::Client::new(
-                self.mcs.as_ref().unwrap().get_user_id(),
-                self.mcs.as_ref().unwrap().get_global_channel_id(),
-                Rc::clone(&config)
-            ))
-        );
+        self.global = Some(global::Client::new(
+            self.mcs.as_ref().unwrap().get_user_id(),
+            self.mcs.as_ref().unwrap().get_global_channel_id(),
+            Rc::clone(&config)
+        ));
+
         Ok(())
     }
 
-    pub fn process(&mut self, callback: T) -> RdpResult<()> {
+    pub fn process<T>(&mut self, callback: &mut T) -> RdpResult<()>
+    where T: FnMut(RdpEvent) {
         let (channel_name, message) = self.mcs.as_mut().unwrap().recv()?;
-        self.channels.get_mut(&channel_name).unwrap().process(message, &mut self.mcs.as_mut().unwrap(), callback)
+        match channel_name.as_str() {
+            "global" => self.global.as_mut().unwrap().process(message, &mut self.mcs.as_mut().unwrap(), callback),
+            _ => Err(Error::RdpError(RdpError::new(RdpErrorKind::UnexpectedType, &format!("Invalid channel name {:?}", channel_name))))
+        }
     }
 }

@@ -29,5 +29,6 @@ rand = "^0.7"
 rust-crypto = "^0.2"
 num-bigint = "^0.2"
 x509-parser = "0.6.5"
-winit = "0.22.0"
-winapi = "0.3.8"
+winapi = { version = "0.3.8", features = ["winsock2"] }
+minifb = "0.15.3"
+num_enum = "0.4.3"

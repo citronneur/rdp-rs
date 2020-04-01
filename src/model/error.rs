@@ -7,6 +7,7 @@ use std::net::{AddrParseError};
 use self::native_tls::HandshakeError;
 use self::native_tls::Error as SslError;
 use yasna::ASN1Error;
+use num_enum::{TryFromPrimitive, TryFromPrimitiveError};
 
 #[derive(Debug)]
 pub enum RdpErrorKind {
@@ -51,7 +52,8 @@ pub enum Error {
     AddrParseError(AddrParseError),
     SslHandshakeError,
     SslError(SslError),
-    ASN1Error(ASN1Error)
+    ASN1Error(ASN1Error),
+    TryError(String)
 }
 
 impl From<IoError> for Error {
@@ -81,6 +83,12 @@ impl From<SslError> for Error {
 impl From<ASN1Error> for Error {
     fn from(e: ASN1Error) -> Error {
         Error::ASN1Error(e)
+    }
+}
+
+impl<T: TryFromPrimitive> From<TryFromPrimitiveError<T>> for Error {
+    fn from(e: TryFromPrimitiveError<T>) -> Self {
+        Error::RdpError(RdpError::new(RdpErrorKind::InvalidCast, "Invalid enum conversion"))
     }
 }
 

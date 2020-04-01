@@ -9,11 +9,13 @@ extern crate rand;
 extern crate crypto;
 extern crate num_bigint;
 extern crate x509_parser;
-extern crate winit;
+extern crate minifb;
 extern crate winapi;
+extern crate num_enum;
 
 #[macro_use]
 pub mod model;
 #[macro_use]
 pub mod nla;
 pub mod core;
+pub mod codec;
