@@ -45,9 +45,10 @@ impl PDU {
     pub fn from_control(control: &Component) -> RdpResult<Self> {
         let pdu_type = cast!(DataType::U16, control["pduType"])?;
         let mut pdu = match PDUType::try_from(pdu_type)? {
-            PDUType::PdutypeDemandactivepdu => demand_active_pdu(),
+            PDUType::PdutypeDemandactivepdu => ts_demand_active_pdu(),
             PDUType::PdutypeDatapdu => share_data_header(None, None, None),
-            PDUType::PdutypeConfirmactivepdu => confirm_active_pdu(None, None, None),
+            PDUType::PdutypeConfirmactivepdu => ts_confirm_active_pdu(None, None, None),
+            PDUType::PdutypeDeactivateallpdu => ts_deactivate_all_pdu(),
             _ => return Err(Error::RdpError(RdpError::new(RdpErrorKind::NotImplemented, "GLOBAL: PDU not implemented")))
         };
         pdu.message.read(&mut Cursor::new(cast!(DataType::Slice, control["pduMessage"])?))?;
@@ -59,7 +60,9 @@ impl PDU {
 /// First PDU send from server to client
 /// This payload include all capabilities
 /// of the target server
-fn demand_active_pdu() -> PDU {
+///
+/// https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-rdpbcgr/bd612af5-cb54-43a2-9646-438bc3ecf5db
+fn ts_demand_active_pdu() -> PDU {
     PDU {
         pdu_type: PDUType::PdutypeDemandactivepdu,
         message: component![
@@ -77,7 +80,9 @@ fn demand_active_pdu() -> PDU {
 
 /// First PDU send from client to server
 /// This PDU declare capabilities for the client
-fn confirm_active_pdu(share_id: Option<u32>, source: Option<Vec<u8>>, capabilities_set: Option<Array<Component>>) -> PDU {
+///
+/// https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-rdpbcgr/4e9722c3-ad83-43f5-af5a-529f73d88b48
+fn ts_confirm_active_pdu(share_id: Option<u32>, source: Option<Vec<u8>>, capabilities_set: Option<Array<Component>>) -> PDU {
     let default_capabilities_set = capabilities_set.unwrap_or(Array::new(|| capability_set(None)));
     let default_source = source.unwrap_or(vec![]);
     PDU {
@@ -95,6 +100,21 @@ fn confirm_active_pdu(share_id: Option<u32>, source: Option<Vec<u8>>, capabiliti
     }
 }
 
+/// Use to inform user that a session already exist
+///
+/// https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-rdpbcgr/fc191c40-e688-4d5a-a550-6609cd5b8b59
+fn ts_deactivate_all_pdu() -> PDU {
+    PDU {
+        pdu_type: PDUType::PdutypeDeactivateallpdu,
+        message: component![
+            "shareId" => U32::LE(0),
+            "lengthSourceDescriptor" => DynOption::new(U16::LE(0), |length| MessageOption::Size("sourceDescriptor".to_string(), length.get() as usize)),
+            "sourceDescriptor" => Vec::<u8>::new()
+        ]
+    }
+}
+
+/// All Data PDU share the same layout
 fn share_data_header(share_id: Option<u32>, pdu_type_2: Option<PDUType2>, message: Option<Vec<u8>>) -> PDU {
     let default_message = message.unwrap_or(vec![]);
     PDU {
@@ -257,6 +277,97 @@ fn ts_font_map_pdu() -> DataPDU {
     }
 }
 
+/// Send input event as slow path
+fn ts_input_pdu_data(events: Option<Array<Component>>) -> DataPDU {
+    let default_events = events.unwrap_or(Array::new(|| ts_input_event(None, None)));
+    DataPDU {
+        pdu_type: PDUType2::Pdutype2Input,
+        message: component![
+            "numEvents" => U16::LE(default_events.inner().len() as u16),
+            "pad2Octets" => U16::LE(0),
+            "slowPathInputEvents" => default_events
+        ]
+    }
+}
+
+/// All slow path input events
+fn ts_input_event(message_type: Option<InputEventType>, data: Option<Vec<u8>>) -> Component {
+    component![
+        "eventTime" => U32::LE(0),
+        "messageType" => U16::LE(message_type.unwrap_or(InputEventType::InputEventMouse) as u16),
+        "slowPathInputData" => data.unwrap_or(vec![])
+    ]
+}
+
+/// All input event type
+///
+/// https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-rdpbcgr/a9a26b3d-84a2-495f-83fc-9edd6601f33b
+#[repr(u16)]
+pub enum InputEventType {
+    InputEventSync = 0x0000,
+    InputEventUnused = 0x0002,
+    InputEventScancode = 0x0004,
+    InputEventUnicode = 0x0005,
+    InputEventMouse = 0x8001,
+    InputEventMousex = 0x8002
+}
+
+/// All Terminal Service Slow Path Input Event
+pub struct TSInputEvent {
+    event_type: InputEventType,
+    message: Component
+}
+
+/// All supported flags for pointer event
+///
+/// https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-rdpbcgr/2c1ced34-340a-46cd-be6e-fc8cab7c3b17
+#[repr(u16)]
+pub enum PointerFlag {
+    PtrflagsHwheel = 0x0400,
+    PtrflagsWheel = 0x0200,
+    PtrflagsWheelNegative = 0x0100,
+    WheelRotationMask = 0x01FF,
+    PtrflagsMove = 0x0800,
+    PtrflagsDown = 0x8000,
+    PtrflagsButton1 = 0x1000,
+    PtrflagsButton2 = 0x2000,
+    PtrflagsButton3 = 0x4000
+}
+
+/// A pointer event
+///
+/// https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-rdpbcgr/2c1ced34-340a-46cd-be6e-fc8cab7c3b17
+pub fn ts_pointer_event(flags: Option<u16>, x: Option<u16>, y: Option<u16>) -> TSInputEvent {
+    TSInputEvent {
+        event_type: InputEventType::InputEventMouse,
+        message : component![
+            "pointerFlags" => U16::LE(flags.unwrap_or(0)),
+            "xPos" => U16::LE(x.unwrap_or(0)),
+            "yPos" => U16::LE(y.unwrap_or(0))
+        ]
+    }
+}
+
+#[repr(u16)]
+pub enum KeyboardFlag {
+    KbdflagsExtended = 0x0100,
+    KbdflagsDown = 0x4000,
+    KbdflagsRelease = 0x8000
+}
+
+/// Raw input keyboard event
+/// Use to send scancode directly
+pub fn ts_keyboard_event(flags: Option<u16>, key_code: Option<u16>) -> TSInputEvent {
+    TSInputEvent {
+        event_type: InputEventType::InputEventScancode,
+        message: component![
+            "keyboardFlags" => U16::LE(flags.unwrap_or(0)),
+            "keyCode" => U16::LE(key_code.unwrap_or(0)),
+            "pad2Octets" => U16::LE(0)
+        ]
+    }
+}
+
 /// Fast Path update (Not a PDU)
 ///
 /// https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-rdpbcgr/a1c4caa8-00ed-45bb-a06e-5177473766d3
@@ -381,6 +492,8 @@ pub struct Client {
 }
 
 impl Client {
+    /// Ctor for a new global channel client
+    /// user_id and channel_id must come from mcs channel once connected
     pub fn new(user_id: u16, channel_id: u16, config: Rc<RdpClientConfig>) -> Client {
         Client {
             state: ClientState::DemandActivePDU,
@@ -480,7 +593,7 @@ impl Client {
         Ok(())
     }
 
-    fn read_fast_path_data<T>(&mut self, stream: &mut Read, callback: &mut T) -> RdpResult<()>
+    fn read_fast_path_data<T>(&mut self, stream: &mut Read, mut callback: T) -> RdpResult<()>
     where T: FnMut(RdpEvent) {
         let mut fp_messages = Array::new(|| ts_fp_update());
         fp_messages.read(stream)?;
@@ -507,7 +620,7 @@ impl Client {
                                 ));
                             }
                         },
-                        _ => println!("GLOBAL: FastPath order not handled {:?}", order.fp_type)
+                        _ => println!("GLOBAL: Fast Path order not handled {:?}", order.fp_type)
                     }
                 },
                 Err(e) => println!("GLOBAL: Unknown Fast Path order {:?}", e)
@@ -518,7 +631,7 @@ impl Client {
     }
 
     fn send_confirm_active_pdu<S: Read + Write>(&mut self, mcs: &mut mcs::Client<S>) -> RdpResult<()> {
-        let pdu = confirm_active_pdu(self.share_id, Some(b"rdp-rs".to_vec()), Some(Array::from_trame(
+        let pdu = ts_confirm_active_pdu(self.share_id, Some(b"rdp-rs".to_vec()), Some(Array::from_trame(
             trame![
                 capability_set(Some(capability::ts_general_capability_set(Some(capability::GeneralExtraFlag::LongCredentialsSupported as u16 | capability::GeneralExtraFlag::NoBitmapCompressionHdr as u16 | capability::GeneralExtraFlag::EncSaltedChecksum as u16 | capability::GeneralExtraFlag::FastpathOutputSupported as u16)))),
                 capability_set(Some(capability::ts_bitmap_capability_set(Some(0x0018), Some(self.config.as_ref().width), Some(self.config.as_ref().height)))),
@@ -554,7 +667,11 @@ impl Client {
         self.send_pdu(share_data_header(self.share_id, Some(message.pdu_type), Some(to_vec(&message.message))), mcs)
     }
 
-    pub fn process<S: Read + Write, T>(&mut self, payload: tpkt::Payload, mcs: &mut mcs::Client<S>, callback: &mut T) -> RdpResult<()>
+    pub fn send_input_event<S: Read + Write>(&self, event: TSInputEvent, mcs: &mut mcs::Client<S>) -> RdpResult<()> {
+        self.send_data_pdu(ts_input_pdu_data(Some(Array::from_trame(trame![ts_input_event(Some(event.event_type), Some(to_vec(&event.message)))]))), mcs)
+    }
+
+    pub fn process<S: Read + Write, T>(&mut self, payload: tpkt::Payload, mcs: &mut mcs::Client<S>, mut callback: T) -> RdpResult<()>
     where T: FnMut(RdpEvent){
         match self.state {
             ClientState::DemandActivePDU => {
@@ -610,7 +727,7 @@ mod test {
     #[test]
     fn test_demand_active_pdu() {
         let mut stream = Cursor::new(vec![234, 3, 1, 0, 4, 0, 179, 1, 82, 68, 80, 0, 17, 0, 0, 0, 9, 0, 8, 0, 234, 3, 0, 0, 1, 0, 24, 0, 1, 0, 3, 0, 0, 2, 0, 0, 0, 0, 29, 4, 0, 0, 0, 0, 0, 0, 1, 1, 20, 0, 12, 0, 2, 0, 0, 0, 64, 6, 0, 0, 10, 0, 8, 0, 6, 0, 0, 0, 8, 0, 10, 0, 1, 0, 25, 0, 25, 0, 27, 0, 6, 0, 3, 0, 14, 0, 8, 0, 1, 0, 0, 0, 2, 0, 28, 0, 32, 0, 1, 0, 1, 0, 1, 0, 32, 3, 88, 2, 0, 0, 1, 0, 1, 0, 0, 30, 1, 0, 0, 0, 29, 0, 96, 0, 4, 185, 27, 141, 202, 15, 0, 79, 21, 88, 159, 174, 45, 26, 135, 226, 214, 0, 3, 0, 1, 1, 3, 18, 47, 119, 118, 114, 189, 99, 68, 175, 179, 183, 60, 156, 111, 120, 134, 0, 4, 0, 0, 0, 0, 0, 166, 81, 67, 156, 53, 53, 174, 66, 145, 12, 205, 252, 229, 118, 11, 88, 0, 4, 0, 0, 0, 0, 0, 212, 204, 68, 39, 138, 157, 116, 78, 128, 60, 14, 203, 238, 161, 156, 84, 0, 4, 0, 0, 0, 0, 0, 3, 0, 88, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 64, 66, 15, 0, 1, 0, 20, 0, 0, 0, 1, 0, 0, 0, 170, 0, 1, 1, 1, 1, 1, 0, 0, 0, 1, 0, 0, 1, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 0, 0, 0, 0, 161, 6, 6, 0, 64, 66, 15, 0, 64, 66, 15, 0, 1, 0, 0, 0, 0, 0, 0, 0, 18, 0, 8, 0, 1, 0, 0, 0, 13, 0, 88, 0, 117, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 23, 0, 8, 0, 255, 0, 0, 0, 24, 0, 11, 0, 2, 0, 0, 0, 3, 12, 0, 26, 0, 8, 0, 43, 72, 9, 0, 28, 0, 12, 0, 82, 0, 0, 0, 0, 0, 0, 0, 30, 0, 8, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
-        let mut pdu = demand_active_pdu();
+        let mut pdu = ts_demand_active_pdu();
         pdu.message.read(&mut stream);
         assert_eq!(cast!(DataType::U16, pdu.message["numberCapabilities"]).unwrap(), 17)
     }
@@ -619,14 +736,14 @@ mod test {
     #[test]
     fn test_confirm_active_pdu() {
         let mut stream = Cursor::new(vec![]);
-        confirm_active_pdu(Some(4), Some(b"rdp-rs".to_vec()), Some(Array::from_trame(trame![capability_set(Some(capability::ts_brush_capability_set()))]))).message.write(&mut stream).unwrap();
+        ts_confirm_active_pdu(Some(4), Some(b"rdp-rs".to_vec()), Some(Array::from_trame(trame![capability_set(Some(capability::ts_brush_capability_set()))]))).message.write(&mut stream).unwrap();
         assert_eq!(stream.into_inner(), [4, 0, 0, 0, 234, 3, 6, 0, 12, 0, 114, 100, 112, 45, 114, 115, 1, 0, 0, 0, 15, 0, 8, 0, 0, 0, 0, 0]);
     }
 
     #[test]
     fn test_share_control_header() {
         let mut stream = Cursor::new(vec![]);
-        share_control_header(Some(PDUType::PdutypeConfirmactivepdu), Some(12), Some(to_vec(&confirm_active_pdu(Some(4), Some(b"rdp-rs".to_vec()), Some(Array::from_trame(trame![capability_set(Some(capability::ts_brush_capability_set()))]))).message))).write(&mut stream).unwrap();
+        share_control_header(Some(PDUType::PdutypeConfirmactivepdu), Some(12), Some(to_vec(&ts_confirm_active_pdu(Some(4), Some(b"rdp-rs".to_vec()), Some(Array::from_trame(trame![capability_set(Some(capability::ts_brush_capability_set()))]))).message))).write(&mut stream).unwrap();
 
         assert_eq!(stream.into_inner(), vec![34, 0, 19, 0, 12, 0, 4, 0, 0, 0, 234, 3, 6, 0, 12, 0, 114, 100, 112, 45, 114, 115, 1, 0, 0, 0, 15, 0, 8, 0, 0, 0, 0, 0])
     }

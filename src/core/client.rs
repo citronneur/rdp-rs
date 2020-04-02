@@ -10,7 +10,8 @@ use std::net::{SocketAddr, TcpStream};
 use model::link::{Link, Stream};
 use std::rc::Rc;
 use std::collections::HashMap;
-use core::event::RdpEvent;
+use core::event::{RdpEvent, PointerButton};
+use core::global::{ts_pointer_event, PointerFlag, ts_keyboard_event, KeyboardFlag};
 
 pub struct RdpClientConfig {
     pub width: u16,
@@ -57,12 +58,45 @@ impl<S: Read + Write> RdpClient<S> {
         Ok(())
     }
 
-    pub fn process<T>(&mut self, callback: &mut T) -> RdpResult<()>
+    pub fn process<T>(&mut self, mut callback: T) -> RdpResult<()>
     where T: FnMut(RdpEvent) {
         let (channel_name, message) = self.mcs.as_mut().unwrap().recv()?;
         match channel_name.as_str() {
             "global" => self.global.as_mut().unwrap().process(message, &mut self.mcs.as_mut().unwrap(), callback),
             _ => Err(Error::RdpError(RdpError::new(RdpErrorKind::UnexpectedType, &format!("Invalid channel name {:?}", channel_name))))
+        }
+    }
+
+    pub fn send(&mut self, event: RdpEvent) -> RdpResult<()> {
+        match event {
+            // Pointer event
+            // Mouse position an d button position
+            RdpEvent::Pointer(pointer) => {
+                // Pointer are sent to global channel
+                // Compute flags
+                let mut flags: u16 = 0;
+                match pointer.button {
+                    PointerButton::Left => flags |= PointerFlag::PtrflagsButton1 as u16,
+                    PointerButton::Right => flags |= PointerFlag::PtrflagsButton2 as u16,
+                    PointerButton::Middle => flags |= PointerFlag::PtrflagsButton3 as u16,
+                    _ => flags |= PointerFlag::PtrflagsMove as u16,
+                }
+
+                if pointer.down {
+                    flags |= PointerFlag::PtrflagsDown as u16;
+                }
+
+                self.global.as_mut().unwrap().send_input_event(ts_pointer_event(Some(flags), Some(pointer.x), Some(pointer.y)), self.mcs.as_mut().unwrap())
+            },
+            // Raw keyboard input
+            RdpEvent::Key(key) => {
+                let mut flags: u16 = 0;
+                if key.down {
+                    flags |= KeyboardFlag::KbdflagsRelease as u16;
+                }
+                self.global.as_mut().unwrap().send_input_event(ts_keyboard_event(Some(flags), Some(key.code)), self.mcs.as_mut().unwrap())
+            }
+            _ => Err(Error::RdpError(RdpError::new(RdpErrorKind::UnexpectedType, "RDPCLIENT: This event can't be sent")))
         }
     }
 }

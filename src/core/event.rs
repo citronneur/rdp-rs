@@ -1,4 +1,5 @@
 use model::error::{RdpResult, Error, RdpError, RdpErrorKind};
+use num_enum::TryFromPrimitive;
 use codec::rle::rle_32_decompress;
 
 pub struct BitmapEvent {
@@ -30,6 +31,29 @@ impl BitmapEvent {
     }
 }
 
+#[repr(u8)]
+#[derive(Eq, PartialEq, TryFromPrimitive, Copy, Clone)]
+pub enum PointerButton {
+    None = 0,
+    Left = 1,
+    Right = 2,
+    Middle = 3
+}
+
+pub struct PointerEvent {
+    pub x: u16,
+    pub y: u16,
+    pub button: PointerButton,
+    pub down: bool
+}
+
+pub struct KeyboardEvent {
+    pub code: u16,
+    pub down: bool
+}
+
 pub enum RdpEvent {
-    Bitmap(BitmapEvent)
+    Bitmap(BitmapEvent),
+    Pointer(PointerEvent),
+    Key(KeyboardEvent)
 }
