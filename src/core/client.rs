@@ -12,6 +12,7 @@ use std::rc::Rc;
 use std::collections::HashMap;
 use core::event::{RdpEvent, PointerButton};
 use core::global::{ts_pointer_event, PointerFlag, ts_keyboard_event, KeyboardFlag};
+use nla::ntlm::Ntlm;
 
 pub struct RdpClientConfig {
     pub width: u16,
@@ -42,7 +43,10 @@ impl<S: Read + Write> RdpClient<S> {
         let tcp = Link::new( Stream::Raw(stream));
         let tpkt = tpkt::Client::new(tcp);
         let x224_connector = x224::Connector::new(tpkt);
-        let x224 = x224_connector.connect()?;
+        let x224 = x224_connector.connect(
+            x224::Protocols::ProtocolSSL as u32 | x224::Protocols::ProtocolHybrid as u32,
+            Some(&mut Ntlm::new("".to_string(), "sylvain".to_string(), "sylvain".to_string()))
+        )?;
         self.mcs = Some(mcs::Client::new(x224, Rc::clone(&config)));
 
         self.mcs.as_mut().unwrap().connect()?;

@@ -4,6 +4,7 @@ use model::error::{RdpResult, RdpError, RdpErrorKind, Error};
 use std::io::{Cursor, Write, Read};
 use nla::ntlm::Ntlm;
 use nla::cssp::cssp_connect;
+use nla::sspi::AuthenticationProtocol;
 
 /// TPKT must implement this two form of payload
 pub enum Payload {
@@ -98,7 +99,28 @@ impl<S: Read + Write> Client<S> {
     /// use rdp::model::link;
     /// use std::io::Cursor;
     /// let mut tpkt = tpkt::Client::new(link::Link::new(link::Stream::Raw(Cursor::new(vec![3, 0, 0, 10, 0, 4, 3, 0, 0, 0]))));
-    /// assert_eq!(tpkt.read().unwrap(), [0, 4, 3, 0, 0, 0])
+    /// if let tpkt::Payload::Raw(c) = tpkt.read().unwrap() {
+    ///     assert_eq!(c.into_inner(), vec![0, 4, 3, 0, 0, 0])
+    /// }
+    /// else {
+    ///     panic!("unexpected result")
+    /// }
+    ///
+    /// tpkt = tpkt::Client::new(link::Link::new(link::Stream::Raw(Cursor::new(vec![0, 6, 0, 0, 0, 0]))));
+    /// if let tpkt::Payload::FastPath(_, c) = tpkt.read().unwrap() {
+    ///     assert_eq!(c.into_inner(), vec![0, 0, 0, 0])
+    /// }
+    /// else {
+    ///     panic!("unexpected result")
+    /// }
+    ///
+    /// tpkt = tpkt::Client::new(link::Link::new(link::Stream::Raw(Cursor::new(vec![0, 0x80, 7, 0, 0, 0, 0]))));
+    /// if let tpkt::Payload::FastPath(_, c) = tpkt.read().unwrap() {
+    ///     assert_eq!(c.into_inner(), vec![0, 0, 0, 0])
+    /// }
+    /// else {
+    ///     panic!("unexpected result")
+    /// }
     /// ```
     pub fn read(&mut self) -> RdpResult<Payload> {
         let mut buffer = Cursor::new(self.transport.recv(2)?);
@@ -138,16 +160,31 @@ impl<S: Read + Write> Client<S> {
 
     /// This function transform the link layer with
     /// raw data stream into a SSL data stream
+    ///
+    /// # Example
+    /// ```rust, ignore
+    /// let addr = "127.0.0.1:3389".parse::<SocketAddr>().unwrap();
+    /// let mut tcp = TcpStream::connect(&addr).unwrap();
+    /// let mut tpkt = tpkt::Client(Stream::Raw(tcp));
+    /// let mut tpkt_ssl = tpkt.start_ssl().unwrap();
+    /// ```
     pub fn start_ssl(self) -> RdpResult<Client<S>> {
         Ok(Client::new(self.transport.start_ssl()?))
     }
 
-    /// This function is used when NLA
-    /// Authentication is needed
-    pub fn start_nla(self) -> RdpResult<Client<S>> {
+    /// This function is used when NLA (Network Level Authentication)
+    /// Authentication is negotiated
+    ///
+    /// # Example
+    /// ```rust, ignore
+    /// let addr = "127.0.0.1:3389".parse::<SocketAddr>().unwrap();
+    /// let mut tcp = TcpStream::connect(&addr).unwrap();
+    /// let mut tpkt = tpkt::Client(Stream::Raw(tcp));
+    /// let mut tpkt_nla = tpkt.start_nla(&mut Ntlm::new("domain".to_string(), "username".to_string(), "password".to_string())
+    /// ```
+    pub fn start_nla(self, authentication_protocol: &mut dyn AuthenticationProtocol) -> RdpResult<Client<S>> {
         let mut link = self.transport.start_ssl()?;
-        let mut ntlm_layer = Ntlm::new("".to_string(), "sylvain".to_string(), "sylvain".to_string());
-        cssp_connect(&mut link, &mut ntlm_layer)?;
+        cssp_connect(&mut link, authentication_protocol)?;
         Ok(Client::new(link))
     }
 
