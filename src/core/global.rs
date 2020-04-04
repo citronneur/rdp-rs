@@ -659,7 +659,7 @@ impl Client {
 
     /// Send a classic PDU to the global channel
     fn send_pdu<S: Read + Write>(&self, message: PDU, mcs: &mut mcs::Client<S>) -> RdpResult<()> {
-        mcs.send(&"global".to_string(), share_control_header(Some(message.pdu_type), Some(self.user_id), Some(to_vec(&message.message))))
+        mcs.write(&"global".to_string(), share_control_header(Some(message.pdu_type), Some(self.user_id), Some(to_vec(&message.message))))
     }
 
     /// Send Data pdu

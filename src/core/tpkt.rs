@@ -68,7 +68,7 @@ impl<S: Read + Write> Client<S> {
     /// # use rdp::model::data::{U16, Trame, U32};
     /// # fn main() {
     ///     let mut tpkt = tpkt::Client::new(link::Link::new(link::Stream::Raw(Cursor::new(vec![]))));
-    ///     tpkt.send(trame![U16::BE(4), U32::LE(3)]).unwrap();
+    ///     tpkt.write(trame![U16::BE(4), U32::LE(3)]).unwrap();
     ///     // get_link and get_stream are not available on Crate
     ///     // only use for integration test [features = integration]
     ///     if let link::Stream::Raw(e) = tpkt.get_link().get_stream() {
@@ -79,7 +79,7 @@ impl<S: Read + Write> Client<S> {
     ///     }
     /// }
     /// ```
-    pub fn send<T: 'static>(&mut self, message: T) -> RdpResult<()>
+    pub fn write<T: 'static>(&mut self, message: T) -> RdpResult<()>
     where T: Message {
         self.transport.send(
             &trame![
@@ -180,11 +180,11 @@ impl<S: Read + Write> Client<S> {
     /// let addr = "127.0.0.1:3389".parse::<SocketAddr>().unwrap();
     /// let mut tcp = TcpStream::connect(&addr).unwrap();
     /// let mut tpkt = tpkt::Client(Stream::Raw(tcp));
-    /// let mut tpkt_nla = tpkt.start_nla(&mut Ntlm::new("domain".to_string(), "username".to_string(), "password".to_string())
+    /// let mut tpkt_nla = tpkt.start_nla(&mut Ntlm::new("domain".to_string(), "username".to_string(), "password".to_string(), false)
     /// ```
-    pub fn start_nla(self, authentication_protocol: &mut dyn AuthenticationProtocol) -> RdpResult<Client<S>> {
+    pub fn start_nla(self, authentication_protocol: &mut dyn AuthenticationProtocol, restricted_admin_mode: bool) -> RdpResult<Client<S>> {
         let mut link = self.transport.start_ssl()?;
-        cssp_connect(&mut link, authentication_protocol)?;
+        cssp_connect(&mut link, authentication_protocol, restricted_admin_mode)?;
         Ok(Client::new(link))
     }
 

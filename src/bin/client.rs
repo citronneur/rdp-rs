@@ -46,7 +46,7 @@ pub unsafe fn transmute_vec<S, T>(mut vec: Vec<S>) -> Vec<T> {
 /// This function use unsafe copy
 /// to accelerate data transfer
 fn fast_bitmap_transfer(buffer: &mut Vec<u32>, bitmap: BitmapEvent) {
-    let mut data = if bitmap.is_compress {
+    let data = if bitmap.is_compress {
         bitmap.decompress().unwrap()
     } else {
         bitmap.data
@@ -203,9 +203,9 @@ fn main() {
 
     // tcp stuff
     let addr = "127.0.0.1:33389".parse::<SocketAddr>().unwrap();
-    let mut tcp = TcpStream::connect(&addr).unwrap();
+    let tcp = TcpStream::connect(&addr).unwrap();
     let handle = tcp.as_raw_socket();
-    tcp.set_nodelay(true);
+    tcp.set_nodelay(true).unwrap();
 
     //try connect
     let mut rdp_client = RdpClient::new();

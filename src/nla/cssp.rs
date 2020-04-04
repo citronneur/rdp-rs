@@ -171,7 +171,7 @@ fn create_ts_authinfo(auth_info: Vec<u8>) -> Vec<u8> {
 /// This the main function for CSSP protocol
 /// It will use the raw link layer and the selected authenticate protocol
 /// to perform the NLA authenticate
-pub fn cssp_connect<S: Read + Write>(link: &mut Link<S>, authentication_protocol: &mut dyn AuthenticationProtocol) -> RdpResult<()> {
+pub fn cssp_connect<S: Read + Write>(link: &mut Link<S>, authentication_protocol: &mut dyn AuthenticationProtocol, restricted_admin_mode: bool) -> RdpResult<()> {
     // first step is to send the negotiate message from authentication protocol
     let negotiate_message = create_ts_request(authentication_protocol.create_negotiate_message()?);
     link.send(&negotiate_message)?;
@@ -202,9 +202,10 @@ pub fn cssp_connect<S: Read + Write>(link: &mut Link<S>, authentication_protocol
     }
 
     // compute the last message with encoded credentials
-    let domain = authentication_protocol.get_domain_name();
-    let user = authentication_protocol.get_user_name();
-    let password = authentication_protocol.get_password();
+
+    let domain = if restricted_admin_mode { vec![] } else { authentication_protocol.get_domain_name()};
+    let user = if restricted_admin_mode { vec![] } else { authentication_protocol.get_user_name() };
+    let password = if restricted_admin_mode { vec![] } else { authentication_protocol.get_password() };
 
     let credentials = create_ts_authinfo(security_interface.gss_wrapex(&create_ts_credentials(domain, user, password))?);
     link.send(&credentials)?;

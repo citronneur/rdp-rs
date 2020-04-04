@@ -42,6 +42,7 @@ fn domain_parameters(max_channel_ids: u32, maw_user_ids: u32, max_token_ids: u32
 }
 
 /// First MCS payload send from client to server
+/// Payload send from client to server
 ///
 /// http://www.itu.int/rec/T-REC-T.125-199802-I/en page 25
 fn connect_initial(user_data: Option<OctetString>) -> ImplicitTag<Sequence> {
@@ -56,6 +57,7 @@ fn connect_initial(user_data: Option<OctetString>) -> ImplicitTag<Sequence> {
     ])
 }
 
+/// Server response with channel capacity
 fn connect_response(user_data: Option<OctetString>) -> ImplicitTag<Sequence> {
     ImplicitTag::new(Tag::application(102),
 sequence![
@@ -137,23 +139,14 @@ fn read_channel_join_confirm(user_id: u16, channel_id: u16, buffer: &mut dyn Rea
 
 pub struct Client<S> {
     x224: x224::Client<S>,
-    client_data: ClientData,
     server_data: Option<ServerData>,
     user_id: Option<u16>,
     channel_ids : HashMap<String, u16>
 }
 
 impl<S: Read + Write> Client<S> {
-    pub fn new(x224: x224::Client<S>, config: Rc<RdpClientConfig>) -> Self {
+    pub fn new(x224: x224::Client<S>) -> Self {
         Client {
-            client_data: ClientData
-            {
-                width: config.width,
-                height: config.height,
-                layout: config.layout,
-                server_selected_protocol: x224.selected_protocol as u32,
-                rdp_version: Version::RdpVersion5plus
-            },
             server_data: None,
             x224,
             user_id: None,
@@ -161,8 +154,17 @@ impl<S: Read + Write> Client<S> {
         }
     }
 
-    fn send_connect_initial(&mut self) -> RdpResult<()> {
-        let client_core_data = client_core_data(Some(self.client_data));
+    /// Write connection initial payload
+    /// This payload include a lot of
+    /// client specific config parameters
+    fn write_connect_initial(&mut self, screen_width: u16, screen_height: u16, keyboard_layout: KeyboardLayout) -> RdpResult<()> {
+        let client_core_data = client_core_data(Some(ClientData {
+            width: screen_width,
+            height: screen_height,
+            layout: keyboard_layout,
+            server_selected_protocol: self.x224.selected_protocol as u32,
+            rdp_version: Version::RdpVersion5plus
+        }));
         let client_security_data = client_security_data();
         let client_network_data = client_network_data(trame![]);
         let user_data = to_vec(&trame![
@@ -171,10 +173,11 @@ impl<S: Read + Write> Client<S> {
             trame![block_header(Some(MessageType::CsNet), Some(client_network_data.length() as u16)), client_network_data]
         ]);
         let conference = write_conference_create_request(&user_data)?;
-        self.x224.send(to_der(&connect_initial(Some(conference))))
+        self.x224.write(to_der(&connect_initial(Some(conference))))
     }
 
-    fn recv_connect_response(&mut self) -> RdpResult<()> {
+    /// Read a connect response comming from server to client
+    fn read_connect_response(&mut self) -> RdpResult<()> {
         // Now read response from the server
         let mut connect_response = connect_response(None);
         let mut payload = try_let!(tpkt::Payload::Raw, self.x224.recv()?)?;
@@ -190,11 +193,17 @@ impl<S: Read + Write> Client<S> {
     /// Connect the MCS channel
     /// Ask connection for each channel requested
     /// and confirmed by server
-    pub fn connect(&mut self) -> RdpResult<()> {
-        self.send_connect_initial()?;
-        self.recv_connect_response()?;
-        self.x224.send(erect_domain_request()?)?;
-        self.x224.send(attach_user_request())?;
+    ///
+    /// # Example
+    /// ```rust, ignore
+    /// let mut mcs = mcs::Client(x224);
+    /// mcs.connect(800, 600, KeyboardLayout::French).unwrap()
+    /// ```
+    pub fn connect(&mut self, screen_width: u16, screen_height: u16, keyboard_layout: KeyboardLayout) -> RdpResult<()> {
+        self.write_connect_initial(screen_width, screen_height, keyboard_layout)?;
+        self.read_connect_response()?;
+        self.x224.write(erect_domain_request()?)?;
+        self.x224.write(attach_user_request())?;
 
         self.user_id = Some(read_attach_user_confirm(&mut try_let!(tpkt::Payload::Raw, self.x224.recv()?)?)?);
 
@@ -205,7 +214,7 @@ impl<S: Read + Write> Client<S> {
         // Create list of requested channels
         // Actually only the two static main channel are requested
         for channel_id in self.channel_ids.values() {
-            self.x224.send(channel_join_request(self.user_id, Some(*channel_id))?)?;
+            self.x224.write(channel_join_request(self.user_id, Some(*channel_id))?)?;
             if !read_channel_join_confirm(self.user_id.unwrap(), *channel_id, &mut try_let!(tpkt::Payload::Raw, self.x224.recv()?)?)? {
                 println!("Server reject channel id {:?}", channel_id);
             }
@@ -215,9 +224,18 @@ impl<S: Read + Write> Client<S> {
     }
 
     /// Send a message to a connected channel
-    pub fn send<T: 'static>(&mut self, channel_name: &String, message: T) -> RdpResult<()>
+    /// MCS stand for multi channel
+    /// Write function write a message to specific channel
+    ///
+    /// # Example
+    /// ```rust, ignore
+    /// let mut mcs = mcs::Client(x224);
+    /// mcs.connect(800, 600, KeyboardLayout::French).unwrap();
+    /// mcs.write("global".to_string(), trame![U16::LE(0)])
+    /// ```
+    pub fn write<T: 'static>(&mut self, channel_name: &String, message: T) -> RdpResult<()>
     where T: Message {
-        self.x224.send(trame![
+        self.x224.write(trame![
             mcs_pdu_header(Some(DomainMCSPDU::SendDataRequest), None),
             U16::BE(self.user_id.unwrap() - 1001),
             U16::BE(self.channel_ids[channel_name]),
@@ -228,8 +246,21 @@ impl<S: Read + Write> Client<S> {
     }
 
     /// Receive a message for a specific channel
-    pub fn recv(&mut self) -> RdpResult<(String, tpkt::Payload)> {
-        let mut message = self.x224.recv()?;
+    /// Actually by design you can't ask for a specific channel
+    /// the caller need to handle all channels
+    ///
+    /// # Example
+    /// ```rust, ignore
+    /// let mut mcs = mcs::Client(x224);
+    /// mcs.connect(800, 600, KeyboardLayout::French).unwrap();
+    /// let (channel_name, payload) = mcs.read().unwrap();
+    /// match channel_name.as_str() {
+    ///     "global" => println!("main channel");
+    ///     ...
+    /// }
+    /// ```
+    pub fn read(&mut self) -> RdpResult<(String, tpkt::Payload)> {
+        let mut message = self.x224.read()?;
         match message {
             tpkt::Payload::Raw(mut payload) => {
                  let mut header = mcs_pdu_header(None, None);
@@ -279,28 +310,51 @@ impl<S: Read + Write> Client<S> {
 #[cfg(test)]
 mod test {
     use super::*;
+    use nla::asn1::{ASN1};
 
-    // Test of read read_attach_user_confirm
+
+    /// Test of read read_attach_user_confirm
     #[test]
     fn test_read_attach_user_confirm() {
         assert_eq!(read_attach_user_confirm(&mut Cursor::new(vec![46, 0, 0, 3])).unwrap(), 1004)
     }
 
-    // Attach user request payload
+    /// Attach user request payload
     #[test]
     fn test_attach_user_request() {
         assert_eq!(attach_user_request(), 40)
     }
 
-    // Test of the new domain request
+    /// Test of the new domain request
     #[test]
     fn test_erect_domain_request() {
         assert_eq!(to_vec(&erect_domain_request().unwrap()), [4, 1, 0, 1, 0])
     }
 
-    // Test format of the channel join request
+    /// Test format of the channel join request
     #[test]
     fn test_channel_join_request() {
          assert_eq!(to_vec(&channel_join_request(None, None).unwrap()), [56, 0, 0, 0, 0])
+    }
+
+    /// Test domain parameters format
+    #[test]
+    fn test_domain_parameters() {
+        let result = to_der(&domain_parameters(1,2,3,4, 5, 6, 7, 8));
+        assert_eq!(result, vec![48, 24, 2, 1, 1, 2, 1, 2, 2, 1, 3, 2, 1, 4, 2, 1, 5, 2, 1, 6, 2, 1, 7, 2, 1, 8])
+    }
+
+    /// Test connect initial
+    #[test]
+    fn test_connect_initial() {
+        let result = to_der(&connect_initial(Some(vec![1, 2, 3])));
+        assert_eq!(result, vec![127, 101, 103, 4, 1, 1, 4, 1, 1, 1, 1, 255, 48, 26, 2, 1, 34, 2, 1, 2, 2, 1, 0, 2, 1, 1, 2, 1, 0, 2, 1, 1, 2, 3, 0, 255, 255, 2, 1, 2, 48, 25, 2, 1, 1, 2, 1, 1, 2, 1, 1, 2, 1, 1, 2, 1, 0, 2, 1, 1, 2, 2, 4, 32, 2, 1, 2, 48, 32, 2, 3, 0, 255, 255, 2, 3, 0, 252, 23, 2, 3, 0, 255, 255, 2, 1, 1, 2, 1, 0, 2, 1, 1, 2, 3, 0, 255, 255, 2, 1, 2, 4, 3, 1, 2, 3])
+    }
+
+    /// Test connect response
+    #[test]
+    fn test_connect_response() {
+        let result = to_der(&connect_response(Some(vec![1, 2, 3])));
+        assert_eq!(result, vec![127, 102, 39, 10, 1, 0, 2, 1, 0, 48, 26, 2, 1, 22, 2, 1, 3, 2, 1, 0, 2, 1, 1, 2, 1, 0, 2, 1, 1, 2, 3, 0, 255, 248, 2, 1, 2, 4, 3, 1, 2, 3])
     }
 }

@@ -45,17 +45,30 @@ pub enum MessageType {
     X224TPDUError = 0x70
 }
 
+/// Credential mode
+#[repr(u8)]
+pub enum RequestMode {
+    /// Restricted admin mode
+    /// Use to auth only with NLA mode
+    /// Protect against crendential forward
+    RestrictedAdminModeRequired = 0x01,
+    /// New feature present in lastest windows 10
+    /// Can't support acctually
+    RedirectedAuthenticationModeRequired = 0x02,
+    CorrelationInfoPresent = 0x08
+}
+
 /// RDP Negotiation Request
 /// Use to inform server about supported
 /// Security protocol
 ///
 /// https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-rdpbcgr/902b090b-9cb3-4efc-92bf-ee13373371e3
-fn rdp_neg_req(neg_type: NegotiationType, result: u32) -> Component {
+fn rdp_neg_req(neg_type: Option<NegotiationType>, result: Option<u32>, flag: Option<u8>) -> Component {
     component! [
-        "type" => Check::new(neg_type as u8),
-        "flag" => 0 as u8,
+        "type" => neg_type.unwrap_or(NegotiationType::TypeRDPNegReq) as u8,
+        "flag" => flag.unwrap_or(0),
         "length" => Check::new(U16::LE(0x0008)),
-        "result" => U32::LE(result)
+        "result" => U32::LE(result.unwrap_or(0))
     ]
 }
 
@@ -72,11 +85,13 @@ fn x224_crq(len: u8, code: MessageType) -> Component {
 /// Include nego for security protocols
 /// And restricted administration mode
 fn x224_connection_pdu(
-    neg_type: NegotiationType,
+    neg_type: Option<NegotiationType>,
+    mode: Option<u8>,
     protocols: Option<u32>) -> Component {
     let negotiation = rdp_neg_req(
         neg_type,
-        protocols.unwrap_or(0)
+        protocols,
+        mode
     );
 
     component![
@@ -94,25 +109,58 @@ fn x224_header() -> Component {
     ]
 }
 
+/// x224 client
 pub struct Client<S> {
+    /// Transport layer, x224 use a tpkt
     transport: tpkt::Client<S>,
+    /// Security selected protocol by the connector
     pub selected_protocol: Protocols
 }
 
 impl<S: Read + Write> Client<S> {
-    pub fn new (transport: tpkt::Client<S>, selected_protocol: Protocols) -> Self {
+    /// Constructor use by the connector
+    fn new (transport: tpkt::Client<S>, selected_protocol: Protocols) -> Self {
         Client {
             transport,
             selected_protocol
         }
     }
 
-    pub fn send<T: 'static>(&mut self, message: T) -> RdpResult<()>
+    /// Send a new x224 formated message
+    /// using the underlying layer
+    ///
+    ///  # Example
+    /// ```rust, ignore
+    /// let addr = "127.0.0.1:3389".parse::<SocketAddr>().unwrap();
+    /// let mut tpkt = tpkt::Client(Stream::Raw(TcpStream::connect(&addr).unwrap()));
+    /// let mut connector = x224::Connector::new(tpkt);
+    /// let mut x224 = connector.connect(
+    ///     Protocols::ProtocolSSL as u32 Protocols::Hybrid as u32,
+    ///     Some(&mut Ntlm::new("domain".to_string(), "username".to_string(), "password".to_string())
+    /// ).unwrap();
+    /// x224.write(trame![U16::LE(0)]).unwrap()
+    /// ```
+    pub fn write<T: 'static>(&mut self, message: T) -> RdpResult<()>
     where T: Message {
-        self.transport.send(trame![x224_header(), message])
+        self.transport.write(trame![x224_header(), message])
     }
 
-    pub fn recv(&mut self) -> RdpResult<tpkt::Payload> {
+    /// Start reading an entire X224 paylaod
+    /// This function act to return a valid x224 payload
+    /// or a fastpath payload coming from directly underlying layer
+    ///
+    /// # Example
+    /// ```rust, ignore
+    /// let addr = "127.0.0.1:3389".parse::<SocketAddr>().unwrap();
+    /// let mut tpkt = tpkt::Client(Stream::Raw(TcpStream::connect(&addr).unwrap()));
+    /// let mut connector = x224::Connector::new(tpkt);
+    /// let mut x224 = connector.connect(
+    ///     Protocols::ProtocolSSL as u32 Protocols::Hybrid as u32,
+    ///     Some(&mut Ntlm::new("domain".to_string(), "username".to_string(), "password".to_string())
+    /// ).unwrap();
+    /// let payload = x224.read().unwrap(); // you have to check the type
+    /// ```
+    pub fn read(&mut self) -> RdpResult<tpkt::Payload> {
         let mut s = self.transport.read()?;
         match s {
             tpkt::Payload::Raw(mut payload) => {
@@ -127,39 +175,13 @@ impl<S: Read + Write> Client<S> {
         }
 
     }
-}
-
-/// Connector is used by the connection sequence
-/// A connector will produce a x224 layer with a correct
-/// tpkt layer configured with the security protocols negotiated
-pub struct Connector<S> {
-    transport: tpkt::Client<S>
-}
-
-impl<S: Read + Write> Connector<S> {
-    /// Create a new x224 connector
-    ///
-    /// # Example
-    /// ```
-    /// use rdp::core::tpkt;
-    /// use rdp::model::link;
-    /// use rdp::core::x224;
-    /// use std::io::Cursor;
-    /// let mut tpkt = tpkt::Client::new(link::Link::new(link::Stream::Raw(Cursor::new(vec![3, 0, 0, 10, 0, 4, 3, 0, 0, 0]))));
-    /// let mut connector = x224::Connector::new(tpkt);
-    /// ```
-    pub fn new (transport: tpkt::Client<S>) -> Self {
-        Connector {
-            transport
-        }
-    }
 
     /// Launch the connection sequence of the x224 stack
     /// It will start security protocol negotiation
     /// At the end it will produce a valid x224 layer
     ///
     /// security_protocols is a valid mix of Protocols
-    /// RDP -> Protocols::ProtocolRDP as u32 NOT allowed
+    /// RDP -> Protocols::ProtocolRDP as u32 NOT implemented
     /// SSL -> Protocols::ProtocolSSL as u32
     /// NLA -> Protocols::ProtocolSSL as u32 Protocols::Hybrid as u32
     ///
@@ -167,41 +189,51 @@ impl<S: Read + Write> Connector<S> {
     ///
     /// # Example
     /// ```rust, ignore
-    /// let mut connector = x224::Connector::new(tpkt);
     /// // SSL Security layer
-    /// connector.connect(Protocols::ProtocolSSL as u32, None).unwrap();
+    /// x224::Connector::connect(
+    ///     tpkt,
+    ///     Protocols::ProtocolSSL as u32,
+    ///     None,
+    ///     false
+    /// ).unwrap();
     ///
     /// // NLA security Layer
-    /// connector.connect(
+    /// x224::Client::connect(
+    ///     tpkt,
     ///     Protocols::ProtocolSSL as u32 Protocols::Hybrid as u32,
-    ///     Some(&mut Ntlm::new("domain".to_string(), "username".to_string(), "password".to_string())
+    ///     Some(&mut Ntlm::new("domain".to_string(), "username".to_string(), "password".to_string()),
+    ///     false
     /// ).unwrap()
     /// ```
-    pub fn connect(mut self, security_protocols: u32, authentication_protocol: Option<&mut dyn AuthenticationProtocol>) -> RdpResult<Client<S>> {
-        self.send_connection_request(security_protocols)?;
-        match self.expect_connection_confirm()? {
-            Protocols::ProtocolHybrid => Ok(Client::new(self.transport.start_nla(authentication_protocol.unwrap())?,Protocols::ProtocolHybrid)),
-            Protocols::ProtocolSSL => Ok(Client::new(self.transport.start_ssl()?, Protocols::ProtocolSSL)),
-            Protocols::ProtocolRDP => Ok(Client::new(self.transport, Protocols::ProtocolRDP)),
+    pub fn connect(mut tpkt: tpkt::Client<S>, security_protocols: u32, authentication_protocol: Option<&mut dyn AuthenticationProtocol>, restricted_admin_mode: bool) -> RdpResult<Client<S>> {
+        Self::write_connection_request(&mut tpkt, security_protocols, Some(if restricted_admin_mode { RequestMode::RestrictedAdminModeRequired as u8} else { 0 }))?;
+        match Self::read_connection_confirm(&mut tpkt)? {
+            Protocols::ProtocolHybrid => Ok(Client::new(tpkt.start_nla(authentication_protocol.unwrap(), restricted_admin_mode)?,Protocols::ProtocolHybrid)),
+            Protocols::ProtocolSSL => Ok(Client::new(tpkt.start_ssl()?, Protocols::ProtocolSSL)),
+            Protocols::ProtocolRDP => Ok(Client::new(tpkt, Protocols::ProtocolRDP)),
             _ => Err(Error::RdpError(RdpError::new(RdpErrorKind::InvalidProtocol, "Security protocol not handled")))
         }
     }
 
     /// Send connection request
-    fn send_connection_request(&mut self, security_protocols: u32) -> RdpResult<()> {
-        self.transport.send(
+    fn write_connection_request(tpkt: &mut tpkt::Client<S>, security_protocols: u32, mode: Option<u8>) -> RdpResult<()> {
+        tpkt.write(
             x224_connection_pdu(
-                NegotiationType::TypeRDPNegReq,
+                Some(NegotiationType::TypeRDPNegReq),
+                mode,
                 Some(security_protocols)
             )
         )
     }
 
     /// Expect a connection confirm payload
-    fn expect_connection_confirm(&mut self) -> RdpResult<Protocols> {
-        let mut buffer = try_let!(tpkt::Payload::Raw, self.transport.read()?)?;
-
-        let mut confirm = x224_connection_pdu(NegotiationType::TypeRDPNegRsp, None);
+    fn read_connection_confirm(tpkt: &mut tpkt::Client<S>) -> RdpResult<Protocols> {
+        let mut buffer = try_let!(tpkt::Payload::Raw, tpkt.read()?)?;
+        let mut confirm = x224_connection_pdu(
+            None,
+            None,
+            None
+        );
         confirm.read(&mut buffer)?;
 
         let nego = cast!(DataType::Component, confirm["negotiation"]).unwrap();
@@ -222,7 +254,7 @@ mod test {
     #[test]
     fn test_rdp_neg_req() {
         let mut s = Cursor::new(vec![]);
-        rdp_neg_req(NegotiationType::TypeRDPNegRsp, 1).write(&mut s).unwrap();
+        rdp_neg_req(Some(NegotiationType::TypeRDPNegRsp), Some(1),  Some(0)).write(&mut s).unwrap();
         assert_eq!(s.into_inner(), vec![2, 0, 8, 0, 1, 0, 0, 0])
     }
 
@@ -246,7 +278,7 @@ mod test {
     #[test]
     fn test_x224_connection_pdu() {
         let mut s = Cursor::new(vec![]);
-        x224_connection_pdu(NegotiationType::TypeRDPNegReq, Some(3)).write(&mut s).unwrap();
+        x224_connection_pdu(Some(NegotiationType::TypeRDPNegReq), Some(0), Some(3)).write(&mut s).unwrap();
         assert_eq!(s.into_inner(), vec![14, 224, 0, 0, 0, 0, 0, 1, 0, 8, 0, 3, 0, 0, 0])
     }
 }

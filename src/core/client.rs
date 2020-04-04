@@ -17,7 +17,8 @@ use nla::ntlm::Ntlm;
 pub struct RdpClientConfig {
     pub width: u16,
     pub height: u16,
-    pub layout: KeyboardLayout
+    pub layout: KeyboardLayout,
+    pub restricted_admin_mode: bool
 }
 
 pub struct RdpClient<S> {
@@ -37,19 +38,21 @@ impl<S: Read + Write> RdpClient<S> {
         let config = Rc::new(RdpClientConfig {
             width: 800,
             height: 600,
-            layout: KeyboardLayout::French
+            layout: KeyboardLayout::French,
+            restricted_admin_mode: false
         });
 
         let tcp = Link::new( Stream::Raw(stream));
-        let tpkt = tpkt::Client::new(tcp);
-        let x224_connector = x224::Connector::new(tpkt);
-        let x224 = x224_connector.connect(
-            x224::Protocols::ProtocolSSL as u32 | x224::Protocols::ProtocolHybrid as u32,
-            Some(&mut Ntlm::new("".to_string(), "sylvain".to_string(), "sylvain".to_string()))
-        )?;
-        self.mcs = Some(mcs::Client::new(x224, Rc::clone(&config)));
 
-        self.mcs.as_mut().unwrap().connect()?;
+        let x224 = x224::Client::connect(
+            tpkt::Client::new(tcp),
+            x224::Protocols::ProtocolSSL as u32 | x224::Protocols::ProtocolHybrid as u32,
+            Some(&mut Ntlm::new("".to_string(), "sylvain".to_string(), "sylvain".to_string())),
+            config.restricted_admin_mode
+        )?;
+        self.mcs = Some(mcs::Client::new(x224));
+
+        self.mcs.as_mut().unwrap().connect(config.width, config.height, config.layout)?;
         // state less connection
         sec::client_connect(&mut self.mcs.as_mut().unwrap())?;
 
@@ -64,7 +67,7 @@ impl<S: Read + Write> RdpClient<S> {
 
     pub fn process<T>(&mut self, mut callback: T) -> RdpResult<()>
     where T: FnMut(RdpEvent) {
-        let (channel_name, message) = self.mcs.as_mut().unwrap().recv()?;
+        let (channel_name, message) = self.mcs.as_mut().unwrap().read()?;
         match channel_name.as_str() {
             "global" => self.global.as_mut().unwrap().process(message, &mut self.mcs.as_mut().unwrap(), callback),
             _ => Err(Error::RdpError(RdpError::new(RdpErrorKind::UnexpectedType, &format!("Invalid channel name {:?}", channel_name))))

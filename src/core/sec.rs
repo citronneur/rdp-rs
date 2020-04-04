@@ -108,7 +108,7 @@ fn security_header() -> Component {
 /// Security layer need mcs layer and send all message through
 /// the global channel
 pub fn client_connect<T: Read + Write>(mcs: &mut mcs::Client<T>) -> RdpResult<()> {
-    mcs.send(
+    mcs.write(
         &"global".to_string(),
         trame![
             U16::LE(SecurityFlag::SecInfoPkt as u16),
@@ -117,7 +117,7 @@ pub fn client_connect<T: Read + Write>(mcs: &mut mcs::Client<T>) -> RdpResult<()
         ]
     )?;
 
-    let (channel_name, mut payload) = mcs.recv()?;
+    let (channel_name, mut payload) = mcs.read()?;
     let mut stream = try_let!(tpkt::Payload::Raw, payload)?;
     let mut header = security_header();
     header.read(&mut stream)?;
