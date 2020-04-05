@@ -114,7 +114,7 @@ pub struct Client<S> {
     /// Transport layer, x224 use a tpkt
     transport: tpkt::Client<S>,
     /// Security selected protocol by the connector
-    pub selected_protocol: Protocols
+    selected_protocol: Protocols
 }
 
 impl<S: Read + Write> Client<S> {
@@ -243,6 +243,11 @@ impl<S: Read + Write> Client<S> {
             NegotiationType::TypeRDPNegReq => Err(Error::RdpError(RdpError::new(RdpErrorKind::InvalidAutomata, "Server reject security protocols"))),
             NegotiationType::TypeRDPNegRsp => Ok(Protocols::try_from(cast!(DataType::U32, nego["result"])?)?)
         }
+    }
+
+    /// Getter for selected protocols
+    pub fn get_selected_protocols(&self) -> Protocols {
+        self.selected_protocol
     }
 }
 

@@ -4,7 +4,6 @@ use std::io::{Read, Write, Cursor};
 use model::error::{RdpResult, Error, RdpErrorKind, RdpError};
 use model::data::{Component, MessageOption, U32, DynOption, U16, DataType, Message, Array, Trame, Check, to_vec};
 use std::collections::HashMap;
-use core::client::{RdpClientConfig};
 use core::event::{RdpEvent, BitmapEvent};
 use std::rc::Rc;
 use indexmap::map::IndexMap;
@@ -12,6 +11,7 @@ use num_enum::TryFromPrimitive;
 use std::convert::TryFrom;
 use core::capability::{Capability, capability_set};
 use core::capability;
+use core::gcc::KeyboardLayout;
 
 
 /// Raw PDU type use by the protocol
@@ -486,22 +486,26 @@ pub struct Client {
     state: ClientState,
     user_id: u16,
     channel_id: u16,
+    width: u16,
+    height: u16,
+    layout: KeyboardLayout,
     share_id: Option<u32>,
-    server_capabilities: Vec<Capability>,
-    config: Rc<RdpClientConfig>
+    server_capabilities: Vec<Capability>
 }
 
 impl Client {
     /// Ctor for a new global channel client
     /// user_id and channel_id must come from mcs channel once connected
-    pub fn new(user_id: u16, channel_id: u16, config: Rc<RdpClientConfig>) -> Client {
+    pub fn new(user_id: u16, channel_id: u16, width: u16, height: u16, layout: KeyboardLayout) -> Client {
         Client {
             state: ClientState::DemandActivePDU,
             server_capabilities: Vec::new(),
             share_id: None,
-            config,
             user_id,
-            channel_id
+            channel_id,
+            width,
+            height,
+            layout
         }
     }
 
@@ -634,12 +638,12 @@ impl Client {
         let pdu = ts_confirm_active_pdu(self.share_id, Some(b"rdp-rs".to_vec()), Some(Array::from_trame(
             trame![
                 capability_set(Some(capability::ts_general_capability_set(Some(capability::GeneralExtraFlag::LongCredentialsSupported as u16 | capability::GeneralExtraFlag::NoBitmapCompressionHdr as u16 | capability::GeneralExtraFlag::EncSaltedChecksum as u16 | capability::GeneralExtraFlag::FastpathOutputSupported as u16)))),
-                capability_set(Some(capability::ts_bitmap_capability_set(Some(0x0018), Some(self.config.as_ref().width), Some(self.config.as_ref().height)))),
+                capability_set(Some(capability::ts_bitmap_capability_set(Some(0x0018), Some(self.width), Some(self.height)))),
                 capability_set(Some(capability::ts_order_capability_set(Some(capability::OrderFlag::NEGOTIATEORDERSUPPORT as u16 | capability::OrderFlag::ZEROBOUNDSDELTASSUPPORT as u16)))),
                 capability_set(Some(capability::ts_bitmap_cache_capability_set())),
                 capability_set(Some(capability::ts_pointer_capability_set())),
                 capability_set(Some(capability::ts_sound_capability_set())),
-                capability_set(Some(capability::ts_input_capability_set(Some(capability::InputFlags::InputFlagScancodes as u16 | capability::InputFlags::InputFlagMousex as u16 | capability::InputFlags::InputFlagUnicode as u16), Some(self.config.as_ref().layout)))),
+                capability_set(Some(capability::ts_input_capability_set(Some(capability::InputFlags::InputFlagScancodes as u16 | capability::InputFlags::InputFlagMousex as u16 | capability::InputFlags::InputFlagUnicode as u16), Some(self.layout)))),
                 capability_set(Some(capability::ts_brush_capability_set())),
                 capability_set(Some(capability::ts_glyph_capability_set())),
                 capability_set(Some(capability::ts_offscreen_capability_set())),

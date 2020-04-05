@@ -14,67 +14,25 @@ use core::event::{RdpEvent, PointerButton};
 use core::global::{ts_pointer_event, PointerFlag, ts_keyboard_event, KeyboardFlag};
 use nla::ntlm::Ntlm;
 
-pub struct RdpClientConfig {
-    pub width: u16,
-    pub height: u16,
-    pub layout: KeyboardLayout,
-    pub restricted_admin_mode: bool
-}
-
 pub struct RdpClient<S> {
-    mcs: Option<mcs::Client<S>>,
-    global: Option<global::Client>
+    /// Multi channel
+    /// This is the main switch layer of the protocol
+    mcs: mcs::Client<S>,
+    /// Global channel that implement the basic layer
+    global: global::Client
 }
 
 impl<S: Read + Write> RdpClient<S> {
-    pub fn new() -> Self {
-        RdpClient {
-            mcs: None,
-            global: None
-        }
-    }
-
-    pub fn connect(&mut self, stream: S) -> RdpResult<()> {
-        let config = Rc::new(RdpClientConfig {
-            width: 800,
-            height: 600,
-            layout: KeyboardLayout::French,
-            restricted_admin_mode: false
-        });
-
-        let tcp = Link::new( Stream::Raw(stream));
-
-        let x224 = x224::Client::connect(
-            tpkt::Client::new(tcp),
-            x224::Protocols::ProtocolSSL as u32 | x224::Protocols::ProtocolHybrid as u32,
-            Some(&mut Ntlm::new("".to_string(), "sylvain".to_string(), "sylvain".to_string())),
-            config.restricted_admin_mode
-        )?;
-        self.mcs = Some(mcs::Client::new(x224));
-
-        self.mcs.as_mut().unwrap().connect(config.width, config.height, config.layout)?;
-        // state less connection
-        sec::client_connect(&mut self.mcs.as_mut().unwrap())?;
-
-        self.global = Some(global::Client::new(
-            self.mcs.as_ref().unwrap().get_user_id(),
-            self.mcs.as_ref().unwrap().get_global_channel_id(),
-            Rc::clone(&config)
-        ));
-
-        Ok(())
-    }
-
-    pub fn process<T>(&mut self, mut callback: T) -> RdpResult<()>
+    pub fn read<T>(&mut self, mut callback: T) -> RdpResult<()>
     where T: FnMut(RdpEvent) {
-        let (channel_name, message) = self.mcs.as_mut().unwrap().read()?;
+        let (channel_name, message) = self.mcs.read()?;
         match channel_name.as_str() {
-            "global" => self.global.as_mut().unwrap().process(message, &mut self.mcs.as_mut().unwrap(), callback),
+            "global" => self.global.process(message, &mut self.mcs, callback),
             _ => Err(Error::RdpError(RdpError::new(RdpErrorKind::UnexpectedType, &format!("Invalid channel name {:?}", channel_name))))
         }
     }
 
-    pub fn send(&mut self, event: RdpEvent) -> RdpResult<()> {
+    pub fn write(&mut self, event: RdpEvent) -> RdpResult<()> {
         match event {
             // Pointer event
             // Mouse position an d button position
@@ -93,7 +51,7 @@ impl<S: Read + Write> RdpClient<S> {
                     flags |= PointerFlag::PtrflagsDown as u16;
                 }
 
-                self.global.as_mut().unwrap().send_input_event(ts_pointer_event(Some(flags), Some(pointer.x), Some(pointer.y)), self.mcs.as_mut().unwrap())
+                self.global.send_input_event(ts_pointer_event(Some(flags), Some(pointer.x), Some(pointer.y)), &mut self.mcs)
             },
             // Raw keyboard input
             RdpEvent::Key(key) => {
@@ -101,9 +59,117 @@ impl<S: Read + Write> RdpClient<S> {
                 if key.down {
                     flags |= KeyboardFlag::KbdflagsRelease as u16;
                 }
-                self.global.as_mut().unwrap().send_input_event(ts_keyboard_event(Some(flags), Some(key.code)), self.mcs.as_mut().unwrap())
+                self.global.send_input_event(ts_keyboard_event(Some(flags), Some(key.code)), &mut self.mcs)
             }
             _ => Err(Error::RdpError(RdpError::new(RdpErrorKind::UnexpectedType, "RDPCLIENT: This event can't be sent")))
         }
+    }
+}
+
+pub struct Connector {
+    /// Screen width
+    width: u16,
+    /// Screen height
+    height: u16,
+    /// Keyboard layout
+    layout: KeyboardLayout,
+    /// Restricted admin mode
+    /// This mode protect againt credential forward
+    restricted_admin_mode: bool,
+    /// Microsoft Domain
+    /// If you don't care keep empty
+    domain: String,
+    /// Username
+    username: String,
+    /// Password
+    password: String
+}
+
+impl Connector {
+    /// Create a new RDP client
+    /// You can configure your client
+    ///
+    /// # Example
+    /// ```
+    /// use rdp::core::client::Connector;
+    /// let mut connector = Connector::new()
+    ///     .screen(800, 600)
+    ///     .credentials("domain".to_string(), "username".to_string(), "password".to_string());
+    /// ```
+    pub fn new() -> Self {
+        Connector {
+            width: 800,
+            height: 600,
+            layout: KeyboardLayout::US,
+            restricted_admin_mode: false,
+            domain: "".to_string(),
+            username: "".to_string(),
+            password: "".to_string()
+        }
+    }
+
+    /// Connect a configured
+    pub fn connect<S: Read + Write>(&mut self, stream: S) -> RdpResult<RdpClient<S>> {
+
+        // Create a wrapper around the stream
+        let tcp = Link::new( Stream::Raw(stream));
+
+        // Create the x224 layer
+        // With all negotiated security stuff and credentials
+        let x224 = x224::Client::connect(
+            tpkt::Client::new(tcp),
+            x224::Protocols::ProtocolSSL as u32 | x224::Protocols::ProtocolHybrid as u32,
+            Some(&mut Ntlm::new(self.domain.clone(), self.username.clone(), self.password.clone())),
+            self.restricted_admin_mode
+        )?;
+
+        // Create MCS layer and connect it
+        let mut mcs = mcs::Client::new(x224);
+        mcs.connect(self.width, self.height, self.layout)?;
+        // state less connection for old secure layer
+        if self.restricted_admin_mode {
+            sec::connect(
+                &mut mcs,
+                &"".to_string(),
+                &"".to_string(),
+                &"".to_string()
+            )?;
+        } else {
+            sec::connect(
+                &mut mcs,
+                &self.domain,
+                &self.username,
+                &self.password
+            )?;
+        }
+
+        // Now the global channel
+        let mut global = global::Client::new(
+            mcs.get_user_id(),
+            mcs.get_global_channel_id(),
+            self.width,
+            self.height,
+            self.layout
+        );
+
+        Ok(RdpClient {
+            mcs,
+            global
+        })
+    }
+
+    /// Configure the screen size of the session
+    pub fn screen(mut self, width: u16, height: u16) -> Self {
+        self.width = width;
+        self.height = height;
+        self
+    }
+
+    /// Configure credentials for the session
+    pub fn credentials(mut self, domain: String, username: String, password: String) -> Self {
+        self.domain = domain;
+        self.username = username;
+        self.password = password;
+        self
     }
 }

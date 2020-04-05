@@ -13,7 +13,7 @@ use winapi::_core::time::Duration;
 use std::ptr;
 use std::mem;
 use std::mem::{size_of, forget};
-use rdp::core::client::RdpClient;
+use rdp::core::client::{RdpClient, Connector};
 use winapi::um::winsock2::{select, fd_set, timeval};
 use std::os::windows::io::AsRawSocket;
 use rdp::core::event::{RdpEvent, BitmapEvent, PointerEvent, PointerButton, KeyboardEvent};
@@ -208,9 +208,10 @@ fn main() {
     tcp.set_nodelay(true).unwrap();
 
     //try connect
-    let mut rdp_client = RdpClient::new();
-    rdp_client.connect(tcp).unwrap();
-
+    let mut rdp_client = Connector::new()
+        .screen(800, 600)
+        .credentials("".to_string(), "sylvain".to_string(), "sylvain".to_string())
+        .connect(tcp).unwrap();
 
     // Limit to max ~60 fps update rate
     window.limit_update_rate(Some(std::time::Duration::from_micros(16600)));
@@ -223,7 +224,7 @@ fn main() {
     while window.is_open() {
         let now = Instant::now();
         while wait_for_fd(handle as usize) {
-            rdp_client.process(|event| {
+            rdp_client.read(|event| {
                 match event {
                     RdpEvent::Bitmap(bitmap) => {
                         fast_bitmap_transfer(&mut buffer, bitmap)
@@ -235,14 +236,14 @@ fn main() {
                 break;
             }
         }
-
+        println!("{:?}", now.elapsed().as_millis());
         // Send pointer position
         if let Some((x, y)) = window.get_mouse_pos(MouseMode::Clamp) {
 
             // Button is down if not 0
             let current_button = get_rdp_pointer_down(&window);
 
-            rdp_client.send(RdpEvent::Pointer(
+            rdp_client.write(RdpEvent::Pointer(
                 PointerEvent{
                     x: x as u16,
                     y: y as u16,
@@ -256,7 +257,7 @@ fn main() {
         if let Some(keys) = window.get_keys() {
             for key in keys.iter() {
                 if !last_keys.contains(key) {
-                    rdp_client.send(RdpEvent::Key(
+                    rdp_client.write(RdpEvent::Key(
                         KeyboardEvent {
                             code: to_scancode(*key),
                             down: true
@@ -267,7 +268,7 @@ fn main() {
 
             for key in last_keys {
                 if !keys.contains(&key) {
-                    rdp_client.send(RdpEvent::Key(
+                    rdp_client.write(RdpEvent::Key(
                         KeyboardEvent {
                             code: to_scancode(key),
                             down: false

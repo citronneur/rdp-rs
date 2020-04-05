@@ -4,6 +4,7 @@ use core::tpkt;
 use model::error::{RdpResult, Error, RdpError, RdpErrorKind};
 use model::data::{Message, Component, U16, U32, DynOption, MessageOption, Trame, DataType};
 use std::io::{Write, Read, Cursor};
+use model::unicode::Unicode;
 
 /// Security flag send as header flage in core ptotocol
 /// https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-rdpbcgr/e13405c5-668b-4716-94b2-1c2654ca1ad4?redirectedfrom=MSDN
@@ -58,6 +59,8 @@ enum AfInet {
     AfInet6 = 0x0017
 }
 
+/// On RDP version > 5
+/// Client have to send IP information
 fn rdp_extended_infos() -> Component {
     component![
         "clientAddressFamily" => U16::LE(AfInet::AfInet as u16),
@@ -71,7 +74,22 @@ fn rdp_extended_infos() -> Component {
     ]
 }
 
-fn rdp_infos(is_extended_info: bool) -> Component {
+/// When CSSP is not used
+/// interactive logon used credentials
+/// present in this payload
+fn rdp_infos(is_extended_info: bool, mut domain: &String, username: &String, password: &String) -> Component {
+    let mut domain_format = domain.to_unicode();
+    domain_format.push(0);
+    domain_format.push(0);
+
+    let mut username_format = username.to_unicode();
+    username_format.push(0);
+    username_format.push(0);
+
+    let mut password_format = password.to_unicode();
+    password_format.push(0);
+    password_format.push(0);
+
     component![
         "codePage" => U32::LE(0),
         "flag" => U32::LE(
@@ -82,14 +100,14 @@ fn rdp_infos(is_extended_info: bool) -> Component {
             InfoFlag::InfoDisablectrlaltdel as u32 |
             InfoFlag::InfoEnablewindowskey as u32
         ),
-        "cbDomain" => U16::LE(0),
-        "cbUserName" => U16::LE(0),
-        "cbPassword" => U16::LE(0),
+        "cbDomain" => U16::LE((domain_format.len() - 2) as u16),
+        "cbUserName" => U16::LE((username_format.len() - 2) as u16),
+        "cbPassword" => U16::LE((password_format.len() - 2) as u16),
         "cbAlternateShell" => U16::LE(0),
         "cbWorkingDir" => U16::LE(0),
-        "domain" => b"\x00\x00".to_vec(),
-        "userName" => b"\x00\x00".to_vec(),
-        "password" => b"\x00\x00".to_vec(),
+        "domain" => domain_format,
+        "userName" => username_format,
+        "password" => password_format,
         "alternateShell" => b"\x00\x00".to_vec(),
         "workingDir" => b"\x00\x00".to_vec(),
         "extendedInfos" => if is_extended_info { rdp_extended_infos() } else { component![] }
@@ -107,13 +125,28 @@ fn security_header() -> Component {
 
 /// Security layer need mcs layer and send all message through
 /// the global channel
-pub fn client_connect<T: Read + Write>(mcs: &mut mcs::Client<T>) -> RdpResult<()> {
+///
+/// This function is called sec because old RDP security
+/// was made here
+///
+/// # Example
+/// ```rust, ignore
+/// use rdp::core::sec;
+/// let mut mcs = mcs::Client(...).unwrap();
+/// sec::connect(&mut mcs).unwrap();
+/// ```
+pub fn connect<T: Read + Write>(mcs: &mut mcs::Client<T>, domain: &String, username: &String, password: &String) -> RdpResult<()> {
     mcs.write(
         &"global".to_string(),
         trame![
             U16::LE(SecurityFlag::SecInfoPkt as u16),
             U16::LE(0),
-            rdp_infos(mcs.is_rdp_version_5_plus())
+            rdp_infos(
+                mcs.is_rdp_version_5_plus(),
+                domain,
+                username,
+                password
+            )
         ]
     )?;
 
@@ -129,6 +162,11 @@ pub fn client_connect<T: Read + Write>(mcs: &mut mcs::Client<T>) -> RdpResult<()
     Ok(())
 }
 
+#[cfg(test)]
+mod test {
+    use super::*;
 
+    // Test format of rdp_infos
+}
 
 

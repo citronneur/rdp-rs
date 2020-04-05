@@ -8,7 +8,6 @@ use yasna::{Tag};
 use std::io::{Write, Read, BufRead, Cursor};
 use core::per;
 use std::collections::HashMap;
-use core::client::RdpClientConfig;
 use std::rc::Rc;
 
 #[allow(dead_code)]
@@ -74,6 +73,8 @@ fn mcs_pdu_header(pdu: Option<DomainMCSPDU>, options: Option<u8>) -> u8 {
 }
 
 /// Read attach user confirm
+/// Client -- attach_user_request -> Server
+/// Client <- attach_user_confirm -- Server
 fn read_attach_user_confirm(buffer: &mut dyn Read) -> RdpResult<u16> {
     let mut confirm = trame![0 as u8, Vec::<u8>::new()];
     confirm.read(buffer)?;
@@ -88,7 +89,10 @@ fn read_attach_user_confirm(buffer: &mut dyn Read) -> RdpResult<u16> {
     Ok(per::read_integer_16(1001, &mut request)?)
 }
 
-/// Attach the user to the current session
+/// Create a session for the current user
+///
+/// Client -- attach_user_request -> Server
+/// Client <- attach_user_confirm -- Server
 fn attach_user_request() -> u8 {
     mcs_pdu_header(Some(DomainMCSPDU::AttachUserRequest), None)
 }
@@ -106,6 +110,13 @@ fn erect_domain_request() -> RdpResult<Trame> {
 }
 
 /// Ask to join a new channel
+/// /// The MCS will negotiate each channel
+/// channel join confirm is sent by server
+/// to validate or not the channel requested
+/// by the client
+///
+/// Client -- channel_join_request -> Server
+/// Client <- channel_join_confirm -- Server
 fn channel_join_request(user_id: Option<u16>, channel_id: Option<u16>) -> RdpResult<Trame> {
     Ok(trame![
         mcs_pdu_header(Some(DomainMCSPDU::ChannelJoinRequest), None),
@@ -114,6 +125,14 @@ fn channel_join_request(user_id: Option<u16>, channel_id: Option<u16>) -> RdpRes
     ])
 }
 
+/// Read channel join confirm
+/// The MCS will negotiate each channel
+/// channel join confirm is sent by server
+/// to validate or not the channel requested
+/// by the client
+///
+/// Client -- channel_join_request -> Server
+/// Client <- channel_join_confirm -- Server
 fn read_channel_join_confirm(user_id: u16, channel_id: u16, buffer: &mut dyn Read) -> RdpResult<bool> {
     let mut confirm = trame![0 as u8, Vec::<u8>::new()];
     confirm.read(buffer)?;
@@ -137,10 +156,15 @@ fn read_channel_join_confirm(user_id: u16, channel_id: u16, buffer: &mut dyn Rea
     Ok(confirm == 0)
 }
 
+/// MCS client channel
 pub struct Client<S> {
+    /// X224 transport layer
     x224: x224::Client<S>,
+    /// Server data send during connection step
     server_data: Option<ServerData>,
+    /// User id session negotiated by the MCS
     user_id: Option<u16>,
+    /// Map that translate channel name to channel id
     channel_ids : HashMap<String, u16>
 }
 
@@ -162,7 +186,7 @@ impl<S: Read + Write> Client<S> {
             width: screen_width,
             height: screen_height,
             layout: keyboard_layout,
-            server_selected_protocol: self.x224.selected_protocol as u32,
+            server_selected_protocol: self.x224.get_selected_protocols() as u32,
             rdp_version: Version::RdpVersion5plus
         }));
         let client_security_data = client_security_data();
@@ -180,7 +204,7 @@ impl<S: Read + Write> Client<S> {
     fn read_connect_response(&mut self) -> RdpResult<()> {
         // Now read response from the server
         let mut connect_response = connect_response(None);
-        let mut payload = try_let!(tpkt::Payload::Raw, self.x224.recv()?)?;
+        let mut payload = try_let!(tpkt::Payload::Raw, self.x224.read()?)?;
         from_ber(&mut connect_response, payload.fill_buf()?)?;
 
         // Get server data
@@ -205,7 +229,7 @@ impl<S: Read + Write> Client<S> {
         self.x224.write(erect_domain_request()?)?;
         self.x224.write(attach_user_request())?;
 
-        self.user_id = Some(read_attach_user_confirm(&mut try_let!(tpkt::Payload::Raw, self.x224.recv()?)?)?);
+        self.user_id = Some(read_attach_user_confirm(&mut try_let!(tpkt::Payload::Raw, self.x224.read()?)?)?);
 
         // Add static channel
         self.channel_ids.insert("global".to_string(), 1003);
@@ -215,7 +239,7 @@ impl<S: Read + Write> Client<S> {
         // Actually only the two static main channel are requested
         for channel_id in self.channel_ids.values() {
             self.x224.write(channel_join_request(self.user_id, Some(*channel_id))?)?;
-            if !read_channel_join_confirm(self.user_id.unwrap(), *channel_id, &mut try_let!(tpkt::Payload::Raw, self.x224.recv()?)?)? {
+            if !read_channel_join_confirm(self.user_id.unwrap(), *channel_id, &mut try_let!(tpkt::Payload::Raw, self.x224.read()?)?)? {
                 println!("Server reject channel id {:?}", channel_id);
             }
         }
@@ -298,10 +322,12 @@ impl<S: Read + Write> Client<S> {
         self.server_data.as_ref().unwrap().rdp_version == Version::RdpVersion5plus
     }
 
+    /// Getter of the user id negotiated during connection steps
     pub fn get_user_id(&self) -> u16 {
         self.user_id.unwrap()
     }
 
+    /// Getter of the global channel id
     pub fn get_global_channel_id(&self) -> u16 {
         self.channel_ids["global"]
     }
@@ -311,7 +337,6 @@ impl<S: Read + Write> Client<S> {
 mod test {
     use super::*;
     use nla::asn1::{ASN1};
-
 
     /// Test of read read_attach_user_confirm
     #[test]
