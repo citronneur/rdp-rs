@@ -15,10 +15,15 @@ use std::mem;
 use std::mem::{size_of, forget};
 use rdp::core::client::{RdpClient, Connector};
 use winapi::um::winsock2::{select, fd_set, timeval};
-use std::os::windows::io::AsRawSocket;
+use std::os::windows::io::{AsRawSocket};
 use rdp::core::event::{RdpEvent, BitmapEvent, PointerEvent, PointerButton, KeyboardEvent};
 use winapi::_core::intrinsics::copy_nonoverlapping;
 use std::convert::TryFrom;
+use std::thread;
+use std::sync::{mpsc, Arc};
+use std::thread::sleep;
+use winapi::_core::sync::atomic::{AtomicBool, Ordering};
+use rdp::model::error::{Error, RdpErrorKind, RdpError, RdpResult};
 
 /// This is a function just to check if data
 /// is available on socket to work only in one thread
@@ -187,10 +192,11 @@ fn to_scancode(key: Key) -> u16 {
 
 }
 
-const WIDTH: usize = 800;
+const WIDTH: usize = 1024;
 const HEIGHT: usize = 600;
 
 fn main() {
+    let mut is_stopped = Arc::new(AtomicBool::new(false));
     let mut window = Window::new(
         "Test - ESC to exit",
         WIDTH,
@@ -207,73 +213,139 @@ fn main() {
     let handle = tcp.as_raw_socket();
     tcp.set_nodelay(true).unwrap();
 
-    //try connect
-    let mut rdp_client = Connector::new()
-        .screen(800, 600)
-        .credentials("".to_string(), "sylvain".to_string(), "sylvain".to_string())
-        .connect(tcp).unwrap();
+    let (tx_bitmap, rx_bitmap) = mpsc::channel();
+    let (tx_input_event, rx_input_event) = mpsc::channel();
 
+    // Create the rdp thread
+    // It will move the tx_bitmap and the rx_input_event
+    let mut is_stopped_rdp_thread = Arc::clone(&is_stopped);
+    let rdp_thread = thread::spawn(move || {
+        let mut rdp_client = Connector::new()
+            .screen(WIDTH as u16, HEIGHT as u16)
+            .credentials("".to_string(), "sylvain".to_string(), "sylvain".to_string())
+            .connect(tcp).unwrap();
+        
+        let mut disconnected = false;
+        while !(is_stopped_rdp_thread.load(Ordering::Relaxed)) {
+            let now = Instant::now();
+            let mut wait = std::time::Duration::from_micros(10);
+            if wait_for_fd(handle as usize) {
+                match rdp_client.read(|event| {
+                    match event {
+                        RdpEvent::Bitmap(bitmap) => {
+                            tx_bitmap.send(bitmap).unwrap();
+                        },
+                        _ => println!("GUI: Ignore event")
+                    }
+                }) {
+                    Ok(()) => (),
+                    Err(Error::RdpError(e)) => {
+                        match e.kind() {
+                            RdpErrorKind::Disconnect => {
+                                println!("Disconnected");
+                                disconnected = true;
+                                break;
+                            },
+                            _ => {
+                                println!("{:?}", e);
+                                break;
+                            }
+                        }
+                    },
+                    Err(e) => {
+                        println!("{:?}", e);
+                        break;
+                    }
+                }
+
+                wait = std::time::Duration::from_micros(0);
+            }
+
+            match rx_input_event.recv_timeout(wait.checked_sub(now.elapsed()).unwrap_or(std::time::Duration::from_micros(0))) {
+                Ok(input_event) => rdp_client.write(input_event).unwrap(),
+                Err(_) => ()
+            }
+        }
+
+        if !disconnected {
+            rdp_client.close().unwrap();
+        }
+        is_stopped_rdp_thread.store(true, Ordering::Relaxed);
+    });
+
+    // Now we continue with the graphical main thread
     // Limit to max ~60 fps update rate
     window.limit_update_rate(Some(std::time::Duration::from_micros(16600)));
 
-    //let mut back_buffer = buffer.clone();
+    // The window buffer
     let mut buffer: Vec<u32> = vec![0; WIDTH * HEIGHT];
+
+    // State for mouse button
     let mut last_button = PointerButton::None;
+
+    // state for keyboard keys
     let mut last_keys = vec![];
 
-    while window.is_open() {
+    // Start the refresh loop
+    while window.is_open() && !is_stopped.load(Ordering::Relaxed){
         let now = Instant::now();
-        while wait_for_fd(handle as usize) {
-            rdp_client.read(|event| {
-                match event {
-                    RdpEvent::Bitmap(bitmap) => {
-                        fast_bitmap_transfer(&mut buffer, bitmap)
-                    },
-                    _ => println!("GUI: Ignore event")
-                }
-            }).unwrap();
-            if now.elapsed().as_micros() > 16600 * 2 {
+
+        loop {
+            match rx_bitmap.recv_timeout(std::time::Duration::from_micros(16600)) {
+                Ok(bitmap) => fast_bitmap_transfer(&mut buffer, bitmap),
+                Err(_) => ()
+            }
+            if now.elapsed().as_micros() > 1660 {
                 break;
             }
         }
-        println!("{:?}", now.elapsed().as_millis());
+
         // Send pointer position
         if let Some((x, y)) = window.get_mouse_pos(MouseMode::Clamp) {
 
             // Button is down if not 0
             let current_button = get_rdp_pointer_down(&window);
 
-            rdp_client.write(RdpEvent::Pointer(
+            match tx_input_event.send(RdpEvent::Pointer(
                 PointerEvent{
                     x: x as u16,
                     y: y as u16,
                     button: if last_button == current_button { PointerButton::None } else { PointerButton::try_from(last_button as u8 | current_button as u8).unwrap() },
                     down: (last_button != current_button) && last_button == PointerButton::None
                 })
-            ).unwrap();
+            ) {
+                Ok(()) => (),
+                Err(_) => ()
+            }
 
             last_button = current_button;
         }
         if let Some(keys) = window.get_keys() {
             for key in keys.iter() {
                 if !last_keys.contains(key) {
-                    rdp_client.write(RdpEvent::Key(
+                    match tx_input_event.send(RdpEvent::Key(
                         KeyboardEvent {
                             code: to_scancode(*key),
                             down: true
                         })
-                    ).unwrap();
+                    ){
+                        Ok(()) => (),
+                        Err(_) => ()
+                    }
                 }
             }
 
             for key in last_keys {
                 if !keys.contains(&key) {
-                    rdp_client.write(RdpEvent::Key(
+                    match tx_input_event.send(RdpEvent::Key(
                         KeyboardEvent {
                             code: to_scancode(key),
                             down: false
                         })
-                    ).unwrap();
+                    ){
+                        Ok(()) => (),
+                        Err(_) => ()
+                    }
                 }
             }
 
@@ -283,4 +355,7 @@ fn main() {
         // We unwrap here as we want this code to exit if it fails. Real applications may want to handle this in a different way
         window.update_with_buffer(&buffer, WIDTH, HEIGHT).unwrap();
     }
+
+    is_stopped.store(true, Ordering::Relaxed);
+    rdp_thread.join();
 }

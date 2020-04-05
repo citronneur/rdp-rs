@@ -6,7 +6,7 @@ use self::native_tls::{TlsConnector, TlsStream, Certificate};
 use model::data::{Message};
 
 pub enum Stream<S> {
-    Raw(S),
+        Raw(S),
     Ssl(TlsStream<S>)
 }
 

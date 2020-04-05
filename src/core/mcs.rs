@@ -316,6 +316,15 @@ impl<S: Read + Write> Client<S> {
 
     }
 
+    /// Send a close event to server
+    pub fn close(&mut self) -> RdpResult<()> {
+        self.x224.write(trame![
+            mcs_pdu_header(Some(DomainMCSPDU::DisconnectProviderUltimatum), Some(1)),
+            per::write_enumerates(0x80)?,
+            b"\x00\x00\x00\x00\x00\x00".to_vec()
+        ])
+    }
+
     /// This function check if the client
     /// version protocol choose is 5+
     pub fn is_rdp_version_5_plus(&self) -> bool {

@@ -170,9 +170,8 @@ pub fn read_enumerates(s: &mut dyn Read) -> RdpResult<u8> {
 /// write_enumerates(1, &mut s).unwrap();
 /// assert_eq!(s.into_inner(), [1]);
 /// ```
-pub fn write_enumerates(enumerate: u8, s: &mut dyn Write) -> RdpResult<()> {
-    enumerate.write(s)?;
-    Ok(())
+pub fn write_enumerates(enumerate: u8) -> RdpResult<u8> {
+    Ok(enumerate)
 }
 
 /// Read an PER encoded integer

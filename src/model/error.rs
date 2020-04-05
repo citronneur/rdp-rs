@@ -9,7 +9,7 @@ use self::native_tls::Error as SslError;
 use yasna::ASN1Error;
 use num_enum::{TryFromPrimitive, TryFromPrimitiveError};
 
-#[derive(Debug)]
+#[derive(Debug, Copy, Clone)]
 pub enum RdpErrorKind {
     InvalidData,
     InvalidRespond,
@@ -43,6 +43,10 @@ impl RdpError {
              message: String::from(message)
          }
      }
+
+    pub fn kind(&self) -> RdpErrorKind {
+        self.kind
+    }
 }
 
 #[derive(Debug)]

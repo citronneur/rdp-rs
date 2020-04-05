@@ -64,6 +64,11 @@ impl<S: Read + Write> RdpClient<S> {
             _ => Err(Error::RdpError(RdpError::new(RdpErrorKind::UnexpectedType, "RDPCLIENT: This event can't be sent")))
         }
     }
+
+    /// Close client is indeed close the switch layer
+    pub fn close(&mut self) -> RdpResult<()> {
+        self.mcs.close()
+    }
 }
 
 pub struct Connector {
