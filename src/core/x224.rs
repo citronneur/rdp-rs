@@ -249,6 +249,10 @@ impl<S: Read + Write> Client<S> {
     pub fn get_selected_protocols(&self) -> Protocols {
         self.selected_protocol
     }
+
+    pub fn shutdown(&mut self) -> RdpResult<()> {
+        self.transport.shutdown()
+    }
 }
 
 #[cfg(test)]

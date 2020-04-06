@@ -82,7 +82,7 @@ pub enum MessageOption {
 ///
 /// A message can be Read or Write from a Stream
 ///
-pub trait Message {
+pub trait Message : Send {
     /// Write node to the Stream
     ///
     /// Write current element into a writable stream
@@ -541,9 +541,10 @@ impl Message for Vec<u8> {
 ///     assert_ne!(cast!(DataType::U32, node["depend"]).unwrap(), 2);
 /// }
 /// ```
+pub type DynOptionFnSend<T> = dyn Fn(&T) -> MessageOption + Send;
 pub struct DynOption<T> {
     current: T,
-    filter: Box<dyn Fn(&T) -> MessageOption>
+    filter: Box<DynOptionFnSend<T>>
 }
 
 /// The filter impl
@@ -597,7 +598,7 @@ impl<T> DynOption<T> {
     /// # }
     /// ```
     pub fn new<F: 'static>(current: T, filter: F) -> Self
-        where F: Fn(&T) -> MessageOption {
+        where F: Fn(&T) -> MessageOption, F: Send {
         DynOption {
             current,
             filter : Box::new(filter)
@@ -753,9 +754,10 @@ impl<T: Message> Message for Option<T> {
 /// Array dynamic trame
 /// Means during read operation it will call
 /// A factory callback to fill the result trame
+pub type ArrayFnSend<T> = dyn Fn() -> T + Send;
 pub struct Array<T> {
     inner: Trame,
-    factory: Box<dyn Fn() -> T>
+    factory: Box<ArrayFnSend<T>>
 }
 
 impl<T: Message> Array<T> {
@@ -779,7 +781,7 @@ impl<T: Message> Array<T> {
     /// # }
     /// ```
     pub fn new<F: 'static>(factory: F) -> Self
-    where F: Fn() -> T{
+    where F: Fn() -> T, F: Send {
         Array {
             inner: trame![],
             factory: Box::new(factory)

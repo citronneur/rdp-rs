@@ -41,7 +41,7 @@ impl PDU {
         PDU::from_control(&header)
     }
 
-    /// Build a PDU data directly fron a control message
+    /// Build a PDU data directly from a control message
     pub fn from_control(control: &Component) -> RdpResult<Self> {
         let pdu_type = cast!(DataType::U16, control["pduType"])?;
         let mut pdu = match PDUType::try_from(pdu_type)? {
@@ -474,28 +474,59 @@ fn ts_fp_update_bitmap() -> FastPathUpdate {
 }
 
 enum ClientState {
+    /// Wait for demand active pdu from server
     DemandActivePDU,
+    /// Wait for synchronize pdu from server
     SynchronizePDU,
+    /// wait for control cooperate from server
     ControlCooperate,
+    /// Wait for control granted from server
     ControlGranted,
+    /// Wait for font map pdu from server
     FontMap,
+    /// wait for date
+    /// either data pdu or fast path data
     Data
 }
 
 pub struct Client {
+    /// Current state of the connection sequence
     state: ClientState,
+    /// user id negotiated by the MCS layer
     user_id: u16,
+    /// Global channel id
+    /// This is a static id but come from MCS layer
     channel_id: u16,
+    /// Screen width
     width: u16,
+    /// Screen height
     height: u16,
+    /// Keyboard layout
     layout: KeyboardLayout,
+    /// Share id negotiated by global
+    /// channel during connection sequence
     share_id: Option<u32>,
+    /// Keep tracing of server capabilities
     server_capabilities: Vec<Capability>
 }
 
 impl Client {
     /// Ctor for a new global channel client
     /// user_id and channel_id must come from mcs channel once connected
+    /// Width and height are screen size
+    ///
+    /// # Example
+    /// ```rust, ignore
+    /// use rdp::core::global;
+    /// use rdp::core::gcc::KeyboardLayout;
+    /// let mut global_channel = global::Client::new(
+    ///     mcs.get_user_id(),
+    ///     mcs.get_global_channel_id(),
+    ///     800,
+    ///     600,
+    ///     KeyboardLayout::US
+    /// );
+    /// ```
     pub fn new(user_id: u16, channel_id: u16, width: u16, height: u16, layout: KeyboardLayout) -> Client {
         Client {
             state: ClientState::DemandActivePDU,
@@ -509,6 +540,11 @@ impl Client {
         }
     }
 
+    /// Read demand Active payload
+    /// This message is sent from server to client
+    /// and inform about server capabilities
+    ///
+    /// This function return true if it read the expected PDU
     fn read_demand_active_pdu(&mut self, stream: &mut Read) -> RdpResult<bool> {
         let pdu = PDU::from_stream(stream)?;
         if pdu.pdu_type == PDUType::PdutypeDemandactivepdu {
@@ -517,7 +553,6 @@ impl Client {
                     Ok(capability) => self.server_capabilities.push(capability),
                     Err(e) => println!("GLOBAL: {:?}", e)
                 }
-
             }
             self.share_id = Some(cast!(DataType::U32, pdu.message["shareId"])?);
             return Ok(true)
@@ -525,7 +560,11 @@ impl Client {
         return Ok(false)
     }
 
-    fn read_server_synchronyze(&mut self, stream: &mut Read) -> RdpResult<bool> {
+    /// Read server synchronize pdu
+    /// This sent from server to client
+    ///
+    /// This function return true if it read the expected PDU
+    fn read_synchronize_pdu(&mut self, stream: &mut Read) -> RdpResult<bool> {
         let pdu = PDU::from_stream(stream)?;
         if pdu.pdu_type != PDUType::PdutypeDatapdu {
             return Ok(false)
@@ -536,7 +575,10 @@ impl Client {
         Ok(true)
     }
 
-    fn read_server_control(&mut self, stream: &mut Read, action: Action) -> RdpResult<bool> {
+    /// Read the server control PDU with the expected action
+    ///
+    /// This function return true if it read the expected PDU with the expected action
+    fn read_control_pdu(&mut self, stream: &mut Read, action: Action) -> RdpResult<bool> {
         let pdu = PDU::from_stream(stream)?;
         if pdu.pdu_type != PDUType::PdutypeDatapdu {
             return Ok(false)
@@ -554,7 +596,10 @@ impl Client {
         Ok(true)
     }
 
-    fn read_server_font_map(&mut self, stream: &mut Read) ->  RdpResult<bool> {
+    /// Read the server font data PDU
+    ///
+    /// This function return true if it read the expected PDU
+    fn read_font_map_pdu(&mut self, stream: &mut Read) ->  RdpResult<bool> {
         let pdu = PDU::from_stream(stream)?;
         if pdu.pdu_type != PDUType::PdutypeDatapdu {
             return Ok(false)
@@ -565,7 +610,10 @@ impl Client {
         Ok(true)
     }
 
-    fn read_server_data(&mut self, stream: &mut Read) -> RdpResult<()> {
+    /// Expect data PDU
+    /// This is the old school PDU for bitmap
+    /// transfer. Now all version use Fast Path transfer PDU
+    fn read_data_pdu(&mut self, stream: &mut Read) -> RdpResult<()> {
         //let pdu = PDU::from_stream(stream)?;
         let mut message = Array::new(|| share_control_header(None, None, None));
         message.read(stream)?;
@@ -597,8 +645,12 @@ impl Client {
         Ok(())
     }
 
-    fn read_fast_path_data<T>(&mut self, stream: &mut Read, mut callback: T) -> RdpResult<()>
+    /// Read fast path input data
+    /// Reading is processed using a callback patterm
+    /// This is where bitmap are received
+    fn read_fast_path<T>(&mut self, stream: &mut Read, mut callback: T) -> RdpResult<()>
     where T: FnMut(RdpEvent) {
+        // it could be have one or more fast path payload
         let mut fp_messages = Array::new(|| ts_fp_update());
         fp_messages.read(stream)?;
 
@@ -634,7 +686,9 @@ impl Client {
         Ok(())
     }
 
-    fn send_confirm_active_pdu<S: Read + Write>(&mut self, mcs: &mut mcs::Client<S>) -> RdpResult<()> {
+    /// Write confirm active pdu
+    /// This PDU include all client capabilities
+    fn write_confirm_active_pdu<S: Read + Write>(&mut self, mcs: &mut mcs::Client<S>) -> RdpResult<()> {
         let pdu = ts_confirm_active_pdu(self.share_id, Some(b"rdp-rs".to_vec()), Some(Array::from_trame(
             trame![
                 capability_set(Some(capability::ts_general_capability_set(Some(capability::GeneralExtraFlag::LongCredentialsSupported as u16 | capability::GeneralExtraFlag::NoBitmapCompressionHdr as u16 | capability::GeneralExtraFlag::EncSaltedChecksum as u16 | capability::GeneralExtraFlag::FastpathOutputSupported as u16)))),
@@ -651,62 +705,105 @@ impl Client {
                 capability_set(Some(capability::ts_multifragment_update_capability_ts()))
             ]
         )));
-        self.send_pdu(pdu, mcs)
+        self.write_pdu(pdu, mcs)
     }
 
-    fn send_client_finalize_synchonize_pdu<S: Read + Write>(&self, mcs: &mut mcs::Client<S>) -> RdpResult<()> {
-        self.send_data_pdu(ts_synchronize_pdu(Some(self.channel_id)), mcs)?;
-        self.send_data_pdu(ts_control_pdu(Some(Action::CtrlactionCooperate)), mcs)?;
-        self.send_data_pdu(ts_control_pdu(Some(Action::CtrlactionRequestControl)), mcs)?;
-        self.send_data_pdu(ts_font_list_pdu(), mcs)
+    /// This is the finalize connection sequence
+    /// sent from client to server
+    fn write_client_finalize<S: Read + Write>(&self, mcs: &mut mcs::Client<S>) -> RdpResult<()> {
+        self.write_data_pdu(ts_synchronize_pdu(Some(self.channel_id)), mcs)?;
+        self.write_data_pdu(ts_control_pdu(Some(Action::CtrlactionCooperate)), mcs)?;
+        self.write_data_pdu(ts_control_pdu(Some(Action::CtrlactionRequestControl)), mcs)?;
+        self.write_data_pdu(ts_font_list_pdu(), mcs)
     }
 
     /// Send a classic PDU to the global channel
-    fn send_pdu<S: Read + Write>(&self, message: PDU, mcs: &mut mcs::Client<S>) -> RdpResult<()> {
+    fn write_pdu<S: Read + Write>(&self, message: PDU, mcs: &mut mcs::Client<S>) -> RdpResult<()> {
         mcs.write(&"global".to_string(), share_control_header(Some(message.pdu_type), Some(self.user_id), Some(to_vec(&message.message))))
     }
 
     /// Send Data pdu
-    fn send_data_pdu<S: Read + Write>(&self, message: DataPDU, mcs: &mut mcs::Client<S>) -> RdpResult<()> {
-        self.send_pdu(share_data_header(self.share_id, Some(message.pdu_type), Some(to_vec(&message.message))), mcs)
+    fn write_data_pdu<S: Read + Write>(&self, message: DataPDU, mcs: &mut mcs::Client<S>) -> RdpResult<()> {
+        self.write_pdu(share_data_header(self.share_id, Some(message.pdu_type), Some(to_vec(&message.message))), mcs)
     }
 
-    pub fn send_input_event<S: Read + Write>(&self, event: TSInputEvent, mcs: &mut mcs::Client<S>) -> RdpResult<()> {
-        self.send_data_pdu(ts_input_pdu_data(Some(Array::from_trame(trame![ts_input_event(Some(event.event_type), Some(to_vec(&event.message)))]))), mcs)
+    /// Public interface to sent input event
+    ///
+    /// # Example
+    /// ```rust, ignore
+    /// let mut mcs = mcs::Client::new(...);
+    /// let mut global = global::Global::new(...);
+    /// global.write_input_event(
+    ///     ts_pointer_event(
+    ///         Some(flags),
+    ///         Some(x),
+    ///         Some(y)
+    ///     ),
+    ///     &mut mcs
+    /// )
+    ///
+    /// global.write_input_event(
+    ///     ts_keyboard_event(
+    ///         Some(flags),
+    ///         Some(code)
+    ///     ),
+    ///     &mut self.mcs
+    /// )
+    /// ```
+    pub fn write_input_event<S: Read + Write>(&self, event: TSInputEvent, mcs: &mut mcs::Client<S>) -> RdpResult<()> {
+        self.write_data_pdu(ts_input_pdu_data(Some(Array::from_trame(trame![ts_input_event(Some(event.event_type), Some(to_vec(&event.message)))]))), mcs)
     }
 
-    pub fn process<S: Read + Write, T>(&mut self, payload: tpkt::Payload, mcs: &mut mcs::Client<S>, mut callback: T) -> RdpResult<()>
+    /// Read payload on global channel
+    /// This is the main read function for global channel
+    ///
+    /// # Example
+    /// ```rust, ignore
+    /// let mut mcs = mcs::Client::new(...);
+    /// let mut global = global::Global::new(...);
+    /// let (channel_name, message) = mcs.read().unwrap();
+    /// match channel_name.as_str() {
+    ///     "global" => global.read(message, &mut mcs, |event| {
+    ///         // do something with event
+    ///     }),
+    ///     ...
+    /// }
+    /// ```
+    pub fn read<S: Read + Write, T>(&mut self, payload: tpkt::Payload, mcs: &mut mcs::Client<S>, mut callback: T) -> RdpResult<()>
     where T: FnMut(RdpEvent){
         match self.state {
             ClientState::DemandActivePDU => {
                 if self.read_demand_active_pdu(&mut try_let!(tpkt::Payload::Raw, payload)?)? {
-                    self.send_confirm_active_pdu(mcs)?;
-                    self.send_client_finalize_synchonize_pdu(mcs)?;
+                    self.write_confirm_active_pdu(mcs)?;
+                    self.write_client_finalize(mcs)?;
                     // now wait for server synchronize
                     self.state = ClientState::SynchronizePDU;
                 }
                 Ok(())
             }
             ClientState::SynchronizePDU => {
-                if self.read_server_synchronyze(&mut try_let!(tpkt::Payload::Raw, payload)?)? {
+                if self.read_synchronize_pdu(&mut try_let!(tpkt::Payload::Raw, payload)?)? {
+                    // next state is control cooperate
                     self.state = ClientState::ControlCooperate;
                 }
                 Ok(())
             },
             ClientState::ControlCooperate => {
-                if self.read_server_control(&mut try_let!(tpkt::Payload::Raw, payload)?, Action::CtrlactionCooperate)? {
+                if self.read_control_pdu(&mut try_let!(tpkt::Payload::Raw, payload)?, Action::CtrlactionCooperate)? {
+                    // next state is control granted
                     self.state = ClientState::ControlGranted;
                 }
                 Ok(())
             },
             ClientState::ControlGranted => {
-                if self.read_server_control(&mut try_let!(tpkt::Payload::Raw, payload)?, Action::CtrlactionGrantedControl)? {
+                if self.read_control_pdu(&mut try_let!(tpkt::Payload::Raw, payload)?, Action::CtrlactionGrantedControl)? {
+                    // next state is font map pdu
                     self.state = ClientState::FontMap;
                 }
                 Ok(())
             },
             ClientState::FontMap => {
-                if self.read_server_font_map(&mut try_let!(tpkt::Payload::Raw, payload)?)? {
+                if self.read_font_map_pdu(&mut try_let!(tpkt::Payload::Raw, payload)?)? {
                     // finish handshake now wait for sdata
                     self.state = ClientState::Data;
                 }
@@ -715,8 +812,8 @@ impl Client {
             ClientState::Data => {
                 // Now we can receive update data
                 match payload {
-                    tpkt::Payload::Raw(mut stream) => self.read_server_data(&mut stream),
-                    tpkt::Payload::FastPath(sec_flag, mut stream) => self.read_fast_path_data(&mut stream, callback)
+                    tpkt::Payload::Raw(mut stream) => self.read_data_pdu(&mut stream),
+                    tpkt::Payload::FastPath(sec_flag, mut stream) => self.read_fast_path(&mut stream, callback)
                 }
             }
         }
@@ -750,5 +847,33 @@ mod test {
         share_control_header(Some(PDUType::PdutypeConfirmactivepdu), Some(12), Some(to_vec(&ts_confirm_active_pdu(Some(4), Some(b"rdp-rs".to_vec()), Some(Array::from_trame(trame![capability_set(Some(capability::ts_brush_capability_set()))]))).message))).write(&mut stream).unwrap();
 
         assert_eq!(stream.into_inner(), vec![34, 0, 19, 0, 12, 0, 4, 0, 0, 0, 234, 3, 6, 0, 12, 0, 114, 100, 112, 45, 114, 115, 1, 0, 0, 0, 15, 0, 8, 0, 0, 0, 0, 0])
+    }
+
+    #[test]
+    fn test_read_synchronize_pdu() {
+        let mut stream = Cursor::new(vec![22, 0, 23, 0, 234, 3, 234, 3, 1, 0, 0, 2, 22, 0, 31, 0, 0, 0, 1, 0, 0, 0]);
+        let mut global = Client::new(0,0, 800, 600, KeyboardLayout::US);
+        assert!(global.read_synchronize_pdu(&mut stream).unwrap())
+    }
+
+    #[test]
+    fn test_read_control_cooperate_pdu() {
+        let mut stream = Cursor::new(vec![26, 0, 23, 0, 234, 3, 234, 3, 1, 0, 0, 2, 26, 0, 20, 0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0]);
+        let mut global = Client::new(0,0, 800, 600, KeyboardLayout::US);
+        assert!(global.read_control_pdu(&mut stream, Action::CtrlactionCooperate).unwrap())
+    }
+
+    #[test]
+    fn test_read_control_granted_pdu() {
+        let mut stream = Cursor::new(vec![26, 0, 23, 0, 234, 3, 234, 3, 1, 0, 0, 2, 26, 0, 20, 0, 0, 0, 2, 0, 236, 3, 234, 3, 0, 0]);
+        let mut global = Client::new(0,0, 800, 600, KeyboardLayout::US);
+        assert!(global.read_control_pdu(&mut stream, Action::CtrlactionGrantedControl).unwrap())
+    }
+
+    #[test]
+    fn test_read_font_map_pdu() {
+        let mut stream = Cursor::new(vec![26, 0, 23, 0, 234, 3, 234, 3, 1, 0, 0, 2, 26, 0, 40, 0, 0, 0, 0, 0, 0, 0, 3, 0, 4, 0]);
+        let mut global = Client::new(0,0, 800, 600, KeyboardLayout::US);
+        assert!(global.read_font_map_pdu(&mut stream).unwrap())
     }
 }

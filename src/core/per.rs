@@ -164,11 +164,9 @@ pub fn read_enumerates(s: &mut dyn Read) -> RdpResult<u8> {
 ///
 /// # Exemple
 /// ```
-/// use std::io::Cursor;
 /// use rdp::core::per::write_enumerates;
-/// let mut s = Cursor::new(vec![]);
-/// write_enumerates(1, &mut s).unwrap();
-/// assert_eq!(s.into_inner(), [1]);
+/// use rdp::model::data::to_vec;
+/// assert_eq!(to_vec(&write_enumerates(1).unwrap()), [1]);
 /// ```
 pub fn write_enumerates(enumerate: u8) -> RdpResult<u8> {
     Ok(enumerate)

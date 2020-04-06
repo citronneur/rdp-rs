@@ -9,9 +9,15 @@ extern crate rand;
 extern crate crypto;
 extern crate num_bigint;
 extern crate x509_parser;
-extern crate minifb;
-extern crate winapi;
 extern crate num_enum;
+#[cfg(feature = "mstsc-rs")]
+extern crate minifb;
+#[cfg(feature = "mstsc-rs")]
+extern crate winapi;
+#[cfg(feature = "mstsc-rs")]
+extern crate hex;
+#[cfg(feature = "mstsc-rs")]
+extern crate clap;
 
 #[macro_use]
 pub mod model;

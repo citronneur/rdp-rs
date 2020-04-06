@@ -6,7 +6,7 @@ use self::native_tls::{TlsConnector, TlsStream, Certificate};
 use model::data::{Message};
 
 pub enum Stream<S> {
-        Raw(S),
+    Raw(S),
     Ssl(TlsStream<S>)
 }
 
@@ -30,6 +30,13 @@ impl<S: Read + Write> Stream<S> {
         Ok(match self {
             Stream::Raw(e) => e.write(buffer)?,
             Stream::Ssl(e) => e.write(buffer)?
+        })
+    }
+
+    pub fn shutdown(&mut self) -> RdpResult<()> {
+        Ok(match self {
+            Stream::Ssl(e) => e.shutdown()?,
+            _ => ()
         })
     }
 }
@@ -87,6 +94,10 @@ impl<S: Read + Write> Link<S> {
         else {
             Err(Error::RdpError(RdpError::new(RdpErrorKind::InvalidData, "get peer certificate on non ssl link is impossible")))
         }
+    }
+
+    pub fn shutdown(&mut self) -> RdpResult<()> {
+        self.stream.shutdown()
     }
 
     #[cfg(feature = "integration")]

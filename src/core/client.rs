@@ -14,6 +14,16 @@ use core::event::{RdpEvent, PointerButton};
 use core::global::{ts_pointer_event, PointerFlag, ts_keyboard_event, KeyboardFlag};
 use nla::ntlm::Ntlm;
 
+impl From<&str> for KeyboardLayout {
+    fn from(e: &str) -> Self {
+        match e {
+            "us" => KeyboardLayout::US,
+            "fr" => KeyboardLayout::French,
+            _ => KeyboardLayout::US,
+        }
+    }
+}
+
 pub struct RdpClient<S> {
     /// Multi channel
     /// This is the main switch layer of the protocol
@@ -23,15 +33,57 @@ pub struct RdpClient<S> {
 }
 
 impl<S: Read + Write> RdpClient<S> {
+    /// Read a payload from the server
+    /// RDpClient use a callback pattern that can be called more than once
+    /// during a read call
+    ///
+    /// # Example
+    /// ```rust, ignore
+    /// let addr = "127.0.0.1:3389".parse::<SocketAddr>().unwrap();
+    /// let tcp = TcpStream::connect(&addr).unwrap();
+    /// let mut connector = Connector::new()
+    ///     .screen(800, 600)
+    ///     .credentials("domain".to_string(), "username".to_string(), "password".to_string());
+    /// let mut client = connector.connect(tcp).unwrap();
+    /// client.read(|rdp_event| {
+    ///     match rdp_event {
+    ///         RdpEvent::Bitmap(bitmap) => {
+    ///             ...
+    ///         },
+    ///          _ => println!("Unhandled event")
+    ///     }
+    /// }).unwrap()
+    /// ```
     pub fn read<T>(&mut self, mut callback: T) -> RdpResult<()>
     where T: FnMut(RdpEvent) {
         let (channel_name, message) = self.mcs.read()?;
         match channel_name.as_str() {
-            "global" => self.global.process(message, &mut self.mcs, callback),
+            "global" => self.global.read(message, &mut self.mcs, callback),
             _ => Err(Error::RdpError(RdpError::new(RdpErrorKind::UnexpectedType, &format!("Invalid channel name {:?}", channel_name))))
         }
     }
 
+    /// Write an event to the server
+    /// Typically is all about input event like mouse and keyboard
+    ///
+    /// # Example
+    /// ```rust, ignore
+    /// let addr = "127.0.0.1:3389".parse::<SocketAddr>().unwrap();
+    /// let tcp = TcpStream::connect(&addr).unwrap();
+    /// let mut connector = Connector::new()
+    ///     .screen(800, 600)
+    ///     .credentials("domain".to_string(), "username".to_string(), "password".to_string());
+    /// let mut client = connector.connect(tcp).unwrap();
+    /// client.write(RdpEvent::Pointer(
+    ///     // Send a mouse click down at 100x100
+    ///     PointerEvent {
+    ///         x: 100 as u16,
+    ///         y: 100 as u16,
+    ///         button: PointerButton::Left,
+    ///         down: true
+    ///     }
+    /// )).unwrap()
+    /// ```
     pub fn write(&mut self, event: RdpEvent) -> RdpResult<()> {
         match event {
             // Pointer event
@@ -51,7 +103,7 @@ impl<S: Read + Write> RdpClient<S> {
                     flags |= PointerFlag::PtrflagsDown as u16;
                 }
 
-                self.global.send_input_event(ts_pointer_event(Some(flags), Some(pointer.x), Some(pointer.y)), &mut self.mcs)
+                self.global.write_input_event(ts_pointer_event(Some(flags), Some(pointer.x), Some(pointer.y)), &mut self.mcs)
             },
             // Raw keyboard input
             RdpEvent::Key(key) => {
@@ -59,15 +111,15 @@ impl<S: Read + Write> RdpClient<S> {
                 if key.down {
                     flags |= KeyboardFlag::KbdflagsRelease as u16;
                 }
-                self.global.send_input_event(ts_keyboard_event(Some(flags), Some(key.code)), &mut self.mcs)
+                self.global.write_input_event(ts_keyboard_event(Some(flags), Some(key.code)), &mut self.mcs)
             }
             _ => Err(Error::RdpError(RdpError::new(RdpErrorKind::UnexpectedType, "RDPCLIENT: This event can't be sent")))
         }
     }
 
     /// Close client is indeed close the switch layer
-    pub fn close(&mut self) -> RdpResult<()> {
-        self.mcs.close()
+    pub fn shutdown(&mut self) -> RdpResult<()> {
+        self.mcs.shutdown()
     }
 }
 
@@ -87,7 +139,9 @@ pub struct Connector {
     /// Username
     username: String,
     /// Password
-    password: String
+    password: String,
+    /// When you only want to pass the hash
+    password_hash: Option<Vec<u8>>
 }
 
 impl Connector {
@@ -109,22 +163,42 @@ impl Connector {
             restricted_admin_mode: false,
             domain: "".to_string(),
             username: "".to_string(),
-            password: "".to_string()
+            password: "".to_string(),
+            password_hash: None
         }
     }
 
-    /// Connect a configured
+    /// Connect to a target server
+    /// This function will produce a RdpClient object
+    /// use to interact with server
+    ///
+    /// # Example
+    /// ```rust, ignore
+    /// let addr = "127.0.0.1:3389".parse::<SocketAddr>().unwrap();
+    /// let tcp = TcpStream::connect(&addr).unwrap();
+    /// let mut connector = Connector::new()
+    ///     .screen(800, 600)
+    ///     .credentials("domain".to_string(), "username".to_string(), "password".to_string());
+    /// let mut client = connector.connect(tcp).unwrap();
+    /// ```
     pub fn connect<S: Read + Write>(&mut self, stream: S) -> RdpResult<RdpClient<S>> {
 
         // Create a wrapper around the stream
         let tcp = Link::new( Stream::Raw(stream));
 
+        // Compute authentication method
+        let mut authentication = if let Some(hash) = &self.password_hash {
+            Ntlm::from_hash(self.domain.clone(), self.username.clone(), hash)
+        }
+        else {
+            Ntlm::new(self.domain.clone(), self.username.clone(), self.password.clone())
+        };
         // Create the x224 layer
         // With all negotiated security stuff and credentials
         let x224 = x224::Client::connect(
             tpkt::Client::new(tcp),
             x224::Protocols::ProtocolSSL as u32 | x224::Protocols::ProtocolHybrid as u32,
-            Some(&mut Ntlm::new(self.domain.clone(), self.username.clone(), self.password.clone())),
+            Some(&mut authentication),
             self.restricted_admin_mode
         )?;
 
@@ -164,6 +238,7 @@ impl Connector {
     }
 
     /// Configure the screen size of the session
+    /// You need to set a power of two definition
     pub fn screen(mut self, width: u16, height: u16) -> Self {
         self.width = width;
         self.height = height;
@@ -171,10 +246,30 @@ impl Connector {
     }
 
     /// Configure credentials for the session
+    /// Credentials use to logon on server
     pub fn credentials(mut self, domain: String, username: String, password: String) -> Self {
         self.domain = domain;
         self.username = username;
         self.password = password;
+        self
+    }
+
+    /// Enable or disable restricted admin mode
+    pub fn set_restricted_admin_mode(mut self, state: bool) -> Self {
+        self.restricted_admin_mode = true;
+        self
+    }
+
+    /// Try authenticate using NTLM hashes and restricted admin mode
+    pub fn set_password_hash(mut self, password_hash: Vec<u8>) -> Self {
+        self.restricted_admin_mode = true;
+        self.password_hash = Some(password_hash);
+        self
+    }
+
+    /// Set the keyboard layout
+    pub fn layout(mut self, layout: KeyboardLayout) -> Self {
+        self.layout = layout;
         self
     }
 }

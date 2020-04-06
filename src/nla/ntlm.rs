@@ -347,6 +347,20 @@ fn ntowfv2(password: &String, user: &String, domain: &String) -> Vec<u8> {
 }
 
 /// This function is used to compute init key of another hmac_md5
+/// We can provide directly NTLMv2 hash
+///
+/// This function is used as RC4 key for the rest of protocol
+/// https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-nlmp/5e550938-91d4-459f-b67d-75d70009e3f3?redirectedfrom=MSDN
+///
+/// # Example
+/// ```rust, ignore
+/// let key = ntowfv2("hello123".to_string(), "user".to_string(), "domain".to_string())
+/// ```
+fn ntowfv2_hash(hash: &[u8], user: &String, domain: &String) -> Vec<u8> {
+    hmac_md5(hash, &unicode(&(user.to_uppercase() + &domain)))
+}
+
+/// This function is used to compute init key of another hmac_md5
 ///
 /// This the same as ntowfv2
 /// # Example
@@ -472,6 +486,21 @@ impl Ntlm {
             domain,
             user,
             password,
+            negotiate_message: None,
+            exported_session_key: None,
+            is_unicode: false
+        }
+    }
+
+    /// When you have in restricted mode
+    /// You can use directly NTLM hash
+    pub fn from_hash(domain: String, user: String, password_hash: &[u8]) -> Self {
+        Ntlm {
+            response_key_nt: ntowfv2_hash(password_hash, &user, &domain),
+            response_key_lm: ntowfv2_hash(password_hash, &user, &domain),
+            domain,
+            user,
+            password: "".to_string(),
             negotiate_message: None,
             exported_session_key: None,
             is_unicode: false

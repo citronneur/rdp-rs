@@ -8,20 +8,22 @@ name = "rdp"
 path = "src/lib.rs"
 
 [[bin]]
-name = "rdp-rs-client"
-path = "src/bin/client.rs"
+name = "mstsc-rs"
+path = "src/bin/mstsc-rs.rs"
+required-features = ["mstsc-rs"]
 
 [features]
 # The reason we do this is because doctests don't get cfg(test)
 # See: https://github.com/rust-lang/cargo/issues/4669
 integration = []
+mstsc-rs = ["hex", "winapi", "minifb", "clap"]
 
 [dependencies]
 native-tls = "^0.2"
 byteorder = "^1.3"
 bufstream = "0.1"
 indexmap = "^1.3"
-yasna = { version = "0.3.1", features = ["num-bigint"] }
+yasna = { version = "0.3.1" }
 md4 = "^0.8"
 hmac = "^0.7"
 md-5 = "^0.8"
@@ -29,6 +31,10 @@ rand = "^0.7"
 rust-crypto = "^0.2"
 num-bigint = "^0.2"
 x509-parser = "0.6.5"
-winapi = { version = "0.3.8", features = ["winsock2"] }
-minifb = "0.15.3"
 num_enum = "0.4.3"
+
+# for mtsc-rs
+hex = { version = "0.4.2", optional = true }
+winapi = { version = "0.3.8", features = ["winsock2"], optional = true }
+minifb = { version = "0.15.3", optional = true }
+clap = { version = "2.33.0", optional = true}

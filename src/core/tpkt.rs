@@ -188,6 +188,10 @@ impl<S: Read + Write> Client<S> {
         Ok(Client::new(link))
     }
 
+    pub fn shutdown(&mut self) -> RdpResult<()> {
+        self.transport.shutdown()
+    }
+
     #[cfg(feature = "integration")]
     pub fn get_link(self) -> Link<S> {
         self.transport
