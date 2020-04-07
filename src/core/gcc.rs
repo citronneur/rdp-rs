@@ -279,7 +279,7 @@ pub fn client_network_data(channel_def_array: Trame) -> Component {
 pub fn server_network_data() -> Component {
     component![
         "MCSChannelId" => Check::new(U16::LE(1003)),
-        "channelCount" => DynOption::new(U16::LE(0), |count| MessageOption::Size("channelIdArray".to_string(), count.get() as usize * 2)),
+        "channelCount" => DynOption::new(U16::LE(0), |count| MessageOption::Size("channelIdArray".to_string(), count.inner() as usize * 2)),
         "channelIdArray" => Array::new(|| U16::LE(0))
     ]
 }

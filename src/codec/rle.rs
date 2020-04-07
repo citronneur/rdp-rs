@@ -3,16 +3,16 @@ use std::io::{Cursor, Read};
 use byteorder::ReadBytesExt;
 
 fn process_plane(input: &mut dyn Read, width: u32, height: u32, output: &mut [u8]) -> RdpResult<()> {
-    let mut indexw= 0;
+    let mut indexw;
 	let mut indexh= 0;
-	let mut code = 0;
-	let mut collen= 0;
-	let mut replen= 0;
-	let mut color:i8 = 0;
-	let mut x = 0;
-	let mut revcode= 0;
+	let mut code ;
+	let mut collen;
+	let mut replen;
+	let mut color:i8;
+	let mut x;
+	let mut revcode;
 
-    let mut this_line: u32 = 0;
+    let mut this_line: u32;
     let mut last_line: u32 = 0;
 
 	while indexh < height {
@@ -89,23 +89,20 @@ fn process_plane(input: &mut dyn Read, width: u32, height: u32, output: &mut [u8
     Ok(())
 }
 
+/// Run length encoding decoding function for 32 bpp
+///
+///
 pub fn rle_32_decompress(input: &[u8], width: u32, height: u32, output: &mut [u8]) -> RdpResult<()> {
-    let mut code: u32 = 0;
-	let mut bytes_pro: u32 = 0;
-	let mut total_pro: u32 = 0;
-
     let mut input_cursor = Cursor::new(input);
 
-	if (input_cursor.read_u8()? != 0x10)
-	{
+	if input_cursor.read_u8()? != 0x10 {
 		return Err(Error::RdpError(RdpError::new(RdpErrorKind::UnexpectedType, "Bad header")))
 	}
 
-
-	process_plane(&mut input_cursor, width, height, &mut output[3..]);
-	process_plane(&mut input_cursor, width, height, &mut output[2..]);
-	process_plane(&mut input_cursor, width, height, &mut output[1..]);
-	process_plane(&mut input_cursor, width, height, &mut output[0..]);
+	process_plane(&mut input_cursor, width, height, &mut output[3..])?;
+	process_plane(&mut input_cursor, width, height, &mut output[2..])?;
+	process_plane(&mut input_cursor, width, height, &mut output[1..])?;
+	process_plane(&mut input_cursor, width, height, &mut output[0..])?;
 
 	Ok(())
 }

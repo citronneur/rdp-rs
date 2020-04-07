@@ -1,5 +1,4 @@
 use model::data::{Component, U16, U32, DynOption, MessageOption, Message, DataType, Check, Trame, to_vec};
-use std::collections::HashMap;
 use model::error::{RdpResult, Error, RdpError, RdpErrorKind};
 use std::io::Cursor;
 use core::gcc::{KeyboardLayout, KeyboardType};
@@ -122,7 +121,7 @@ pub fn capability_set(capability: Option<Capability>) -> Component {
     let default_capability = capability.unwrap_or(Capability{ cap_type: CapabilitySetType::CapstypeGeneral, message: component![]});
     component![
         "capabilitySetType" => U16::LE(default_capability.cap_type as u16),
-        "lengthCapability" => DynOption::new(U16::LE(default_capability.message.length() as u16 + 4), |length| MessageOption::Size("capabilitySet".to_string(), length.get() as usize - 4)),
+        "lengthCapability" => DynOption::new(U16::LE(default_capability.message.length() as u16 + 4), |length| MessageOption::Size("capabilitySet".to_string(), length.inner() as usize - 4)),
         "capabilitySet" => to_vec(&default_capability.message)
     ]
 }
@@ -229,12 +228,13 @@ pub fn ts_bitmap_capability_set(preferred_bits_per_pixel: Option<u16>, desktop_w
 }
 
 #[repr(u16)]
+#[allow(dead_code)]
 pub enum OrderFlag {
     NEGOTIATEORDERSUPPORT = 0x0002,
     ZEROBOUNDSDELTASSUPPORT = 0x0008,
     COLORINDEXSUPPORT = 0x0020,
     SOLIDPATTERNBRUSHONLY = 0x0040,
-    ORDERFLAGS_EXTRA_FLAGS = 0x0080
+    OrderflagsExtraFlags = 0x0080
 }
 
 /// Order capability

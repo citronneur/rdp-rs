@@ -74,7 +74,7 @@ fn negotiate_message(flags: u32) -> Component {
         "Signature" => b"NTLMSSP\x00".to_vec(),
         "MessageType" => U32::LE(0x00000001),
         "NegotiateFlags" => DynOption::new(U32::LE(flags), |node| {
-            if node.get() & (Negotiate::NtlmsspNegociateVersion as u32) == 0 {
+            if node.inner() & (Negotiate::NtlmsspNegociateVersion as u32) == 0 {
                 return MessageOption::SkipField("Version".to_string())
             }
             return MessageOption::None
@@ -100,7 +100,7 @@ fn challenge_message() -> Component {
         "TargetNameLenMax" => U16::LE(0),
         "TargetNameBufferOffset" => U32::LE(0),
         "NegotiateFlags" => DynOption::new(U32::LE(0), |node| {
-            if node.get() & (Negotiate::NtlmsspNegociateVersion as u32) == 0 {
+            if node.inner() & (Negotiate::NtlmsspNegociateVersion as u32) == 0 {
                 return MessageOption::SkipField("Version".to_string())
             }
             return MessageOption::None
@@ -149,7 +149,7 @@ fn authenticate_message(lm_challenge_response: &[u8], nt_challenge_response:&[u8
         "EncryptedRandomSessionMaxLen" => U16::LE(encrypted_random_session_key.len() as u16),
         "EncryptedRandomSessionBufferOffset" => U32::LE(offset + (lm_challenge_response.len() + nt_challenge_response.len() + domain.len() + user.len() + workstation.len()) as u32),
         "NegotiateFlags" => DynOption::new(U32::LE(flags), |node| {
-            if node.get() & (Negotiate::NtlmsspNegociateVersion as u32) == 0 {
+            if node.inner() & (Negotiate::NtlmsspNegociateVersion as u32) == 0 {
                 return MessageOption::SkipField("Version".to_string())
             }
             return MessageOption::None
@@ -211,7 +211,7 @@ fn av_pair() -> Component {
     component![
         "AvId" => U16::LE(0),
         "AvLen" => DynOption::new(U16::LE(0), |node| {
-            MessageOption::Size("Value".to_string(), node.get() as usize)
+            MessageOption::Size("Value".to_string(), node.inner() as usize)
         }),
         "Value" => Vec::<u8>::new()
     ]
@@ -459,13 +459,21 @@ fn mac(rc4_handle: &mut Rc4, signing_key: &[u8], seq_num: u32, data: &[u8]) -> V
 }
 
 pub struct Ntlm {
+    /// Microsoft Domain for Active Directory
     domain: String,
+    /// Username
     user: String,
+    /// Password
     password: String,
+    /// Key generated from NTLM hash
     response_key_nt: Vec<u8>,
+    /// Key generated from NTLM hash
     response_key_lm: Vec<u8>,
+    /// Keep trace of each messages to compute a final hash
     negotiate_message: Option<Vec<u8>>,
+    /// Key use to ciphering messages
     exported_session_key: Option<Vec<u8>>,
+    /// True if session use unicode
     is_unicode: bool
 }
 
@@ -476,8 +484,9 @@ impl Ntlm {
     /// NTLMv2 is an authentication mayer and need credentials
     ///
     /// # Example
-    /// ```rust, ignore
-    /// let auth_layer = Ntlm::new("domain".to_string(), "user".to_string(), "password".to_string())
+    /// ```no_run
+    /// use rdp::nla::ntlm::Ntlm;
+    /// let auth_layer = Ntlm::new("domain".to_string(), "user".to_string(), "password".to_string());
     /// ```
     pub fn new(domain: String, user: String, password: String) -> Self {
         Ntlm {
@@ -494,6 +503,12 @@ impl Ntlm {
 
     /// When you have in restricted mode
     /// You can use directly NTLM hash
+    ///
+    /// # Example
+    /// ```no_run
+    /// use rdp::nla::ntlm::Ntlm;
+    /// let auth_layer = Ntlm::from_hash("domain".to_string(), "user".to_string(), &vec![0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]);
+    /// ```
     pub fn from_hash(domain: String, user: String, password_hash: &[u8]) -> Self {
         Ntlm {
             response_key_nt: ntowfv2_hash(password_hash, &user, &domain),
@@ -510,6 +525,8 @@ impl Ntlm {
 
 impl AuthenticationProtocol  for Ntlm {
     /// Create Negotiate message for our NTLMv2 implementation
+    /// This message is used to inform server
+    /// about the capabilities of the client
     fn create_negotiate_message(&mut self) -> RdpResult<Vec<u8>> {
         let buffer = to_vec(&negotiate_message(
             Negotiate::NtlmsspNegociateKeyExch as u32 |
@@ -526,6 +543,8 @@ impl AuthenticationProtocol  for Ntlm {
         return Ok(buffer)
     }
 
+    /// Read the server challenge
+    /// This is the second payload in cssp connection
     fn read_challenge_message(&mut self, request: &[u8]) -> RdpResult<Vec<u8>> {
 
         let mut stream = Cursor::new(request);
@@ -581,6 +600,9 @@ impl AuthenticationProtocol  for Ntlm {
         Ok(to_vec(&trame![auth_message_compute.0, signature, auth_message_compute.1]))
     }
 
+    /// We are now able to build a security interface
+    /// that will be used by the CSSP manager to cipherring message (private keys)
+    /// To detect MITM attack
     fn build_security_interface(&self) -> Box<dyn GenericSecurityService> {
         let client_signing_key = sign_key(self.exported_session_key.as_ref().unwrap(), true);
         let server_signing_key = sign_key(self.exported_session_key.as_ref().unwrap(), false);
@@ -629,10 +651,15 @@ impl AuthenticationProtocol  for Ntlm {
 ///
 /// NTLMv2 use RC4 as main crypto algorithm
 pub struct NTLMv2SecurityInterface {
+    /// RC4 key use to encrypt messages
     encrypt: Rc4,
+    /// RC4 key use to decrypt messages
     decrypt: Rc4,
+    /// Key use by client to sign messages
     signing_key: Vec<u8>,
+    /// Key use message integrity that come from server
     verify_key: Vec<u8>,
+    /// Payload number
     seq_num: u32
 }
 
@@ -640,7 +667,10 @@ impl NTLMv2SecurityInterface {
     /// Create a new NTLMv2 security interface
     ///
     /// # Example
-    /// ```rust, ignore
+    /// ```no_run
+    /// extern crate crypto;
+    /// use rdp::nla::ntlm::NTLMv2SecurityInterface;
+    /// use crypto::rc4::Rc4;
     /// let interface = NTLMv2SecurityInterface::new(Rc4::new(b"encrypt"), Rc4::new(b"decrypt"), b"signing".to_vec(), b"verify".to_vec());
     /// ```
     pub fn new(encrypt: Rc4, decrypt: Rc4, signing_key: Vec<u8>, verify_key: Vec<u8>) -> Self {
@@ -676,6 +706,19 @@ impl GenericSecurityService for NTLMv2SecurityInterface {
         Ok(to_vec(&trame![signature, encrypted_data]))
     }
 
+    /// This is the main decrypt function
+    /// use by the cssp manager to decrypt messages comming from server
+    ///
+    /// # Example
+    /// ```
+    /// extern crate crypto;
+    /// use rdp::nla::ntlm::NTLMv2SecurityInterface;
+    /// use crypto::rc4::Rc4;
+    /// use rdp::nla::sspi::GenericSecurityService;
+    /// let mut interface = NTLMv2SecurityInterface::new(Rc4::new(b"decrypt"), Rc4::new(b"encrypt"), b"verify".to_vec(), b"signing".to_vec());
+    /// assert_eq!(interface.gss_unwrapex(&vec![1, 0, 0, 0, 142, 146, 37, 160, 247, 244, 100, 58, 0, 0, 0, 0, 87, 164, 208]).unwrap(), b"foo");
+    /// assert_eq!(interface.gss_unwrapex(&vec![1, 0, 0, 0, 162, 95, 77, 158, 159, 36, 8, 240, 1, 0, 0, 0, 153, 3, 250]).unwrap(), b"foo")
+    /// ```
     fn gss_unwrapex(&mut self, data: &[u8]) -> RdpResult<Vec<u8>> {
         let mut signature = message_signature_ex(None, None);
         let mut payload = Vec::<u8>::new();

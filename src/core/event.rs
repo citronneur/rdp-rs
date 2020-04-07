@@ -35,19 +35,27 @@ impl BitmapEvent {
     /// Decompress a bitmap which has been encoded by the RLE algorithm
     ///
     /// # Example
-    /// ```rust, ignore
-    /// rdp_client.read(|event| {
-    ///     match event {
-    ///         Bitmap(bitmap) => {
+    /// ```no_run
+    /// use std::net::{SocketAddr, TcpStream};
+    /// use rdp::core::client::Connector;
+    /// use rdp::core::event::RdpEvent;
+    /// let addr = "127.0.0.1:3389".parse::<SocketAddr>().unwrap();
+    /// let tcp = TcpStream::connect(&addr).unwrap();
+    /// let mut connector = Connector::new()
+    ///     .screen(800, 600)
+    ///     .credentials("domain".to_string(), "username".to_string(), "password".to_string());
+    /// let mut client = connector.connect(tcp).unwrap();
+    /// client.read(|rdp_event| {
+    ///     match rdp_event {
+    ///         RdpEvent::Bitmap(bitmap) => {
     ///             let data = if bitmap.is_compress {
     ///                 bitmap.decompress().unwrap()
     ///             }
     ///             else {
     ///                 bitmap.data
     ///             };
-    ///             ...
     ///         }
-    ///         ...
+    ///          _ => println!("Unhandled event")
     ///     }
     /// }).unwrap()
     /// ```

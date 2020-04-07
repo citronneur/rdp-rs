@@ -8,7 +8,6 @@ use yasna::{Tag};
 use std::io::{Write, Read, BufRead, Cursor};
 use core::per;
 use std::collections::HashMap;
-use std::rc::Rc;
 
 #[allow(dead_code)]
 #[repr(u8)]
@@ -284,7 +283,7 @@ impl<S: Read + Write> Client<S> {
     /// }
     /// ```
     pub fn read(&mut self) -> RdpResult<(String, tpkt::Payload)> {
-        let mut message = self.x224.read()?;
+        let message = self.x224.read()?;
         match message {
             tpkt::Payload::Raw(mut payload) => {
                  let mut header = mcs_pdu_header(None, None);
@@ -346,7 +345,6 @@ impl<S: Read + Write> Client<S> {
 #[cfg(test)]
 mod test {
     use super::*;
-    use nla::asn1::{ASN1};
 
     /// Test of read read_attach_user_confirm
     #[test]

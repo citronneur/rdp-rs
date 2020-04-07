@@ -3,7 +3,7 @@ use core::license;
 use core::tpkt;
 use model::error::{RdpResult, Error, RdpError, RdpErrorKind};
 use model::data::{Message, Component, U16, U32, DynOption, MessageOption, Trame, DataType};
-use std::io::{Write, Read, Cursor};
+use std::io::{Write, Read};
 use model::unicode::Unicode;
 
 /// Security flag send as header flage in core ptotocol
@@ -64,7 +64,7 @@ enum AfInet {
 fn rdp_extended_infos() -> Component {
     component![
         "clientAddressFamily" => U16::LE(AfInet::AfInet as u16),
-        "cbClientAddress" => DynOption::new(U16::LE(0), |x| MessageOption::Size("clientAddress".to_string(), x.get() as usize + 2)),
+        "cbClientAddress" => DynOption::new(U16::LE(0), |x| MessageOption::Size("clientAddress".to_string(), x.inner() as usize + 2)),
         "clientAddress" => b"\x00\x00".to_vec(),
         "cbClientDir" => U16::LE(0),
         "clientDir" => b"\x00\x00".to_vec(),
@@ -77,7 +77,7 @@ fn rdp_extended_infos() -> Component {
 /// When CSSP is not used
 /// interactive logon used credentials
 /// present in this payload
-fn rdp_infos(is_extended_info: bool, mut domain: &String, username: &String, password: &String) -> Component {
+fn rdp_infos(is_extended_info: bool, domain: &String, username: &String, password: &String) -> Component {
     let mut domain_format = domain.to_unicode();
     domain_format.push(0);
     domain_format.push(0);
@@ -150,7 +150,7 @@ pub fn connect<T: Read + Write>(mcs: &mut mcs::Client<T>, domain: &String, usern
         ]
     )?;
 
-    let (channel_name, mut payload) = mcs.read()?;
+    let (_channel_name, payload) = mcs.read()?;
     let mut stream = try_let!(tpkt::Payload::Raw, payload)?;
     let mut header = security_header();
     header.read(&mut stream)?;

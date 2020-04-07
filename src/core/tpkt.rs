@@ -2,7 +2,6 @@ use model::link::{Link};
 use model::data::{Message, U16, Component, Trame};
 use model::error::{RdpResult, RdpError, RdpErrorKind, Error};
 use std::io::{Cursor, Write, Read};
-use nla::ntlm::Ntlm;
 use nla::cssp::cssp_connect;
 use nla::sspi::AuthenticationProtocol;
 
@@ -81,7 +80,7 @@ impl<S: Read + Write> Client<S> {
     /// ```
     pub fn write<T: 'static>(&mut self, message: T) -> RdpResult<()>
     where T: Message {
-        self.transport.send(
+        self.transport.write(
             &trame![
                 tpkt_header(message.length() as u16),
                 message
@@ -123,7 +122,7 @@ impl<S: Read + Write> Client<S> {
     /// }
     /// ```
     pub fn read(&mut self) -> RdpResult<Payload> {
-        let mut buffer = Cursor::new(self.transport.recv(2)?);
+        let mut buffer = Cursor::new(self.transport.read(2)?);
         let mut action: u8 = 0;
         action.read(&mut buffer)?;
         if action == Action::FastPathActionX224 as u8 {
@@ -132,13 +131,13 @@ impl<S: Read + Write> Client<S> {
             let mut padding: u8 = 0;
             padding.read(&mut buffer)?;
             // now wait extended header
-            buffer = Cursor::new(self.transport.recv(2)?);
+            buffer = Cursor::new(self.transport.read(2)?);
 
             let mut size = U16::BE(0);
             size.read(&mut buffer)?;
 
             // now wait for body
-            Ok(Payload::Raw(Cursor::new(self.transport.recv(size.get() as usize - 4)?)))
+            Ok(Payload::Raw(Cursor::new(self.transport.read(size.inner() as usize - 4)?)))
 
         } else {
             // fast path
@@ -147,13 +146,13 @@ impl<S: Read + Write> Client<S> {
             short_length.read(&mut buffer)?;
             if short_length & 0x80 != 0 {
                 let mut hi_length: u8 = 0;
-                hi_length.read(&mut Cursor::new(self.transport.recv(1)?))?;
+                hi_length.read(&mut Cursor::new(self.transport.read(1)?))?;
                 let length :u16 = ((short_length & !0x80) as u16) << 8;
                 let length = length | hi_length as u16;
-                Ok(Payload::FastPath(sec_flag, Cursor::new(self.transport.recv(length as usize - 3)?)))
+                Ok(Payload::FastPath(sec_flag, Cursor::new(self.transport.read(length as usize - 3)?)))
             }
             else {
-                Ok(Payload::FastPath(sec_flag, Cursor::new(self.transport.recv(short_length as usize - 2)?)))
+                Ok(Payload::FastPath(sec_flag, Cursor::new(self.transport.read(short_length as usize - 2)?)))
             }
          }
     }

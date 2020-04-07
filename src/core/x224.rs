@@ -1,7 +1,7 @@
 use core::tpkt;
 use model::data::{Message, Check, U16, U32, Component, DataType, Trame};
 use model::error::{Error, RdpError, RdpResult, RdpErrorKind};
-use std::io::{Cursor, Read, Write};
+use std::io::{Read, Write};
 use std::option::{Option};
 use nla::sspi::AuthenticationProtocol;
 use num_enum::TryFromPrimitive;
@@ -161,7 +161,7 @@ impl<S: Read + Write> Client<S> {
     /// let payload = x224.read().unwrap(); // you have to check the type
     /// ```
     pub fn read(&mut self) -> RdpResult<tpkt::Payload> {
-        let mut s = self.transport.read()?;
+        let s = self.transport.read()?;
         match s {
             tpkt::Payload::Raw(mut payload) => {
                 let mut x224_header = x224_header();
@@ -258,6 +258,7 @@ impl<S: Read + Write> Client<S> {
 #[cfg(test)]
 mod test {
     use super::*;
+    use std::io::Cursor;
 
     /// test the negotiation request
     #[test]

@@ -199,12 +199,12 @@ pub fn read_integer(s: &mut dyn Read) -> RdpResult<u32> {
         2 => {
             let mut result = U16::BE(0);
             result.read(s)?;
-            Ok(result.get() as u32)
+            Ok(result.inner() as u32)
         },
         4 => {
             let mut result = U32::BE(0);
             result.read(s)?;
-            Ok(result.get() as u32)
+            Ok(result.inner() as u32)
         },
         _ => Err(Error::RdpError(RdpError::new(RdpErrorKind::InvalidSize, "PER integer encoded with an invalid size")))
     }
@@ -253,7 +253,7 @@ pub fn write_integer(integer: u32, s: &mut dyn Write) -> RdpResult<()> {
 pub fn read_integer_16(minimum: u16, s: &mut dyn Read) -> RdpResult<u16> {
     let mut result = U16::BE(0);
     result.read(s)?;
-    Ok(result.get() + minimum)
+    Ok(result.inner() + minimum)
 }
 
 /// This is a convenient method for PER encoding

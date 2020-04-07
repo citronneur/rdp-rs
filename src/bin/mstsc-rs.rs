@@ -4,7 +4,7 @@ extern crate rdp;
 extern crate hex;
 extern crate clap;
 
-use minifb::{Key, Window, WindowOptions, MouseMode, MouseButton};
+use minifb::{Key, Window, WindowOptions, MouseMode, MouseButton, KeyRepeat};
 use std::net::{SocketAddr, TcpStream};
 use std::io::Read;
 use std::os::raw::c_long;
@@ -194,7 +194,7 @@ fn to_scancode(key: Key) -> u16 {
  	 	Key::LeftSuper => 0xE05B,
  	 	Key::RightSuper => 0xE05C,
  	 	Key::Menu => 0xE05D,
-        _ => 0
+        _ => panic!("foo")
     }
 }
 
@@ -308,6 +308,7 @@ fn main() {
             .screen(width as u16, height as u16)
             .credentials(domain.to_string(), username.to_string(), password.to_string())
             .set_password_hash(hex::decode(hash).unwrap())
+            .set_restricted_admin_mode(restricted_admin_mode)
             .layout(layout)
             .connect(tcp).unwrap_or_else(|e| {
                 println!("{}: {:?}", APPLICATION_NAME, e);
@@ -417,12 +418,14 @@ fn main() {
         // Keyboard inputs
         if let Some(keys) = window.get_keys() {
             let mut rdp_client_guard = rdp_client_tx.lock().unwrap();
-            for key in keys.iter() {
-                if !last_keys.contains(key) {
+
+            for key in last_keys.iter() {
+                if !keys.contains(key) {
+                    println!("release : {:?}", key);
                     rdp_client_guard.write(RdpEvent::Key(
                         KeyboardEvent {
                             code: to_scancode(*key),
-                            down: true
+                            down: false
                         })
                     ).unwrap_or_else(|e| {
                         println!("{}: {:?}", APPLICATION_NAME, e);
@@ -431,12 +434,13 @@ fn main() {
                 }
             }
 
-            for key in last_keys {
-                if !keys.contains(&key) {
+            for key in keys.iter() {
+                if window.is_key_pressed(*key, KeyRepeat::Yes){
+                    println!("down1 : {:?}", key);
                     rdp_client_guard.write(RdpEvent::Key(
                         KeyboardEvent {
-                            code: to_scancode(key),
-                            down: false
+                            code: to_scancode(*key),
+                            down: true
                         })
                     ).unwrap_or_else(|e| {
                         println!("{}: {:?}", APPLICATION_NAME, e);

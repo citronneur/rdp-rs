@@ -3,7 +3,6 @@ use model::error::{RdpResult, RdpErrorKind, RdpError, Error};
 use byteorder::{WriteBytesExt, ReadBytesExt, LittleEndian, BigEndian};
 use indexmap::IndexMap;
 use std::collections::{HashSet, HashMap};
-use std::fs::read;
 
 
 /// All data type used
@@ -29,12 +28,20 @@ use std::fs::read;
 /// # }
 /// ```
 pub enum DataType<'a> {
+    /// ALl component messages
+    /// Component is key value message
     Component(&'a Component),
+    /// A trame message is vector of messages
     Trame(&'a Trame),
+    /// Unsigned 32 bits integer
     U32(u32),
+    /// Unsigned 16 bits integer
     U16(u16),
+    /// 8 bits integer
     U8(u8),
+    /// A slice is just a raw u8 of vector
     Slice(&'a [u8]),
+    /// Optional value can be absent
     None
 }
 
@@ -73,8 +80,13 @@ macro_rules! cast {
 ///
 /// This is control by the options function of Message Trait
 pub enum MessageOption {
+    /// You ask to skip a field
+    /// during reading operation
     SkipField(String),
+    /// You ask to limit the size of reading buffer
+    /// for a particular field
     Size(String, usize),
+    /// Non option
     None
 }
 
@@ -227,13 +239,13 @@ pub type Trame = Vec<Box<dyn Message>>;
 /// ```
 #[macro_export]
 macro_rules! trame {
+    () => { Trame::new() };
     ($( $val: expr ),*) => {{
          let mut vec = Trame::new();
          $( vec.push(Box::new($val)); )*
          vec
     }}
 }
-
 /// Trame is a Message too
 impl Message for Trame {
     /// Write a trame to a stream
@@ -244,9 +256,16 @@ impl Message for Trame {
     /// # Example
     ///
     /// ```
-    /// let mut s = Cursor::new(Vec::new());
-    /// let x = trame!([0, 1, 2, 4, 5]);
-    /// x.write(s);
+    /// # #[macro_use]
+    /// # extern crate rdp;
+    /// # use rdp::model::data::{Trame, U32, Message};
+    /// # use std::io::Cursor;
+    /// # fn main() {
+    ///     let mut s = Cursor::new(Vec::new());
+    ///     let x = trame![0 as u8, U32::LE(2)];
+    ///     x.write(&mut s);
+    ///     assert_eq!(s.into_inner(), [0, 2, 0, 0, 0])
+    /// # }
     /// ```
     fn write(&self, writer: &mut dyn Write) -> RdpResult<()>{
         for v in self {
@@ -255,6 +274,26 @@ impl Message for Trame {
         Ok(())
     }
 
+    /// Read a trame from a stream
+    ///
+    /// Read all subnode from a stream
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// # #[macro_use]
+    /// # extern crate rdp;
+    /// # use rdp::model::data::{Trame, U32, Message, DataType};
+    /// # use rdp::model::error::{RdpErrorKind, RdpError, Error, RdpResult};
+    /// # use std::io::Cursor;
+    /// # fn main() {
+    ///     let mut s = Cursor::new(vec![8, 3, 0, 0, 0]);
+    ///     let mut x = trame![0 as u8, U32::LE(0)];
+    ///     x.read(&mut s);
+    ///     assert_eq!(cast!(DataType::U8, x[0]).unwrap(), 8);
+    ///     assert_eq!(cast!(DataType::U32, x[1]).unwrap(), 3);
+    /// # }
+    /// ```
     fn read(&mut self, reader: &mut dyn Read) -> RdpResult<()>{
         for v in self {
            v.read(reader)?;
@@ -262,6 +301,21 @@ impl Message for Trame {
         Ok(())
     }
 
+    /// Length in byte of the entire trame
+    ///
+    /// # Example
+    /// ```
+    /// # #[macro_use]
+    /// # extern crate rdp;
+    /// # use rdp::model::data::{Trame, U32, Message};
+    /// # use std::io::Cursor;
+    /// # fn main() {
+    ///     let mut s = Cursor::new(Vec::new());
+    ///     let x = trame![0 as u8, U32::LE(2)];
+    ///     x.write(&mut s);
+    ///     assert_eq!(x.length(), 5)
+    /// # }
+    /// ```
     fn length(&self) -> u64 {
         let mut sum : u64 = 0;
         for v in self {
@@ -270,19 +324,39 @@ impl Message for Trame {
         sum
     }
 
+    /// Allow to cast a message into trame
+    ///
+    /// # Example
+    /// ```
+    /// # #[macro_use]
+    /// # extern crate rdp;
+    /// # use rdp::model::data::{Trame, U32, Message, DataType};
+    /// # use rdp::model::error::{RdpErrorKind, RdpError, RdpResult, Error};
+    /// # use std::io::Cursor;
+    /// # fn main() {
+    ///     let mut s = Cursor::new(vec![8, 3, 0, 0, 0, 0]);
+    ///     let mut x = trame![trame![0 as u8, U32::LE(0)], 0 as u8];
+    ///     x.read(&mut s);
+    ///     let y = cast!(DataType::Trame, x[0]).unwrap();
+    ///     assert_eq!(cast!(DataType::U32, y[1]).unwrap(), 3)
+    /// # }
+    /// ```
     fn visit(&self) -> DataType {
         DataType::Trame(self)
     }
 
+    /// A trame have no options
     fn options(&self) -> MessageOption {
         MessageOption::None
     }
 }
 
+/// A component is key value ordered
 pub type Component = IndexMap<String, Box<dyn Message>>;
 
 #[macro_export]
 macro_rules! component {
+    () => { Component::new() };
     ($( $key: expr => $val: expr ),*) => {{
          let mut map = Component::new();
          $( map.insert($key.to_string(), Box::new($val)) ; )*
@@ -291,6 +365,26 @@ macro_rules! component {
 }
 
 impl Message for Component {
+    /// Write a component message
+    /// Useful to better reading structure
+    /// and have some dynamic option
+    ///
+    /// # Example
+    /// ```
+    /// # #[macro_use]
+    /// # extern crate rdp;
+    /// # use rdp::model::data::{Component, U32, Message, DataType};
+    /// # use std::io::Cursor;
+    /// # fn main() {
+    ///     let mut s = Cursor::new(vec![]);
+    ///     let mut x = component![
+    ///         "field1" => 3 as u8,
+    ///         "field2" => U32::LE(6)
+    ///     ];
+    ///     x.write(&mut s);
+    ///     assert_eq!(s.into_inner(), [3, 6, 0, 0, 0])
+    /// # }
+    /// ```
     fn write(&self, writer: &mut dyn Write) -> RdpResult<()>{
         let mut filtering_key = HashSet::new();
         for (name, value) in self.iter() {
@@ -306,6 +400,26 @@ impl Message for Component {
         Ok(())
     }
 
+    /// Read a component base pattern
+    /// from a valid stream
+    ///
+    /// # Example
+    /// ```
+    /// # #[macro_use]
+    /// # extern crate rdp;
+    /// # use rdp::model::data::{Component, U32, Message, DataType};
+    /// # use rdp::model::error::{RdpError, Error, RdpResult, RdpErrorKind};
+    /// # use std::io::Cursor;
+    /// # fn main() {
+    ///     let mut s = Cursor::new(vec![3, 6, 0, 0, 0]);
+    ///     let mut x = component![
+    ///         "field1" => 0 as u8,
+    ///         "field2" => U32::LE(0)
+    ///     ];
+    ///     x.read(&mut s);
+    ///     assert_eq!(cast!(DataType::U32, x["field2"]).unwrap(), 6)
+    /// # }
+    /// ```
     fn read(&mut self, reader: &mut dyn Read) -> RdpResult<()>{
         let mut filtering_key = HashSet::new();
         let mut dynamic_size = HashMap::new();
@@ -334,6 +448,25 @@ impl Message for Component {
         Ok(())
     }
 
+    /// Compute the length in byte of the component
+    ///
+    /// # Example
+    /// ```
+    /// # #[macro_use]
+    /// # extern crate rdp;
+    /// # use rdp::model::data::{Component, U32, Message, DataType};
+    /// # use rdp::model::error::{RdpError, Error, RdpResult, RdpErrorKind};
+    /// # use std::io::Cursor;
+    /// # fn main() {
+    ///     let mut s = Cursor::new(vec![3, 6, 0, 0, 0]);
+    ///     let mut x = component![
+    ///         "field1" => 0 as u8,
+    ///         "field2" => U32::LE(0)
+    ///     ];
+    ///     x.read(&mut s);
+    ///     assert_eq!(x.length(), 5)
+    /// # }
+    /// ```
     fn length(&self) -> u64 {
         let mut sum : u64 = 0;
         let mut filtering_key = HashSet::new();
@@ -350,10 +483,34 @@ impl Message for Component {
         sum
     }
 
+    /// Cast a dyn Message into component
+    ///
+    /// # Example
+    /// ```
+    /// # #[macro_use]
+    /// # extern crate rdp;
+    /// # use rdp::model::data::{Trame, Component, U32, Message, DataType};
+    /// # use rdp::model::error::{RdpErrorKind, RdpError, RdpResult, Error};
+    /// # use std::io::Cursor;
+    /// # fn main() {
+    ///     let mut s = Cursor::new(vec![8, 3, 0, 0, 0, 0]);
+    ///     let mut x = trame![
+    ///         component![
+    ///             "field1" => 0 as u8,
+    ///             "field2" => U32::LE(0)
+    ///         ],
+    ///         0 as u8
+    ///     ];
+    ///     x.read(&mut s);
+    ///     let y = cast!(DataType::Component, x[0]).unwrap();
+    ///     assert_eq!(cast!(DataType::U32, y["field2"]).unwrap(), 3)
+    /// # }
+    /// ```
     fn visit(&self) -> DataType {
         DataType::Component(self)
     }
 
+    /// A component have no option by default
     fn options(&self) -> MessageOption {
         MessageOption::None
     }
@@ -361,12 +518,22 @@ impl Message for Component {
 
 #[derive(Copy, Clone)]
 pub enum Value<Type> {
+    /// Big Endianness
     BE(Type),
+    /// Little Endianness
     LE(Type)
 }
 
 impl<Type: Copy + PartialEq> Value<Type> {
-    pub fn get(&self) -> Type {
+    /// Return the inner value
+    ///
+    /// # Example
+    /// ```
+    /// use rdp::model::data::U32;
+    /// let x = U32::LE(4);
+    /// assert_eq!(x.inner(), 4);
+    /// ```
+    pub fn inner(&self) -> Type {
         match self {
             Value::<Type>::BE(e) | Value::<Type>::LE(e) => *e
         }
@@ -374,14 +541,30 @@ impl<Type: Copy + PartialEq> Value<Type> {
 }
 
 impl<Type: Copy + PartialEq> PartialEq for Value<Type> {
+    /// Equality between all type
     fn eq(&self, other: &Self) -> bool {
-        return self.get() == other.get()
+        return self.inner() == other.inner()
     }
 }
 
+/// Unsigned 16 bits message
 pub type U16 = Value<u16>;
 
 impl Message for U16 {
+
+    /// Write an unsigned 16 bits value
+    ///
+    /// # Example
+    /// ```
+    /// use std::io::Cursor;
+    /// use rdp::model::data::{U16, Message};
+    /// let mut s1 = Cursor::new(vec![]);
+    /// U16::LE(4).write(&mut s1).unwrap();
+    /// assert_eq!(s1.into_inner(), [4, 0]);
+    /// let mut s2 = Cursor::new(vec![]);
+    /// U16::BE(4).write(&mut s2).unwrap();
+    /// assert_eq!(s2.into_inner(), [0, 4]);
+    /// ```
     fn write(&self, writer: &mut dyn Write) -> RdpResult<()>{
         match self {
             U16::BE(value) => Ok(writer.write_u16::<BigEndian>(*value)?),
@@ -389,6 +572,22 @@ impl Message for U16 {
         }
     }
 
+    /// Read an Unsigned 16 bits value
+    /// from a stream
+    ///
+    /// # Example
+    /// ```
+    /// use std::io::Cursor;
+    /// use rdp::model::data::{U16, Message};
+    /// let mut s1 = Cursor::new(vec![4, 0]);
+    /// let mut v1 = U16::LE(0);
+    /// v1.read(&mut s1).unwrap();
+    /// assert_eq!(v1.inner(), 4);
+    /// let mut s2 = Cursor::new(vec![0, 4]);
+    /// let mut v2 = U16::BE(0);
+    /// v2.read(&mut s2).unwrap();
+    /// assert_eq!(v2.inner(), 4);
+    /// ```
     fn read(&mut self, reader: &mut dyn Read) -> RdpResult<()>{
         match self {
             U16::BE(value) => *value = reader.read_u16::<BigEndian>()?,
@@ -397,23 +596,58 @@ impl Message for U16 {
         Ok(())
     }
 
-
+    /// Length of U16 is 2
     fn length(&self) -> u64 {
         2
     }
 
+    /// Use to cast an anonymous Message into U16
+    ///
+    /// # Example
+    /// ```
+    /// # #[macro_use]
+    /// # extern crate rdp;
+    /// # use rdp::model::data::{Trame, Component, U16, Message, DataType};
+    /// # use rdp::model::error::{RdpErrorKind, RdpError, RdpResult, Error};
+    /// # use std::io::Cursor;
+    /// # fn main() {
+    ///     let mut s = Cursor::new(vec![8, 0, 3]);
+    ///     let mut x = trame![
+    ///         U16::LE(0),
+    ///         0 as u8
+    ///     ];
+    ///     x.read(&mut s);
+    ///     assert_eq!(cast!(DataType::U16, x[0]).unwrap(), 8)
+    /// # }
+    /// ```
     fn visit(&self) -> DataType {
-        DataType::U16(self.get())
+        DataType::U16(self.inner())
     }
 
+    /// No options
     fn options(&self) -> MessageOption {
         MessageOption::None
     }
 }
 
+/// Unsigned 32 bits message
 pub type U32 = Value<u32>;
 
 impl Message for U32 {
+
+    /// Write an unsigned 32 bits value
+    ///
+    /// # Example
+    /// ```
+    /// use std::io::Cursor;
+    /// use rdp::model::data::{U32, Message};
+    /// let mut s1 = Cursor::new(vec![]);
+    /// U32::LE(4).write(&mut s1).unwrap();
+    /// assert_eq!(s1.into_inner(), [4, 0, 0, 0]);
+    /// let mut s2 = Cursor::new(vec![]);
+    /// U32::BE(4).write(&mut s2).unwrap();
+    /// assert_eq!(s2.into_inner(), [0, 0, 0, 4]);
+    /// ```
     fn write(&self, writer: &mut dyn Write) -> RdpResult<()> {
         match self {
             U32::BE(value) => Ok(writer.write_u32::<BigEndian>(*value)?),
@@ -421,6 +655,22 @@ impl Message for U32 {
         }
     }
 
+    /// Read an Unsigned 16 bits value
+    /// from a stream
+    ///
+    /// # Example
+    /// ```
+    /// use std::io::Cursor;
+    /// use rdp::model::data::{U32, Message};
+    /// let mut s1 = Cursor::new(vec![4, 0, 0, 0]);
+    /// let mut v1 = U32::LE(0);
+    /// v1.read(&mut s1).unwrap();
+    /// assert_eq!(v1.inner(), 4);
+    /// let mut s2 = Cursor::new(vec![0, 0, 0, 4]);
+    /// let mut v2 = U32::BE(0);
+    /// v2.read(&mut s2).unwrap();
+    /// assert_eq!(v2.inner(), 4);
+    /// ```
     fn read(&mut self, reader: &mut dyn Read) -> RdpResult<()> {
         match self {
             U32::BE(value) => *value = reader.read_u32::<BigEndian>()?,
@@ -429,24 +679,60 @@ impl Message for U32 {
         Ok(())
     }
 
+    /// Length of the 32 bits is four
     fn length(&self) -> u64 {
         4
     }
 
+    /// Use to cast an anonymous Message into U32
+    ///
+    /// # Example
+    /// ```
+    /// # #[macro_use]
+    /// # extern crate rdp;
+    /// # use rdp::model::data::{Trame, Component, U32, Message, DataType};
+    /// # use rdp::model::error::{RdpErrorKind, RdpError, RdpResult, Error};
+    /// # use std::io::Cursor;
+    /// # fn main() {
+    ///     let mut s = Cursor::new(vec![8, 0, 0, 0, 3]);
+    ///     let mut x = trame![
+    ///         U32::LE(0),
+    ///         0 as u8
+    ///     ];
+    ///     x.read(&mut s);
+    ///     assert_eq!(cast!(DataType::U32, x[0]).unwrap(), 8)
+    /// # }
+    /// ```
     fn visit(&self) -> DataType {
-        DataType::U32(self.get())
+        DataType::U32(self.inner())
     }
 
+    /// No options
     fn options(&self) -> MessageOption {
         MessageOption::None
     }
 }
 
+/// This is a wrapper around
+/// a copyable message to check constness
 pub struct Check<T> {
     value: T
 }
 
 impl<T> Check<T> {
+    /// Create a new check for a Message
+    ///
+    /// # Example
+    /// ```
+    /// use rdp::model::data::{Check, U16, Message};
+    /// use std::io::Cursor;
+    /// let mut s = Cursor::new(vec![4, 0]);
+    /// let mut x = Check::new(U16::LE(4));
+    /// assert!(!x.read(&mut s).is_err());
+    ///
+    /// let mut s2 = Cursor::new(vec![5, 0]);
+    /// assert!(x.read(&mut s2).is_err());
+    /// ```
     pub fn new(value: T) -> Self{
         Check {
             value
@@ -455,10 +741,25 @@ impl<T> Check<T> {
 }
 
 impl<T: Message + Clone + PartialEq> Message for Check<T> {
+
+    /// Check values doesn't happen during write steps
     fn write(&self, writer: &mut dyn Write) -> RdpResult<()> {
         self.value.write(writer)
     }
 
+    /// Check value will be made during reading steps
+    ///
+    /// # Example
+    /// ```
+    /// use rdp::model::data::{Check, U16, Message};
+    /// use std::io::Cursor;
+    /// let mut s = Cursor::new(vec![4, 0]);
+    /// let mut x = Check::new(U16::LE(4));
+    /// assert!(!x.read(&mut s).is_err());
+    ///
+    /// let mut s2 = Cursor::new(vec![5, 0]);
+    /// assert!(x.read(&mut s2).is_err());
+    /// ```
     fn read(&mut self, reader: &mut dyn Read) -> RdpResult<()> {
         let old = self.value.clone();
         self.value.read(reader)?;
@@ -468,14 +769,35 @@ impl<T: Message + Clone + PartialEq> Message for Check<T> {
         Ok(())
     }
 
+    /// This is the length of the inner value
     fn length(&self) -> u64 {
         self.value.length()
     }
 
+    /// Same as visit of the inner value
+    ///
+    /// # Example
+    /// ```
+    /// # #[macro_use]
+    /// # extern crate rdp;
+    /// # use rdp::model::data::{Trame, Component, U32, Message, DataType, Check};
+    /// # use rdp::model::error::{RdpErrorKind, RdpError, RdpResult, Error};
+    /// # use std::io::Cursor;
+    /// # fn main() {
+    ///     let mut s = Cursor::new(vec![8, 0, 0, 0, 3]);
+    ///     let mut x = trame![
+    ///         Check::new(U32::LE(8)),
+    ///         0 as u8
+    ///     ];
+    ///     x.read(&mut s);
+    ///     assert_eq!(cast!(DataType::U32, x[0]).unwrap(), 8)
+    /// # }
+    /// ```
     fn visit(&self) -> DataType {
         self.value.visit()
     }
 
+    /// No option
     fn options(&self) -> MessageOption {
         MessageOption::None
     }
@@ -525,7 +847,7 @@ impl Message for Vec<u8> {
 /// # fn main() {
 ///     let mut node = component![
 ///         "flag" => DynOption::new(U32::LE(0), |flag| {
-///             if flag.get() == 1 {
+///             if flag.inner() == 1 {
 ///                 return MessageOption::SkipField("depend".to_string());
 ///             }
 ///             return MessageOption::None;
@@ -543,7 +865,7 @@ impl Message for Vec<u8> {
 /// ```
 pub type DynOptionFnSend<T> = dyn Fn(&T) -> MessageOption + Send;
 pub struct DynOption<T> {
-    current: T,
+    inner: T,
     filter: Box<DynOptionFnSend<T>>
 }
 
@@ -563,7 +885,7 @@ impl<T> DynOption<T> {
     /// # fn main() {
     ///     let message = component![
     ///         "flag" => DynOption::new(U32::LE(1), |flag| {
-    ///             if flag.get() == 1 {
+    ///             if flag.inner() == 1 {
     ///                 return MessageOption::SkipField("depend".to_string());
     ///             }
     ///             else {
@@ -588,7 +910,7 @@ impl<T> DynOption<T> {
     /// # fn main() {
     ///     let mut message = component![
     ///         "Type" => DynOption::new(U32::LE(0), |flag| {
-    ///             MessageOption::Size("Value".to_string(), flag.get() as usize)
+    ///             MessageOption::Size("Value".to_string(), flag.inner() as usize)
     ///         }),
     ///         "Value" => Vec::<u8>::new()
     ///     ];
@@ -600,7 +922,7 @@ impl<T> DynOption<T> {
     pub fn new<F: 'static>(current: T, filter: F) -> Self
         where F: Fn(&T) -> MessageOption, F: Send {
         DynOption {
-            current,
+            inner: current,
             filter : Box::new(filter)
         }
     }
@@ -608,23 +930,23 @@ impl<T> DynOption<T> {
 
 impl<T: Message> Message for DynOption<T> {
     fn write(&self, writer: &mut dyn Write) -> RdpResult<()> {
-        self.current.write(writer)
+        self.inner.write(writer)
     }
 
     fn read(&mut self, reader: &mut dyn Read) -> RdpResult<()> {
-        self.current.read(reader)
+        self.inner.read(reader)
     }
 
     fn length(&self) -> u64 {
-        self.current.length()
+        self.inner.length()
     }
 
     fn visit(&self) -> DataType {
-        self.current.visit()
+        self.inner.visit()
     }
 
     fn options(&self) -> MessageOption {
-        (self.filter)(&self.current)
+        (self.filter)(&self.inner)
     }
 }
 
@@ -868,12 +1190,12 @@ impl<T> AsRef<Trame> for Array<T> {
     }
 }
 
-#[macro_use]
-macro_rules! debug_value {
-    ($expr: expr) => {
-        DynOption::new($expr, |element| { println!("{:?}", element.get()); MessageOption::None })
-    };
-}
+//#[macro_use]
+//macro_rules! debug_value {
+//    ($expr: expr) => {
+//        DynOption::new($expr, |element| { println!("{:?}", element.get()); MessageOption::None })
+//    };
+//}
 
 #[cfg(test)]
 mod test {

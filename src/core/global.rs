@@ -3,10 +3,7 @@ use core::tpkt;
 use std::io::{Read, Write, Cursor};
 use model::error::{RdpResult, Error, RdpErrorKind, RdpError};
 use model::data::{Component, MessageOption, U32, DynOption, U16, DataType, Message, Array, Trame, Check, to_vec};
-use std::collections::HashMap;
 use core::event::{RdpEvent, BitmapEvent};
-use std::rc::Rc;
-use indexmap::map::IndexMap;
 use num_enum::TryFromPrimitive;
 use std::convert::TryFrom;
 use core::capability::{Capability, capability_set};
@@ -67,8 +64,8 @@ fn ts_demand_active_pdu() -> PDU {
         pdu_type: PDUType::PdutypeDemandactivepdu,
         message: component![
             "shareId" => U32::LE(0),
-            "lengthSourceDescriptor" => DynOption::new(U16::LE(0), |length| MessageOption::Size("sourceDescriptor".to_string(), length.get() as usize)),
-            "lengthCombinedCapabilities" => DynOption::new(U16::LE(0), |length| MessageOption::Size("capabilitySets".to_string(), length.get() as usize - 4)),
+            "lengthSourceDescriptor" => DynOption::new(U16::LE(0), |length| MessageOption::Size("sourceDescriptor".to_string(), length.inner() as usize)),
+            "lengthCombinedCapabilities" => DynOption::new(U16::LE(0), |length| MessageOption::Size("capabilitySets".to_string(), length.inner() as usize - 4)),
             "sourceDescriptor" => Vec::<u8>::new(),
             "numberCapabilities" => U16::LE(0),
             "pad2Octets" => U16::LE(0),
@@ -90,8 +87,8 @@ fn ts_confirm_active_pdu(share_id: Option<u32>, source: Option<Vec<u8>>, capabil
         message: component![
             "shareId" => U32::LE(share_id.unwrap_or(0)),
             "originatorId" => Check::new(U16::LE(0x03EA)),
-            "lengthSourceDescriptor" => DynOption::new(U16::LE(default_source.len() as u16), |length| MessageOption::Size("sourceDescriptor".to_string(), length.get() as usize)),
-            "lengthCombinedCapabilities" => DynOption::new(U16::LE(default_capabilities_set.length() as u16 + 4), |length| MessageOption::Size("capabilitySets".to_string(), length.get() as usize - 4)),
+            "lengthSourceDescriptor" => DynOption::new(U16::LE(default_source.len() as u16), |length| MessageOption::Size("sourceDescriptor".to_string(), length.inner() as usize)),
+            "lengthCombinedCapabilities" => DynOption::new(U16::LE(default_capabilities_set.length() as u16 + 4), |length| MessageOption::Size("capabilitySets".to_string(), length.inner() as usize - 4)),
             "sourceDescriptor" => default_source,
             "numberCapabilities" => U16::LE(default_capabilities_set.inner().len() as u16),
             "pad2Octets" => U16::LE(0),
@@ -108,7 +105,7 @@ fn ts_deactivate_all_pdu() -> PDU {
         pdu_type: PDUType::PdutypeDeactivateallpdu,
         message: component![
             "shareId" => U32::LE(0),
-            "lengthSourceDescriptor" => DynOption::new(U16::LE(0), |length| MessageOption::Size("sourceDescriptor".to_string(), length.get() as usize)),
+            "lengthSourceDescriptor" => DynOption::new(U16::LE(0), |length| MessageOption::Size("sourceDescriptor".to_string(), length.inner() as usize)),
             "sourceDescriptor" => Vec::<u8>::new()
         ]
     }
@@ -123,7 +120,7 @@ fn share_data_header(share_id: Option<u32>, pdu_type_2: Option<PDUType2>, messag
             "shareId" => U32::LE(share_id.unwrap_or(0)),
             "pad1" => 0 as u8,
             "streamId" => 1 as u8,
-            "uncompressedLength" => DynOption::new(U16::LE(default_message.length() as u16 + 18), | size | MessageOption::Size("payload".to_string(), size.get() as usize - 18)),
+            "uncompressedLength" => DynOption::new(U16::LE(default_message.length() as u16 + 18), | size | MessageOption::Size("payload".to_string(), size.inner() as usize - 18)),
             "pduType2" => pdu_type_2.unwrap_or(PDUType2::Pdutype2ArcStatusPdu) as u8,
             "compressedType" => 0 as u8,
             "compressedLength" => U16::LE(0),
@@ -138,7 +135,7 @@ fn share_data_header(share_id: Option<u32>, pdu_type_2: Option<PDUType2>, messag
 fn share_control_header(pdu_type: Option<PDUType>, pdu_source: Option<u16>, message: Option<Vec<u8>>) -> Component {
     let default_message = message.unwrap_or(vec![]);
     component![
-        "totalLength" => DynOption::new(U16::LE(default_message.length() as u16 + 6), |total| MessageOption::Size("pduMessage".to_string(), total.get() as usize - 6)),
+        "totalLength" => DynOption::new(U16::LE(default_message.length() as u16 + 6), |total| MessageOption::Size("pduMessage".to_string(), total.inner() as usize - 6)),
         "pduType" => U16::LE(pdu_type.unwrap_or(PDUType::PdutypeDemandactivepdu) as u16),
         "PDUSource" => Some(U16::LE(pdu_source.unwrap_or(0))),
         "pduMessage" => default_message
@@ -195,7 +192,7 @@ impl DataPDU {
             PDUType2::Pdutype2SetErrorInfoPdu => ts_set_error_info_pdu(),
             _ => return Err(Error::RdpError(RdpError::new(RdpErrorKind::NotImplemented, &format!("GLOBAL: Data PDU parsing not implemented {:?}", pdu_type))))
         };
-        result.message.read(&mut Cursor::new(cast!(DataType::Slice, data_pdu.message["payload"])?));
+        result.message.read(&mut Cursor::new(cast!(DataType::Slice, data_pdu.message["payload"])?))?;
         Ok(result)
     }
 }
@@ -241,6 +238,7 @@ fn ts_set_error_info_pdu() -> DataPDU {
 }
 
 #[repr(u16)]
+#[allow(dead_code)]
 enum Action {
     CtrlactionRequestControl = 0x0001,
     CtrlactionGrantedControl = 0x0002,
@@ -382,7 +380,7 @@ fn ts_fp_update() -> Component {
             }
         }),
         "compressionFlags" => 0 as u8,
-        "size" => DynOption::new(U16::LE(0), | size | MessageOption::Size("updateData".to_string(), size.get() as usize)),
+        "size" => DynOption::new(U16::LE(0), | size | MessageOption::Size("updateData".to_string(), size.inner() as usize)),
         "updateData" => Vec::<u8>::new()
     ]
 }
@@ -416,6 +414,7 @@ impl FastPathUpdate {
         let fp_update_type = FastPathUpdateType::try_from(cast!(DataType::U8, fast_path["updateHeader"])? & 0xf)?;
         let mut result = match fp_update_type {
             FastPathUpdateType::FastpathUpdatetypeBitmap => ts_fp_update_bitmap(),
+            FastPathUpdateType::FastpathUpdatetypeColor => ts_colorpointerattribute(),
             _ => return Err(Error::RdpError(RdpError::new(RdpErrorKind::NotImplemented, &format!("GLOBAL: Fast PAth parsing not implemented {:?}", fp_update_type))))
         };
         result.message.read(&mut Cursor::new(cast!(DataType::Slice, fast_path["updateData"])?))?;
@@ -448,14 +447,14 @@ fn ts_bitmap_data() -> Component {
         "height" => U16::LE(0),
         "bitsPerPixel" => U16::LE(0),
         "flags" => DynOption::new(U16::LE(0), |flags| {
-            if flags.get() & BitmapFlag::BitmapCompression as u16 == 0 || flags.get() & BitmapFlag::NoBitmapCompressionHdr as u16 != 0 {
+            if flags.inner() & BitmapFlag::BitmapCompression as u16 == 0 || flags.inner() & BitmapFlag::NoBitmapCompressionHdr as u16 != 0 {
                 MessageOption::SkipField("bitmapComprHdr".to_string())
             }
             else {
                 MessageOption::None
             }
         }),
-        "bitmapLength" => DynOption::new(U16::LE(0), | length | MessageOption::Size("bitmapDataStream".to_string(), length.get() as usize)),
+        "bitmapLength" => DynOption::new(U16::LE(0), | length | MessageOption::Size("bitmapDataStream".to_string(), length.inner() as usize)),
         "bitmapComprHdr" => DynOption::new(ts_cd_header(), |header| MessageOption::Size("bitmapDataStream".to_string(), cast!(DataType::U16, header["cbCompMainBodySize"]).unwrap() as usize)),
         "bitmapDataStream" => Vec::<u8>::new()
     ]
@@ -472,6 +471,27 @@ fn ts_fp_update_bitmap() -> FastPathUpdate {
         ]
     }
 }
+
+/// A new pointer for mouse
+///
+/// https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-rdpbcgr/71fad4fc-6ad4-4c7f-8103-a442bebaf7d2
+fn ts_colorpointerattribute() -> FastPathUpdate {
+    FastPathUpdate {
+        fp_type: FastPathUpdateType::FastpathUpdatetypeColor,
+        message: component![
+            "cacheIndex " => U16::LE(0),
+            "hotSpot " => U32::LE(0),
+            "width" => U16::LE(0),
+            "height" => U16::LE(0),
+            "lengthAndMask" => DynOption::new(U16::LE(0), |length| MessageOption::Size("andMaskData".to_string(), length.inner() as usize)),
+            "lengthXorMask" => DynOption::new(U16::LE(0), |length| MessageOption::Size("xorMaskData".to_string(), length.inner() as usize)),
+            "xorMaskData" => Vec::<u8>::new(),
+            "andMaskData" => Vec::<u8>::new(),
+            "pad" => Some(0 as u8)
+         ]
+    }
+}
+
 
 enum ClientState {
     /// Wait for demand active pdu from server
@@ -545,7 +565,7 @@ impl Client {
     /// and inform about server capabilities
     ///
     /// This function return true if it read the expected PDU
-    fn read_demand_active_pdu(&mut self, stream: &mut Read) -> RdpResult<bool> {
+    fn read_demand_active_pdu(&mut self, stream: &mut dyn Read) -> RdpResult<bool> {
         let pdu = PDU::from_stream(stream)?;
         if pdu.pdu_type == PDUType::PdutypeDemandactivepdu {
             for capability_set in cast!(DataType::Trame, pdu.message["capabilitySets"])?.iter() {
@@ -564,7 +584,7 @@ impl Client {
     /// This sent from server to client
     ///
     /// This function return true if it read the expected PDU
-    fn read_synchronize_pdu(&mut self, stream: &mut Read) -> RdpResult<bool> {
+    fn read_synchronize_pdu(&mut self, stream: &mut dyn Read) -> RdpResult<bool> {
         let pdu = PDU::from_stream(stream)?;
         if pdu.pdu_type != PDUType::PdutypeDatapdu {
             return Ok(false)
@@ -578,7 +598,7 @@ impl Client {
     /// Read the server control PDU with the expected action
     ///
     /// This function return true if it read the expected PDU with the expected action
-    fn read_control_pdu(&mut self, stream: &mut Read, action: Action) -> RdpResult<bool> {
+    fn read_control_pdu(&mut self, stream: &mut dyn Read, action: Action) -> RdpResult<bool> {
         let pdu = PDU::from_stream(stream)?;
         if pdu.pdu_type != PDUType::PdutypeDatapdu {
             return Ok(false)
@@ -599,7 +619,7 @@ impl Client {
     /// Read the server font data PDU
     ///
     /// This function return true if it read the expected PDU
-    fn read_font_map_pdu(&mut self, stream: &mut Read) ->  RdpResult<bool> {
+    fn read_font_map_pdu(&mut self, stream: &mut dyn Read) ->  RdpResult<bool> {
         let pdu = PDU::from_stream(stream)?;
         if pdu.pdu_type != PDUType::PdutypeDatapdu {
             return Ok(false)
@@ -613,7 +633,7 @@ impl Client {
     /// Expect data PDU
     /// This is the old school PDU for bitmap
     /// transfer. Now all version use Fast Path transfer PDU
-    fn read_data_pdu(&mut self, stream: &mut Read) -> RdpResult<()> {
+    fn read_data_pdu(&mut self, stream: &mut dyn Read) -> RdpResult<()> {
         //let pdu = PDU::from_stream(stream)?;
         let mut message = Array::new(|| share_control_header(None, None, None));
         message.read(stream)?;
@@ -648,7 +668,7 @@ impl Client {
     /// Read fast path input data
     /// Reading is processed using a callback patterm
     /// This is where bitmap are received
-    fn read_fast_path<T>(&mut self, stream: &mut Read, mut callback: T) -> RdpResult<()>
+    fn read_fast_path<T>(&mut self, stream: &mut dyn Read, mut callback: T) -> RdpResult<()>
     where T: FnMut(RdpEvent) {
         // it could be have one or more fast path payload
         let mut fp_messages = Array::new(|| ts_fp_update());
@@ -675,6 +695,9 @@ impl Client {
                                     }
                                 ));
                             }
+                        },
+                        FastPathUpdateType::FastpathUpdatetypeColor => {
+                            // TODO handle cursor
                         },
                         _ => println!("GLOBAL: Fast Path order not handled {:?}", order.fp_type)
                     }
@@ -769,7 +792,7 @@ impl Client {
     ///     ...
     /// }
     /// ```
-    pub fn read<S: Read + Write, T>(&mut self, payload: tpkt::Payload, mcs: &mut mcs::Client<S>, mut callback: T) -> RdpResult<()>
+    pub fn read<S: Read + Write, T>(&mut self, payload: tpkt::Payload, mcs: &mut mcs::Client<S>, callback: T) -> RdpResult<()>
     where T: FnMut(RdpEvent){
         match self.state {
             ClientState::DemandActivePDU => {
@@ -813,7 +836,7 @@ impl Client {
                 // Now we can receive update data
                 match payload {
                     tpkt::Payload::Raw(mut stream) => self.read_data_pdu(&mut stream),
-                    tpkt::Payload::FastPath(sec_flag, mut stream) => self.read_fast_path(&mut stream, callback)
+                    tpkt::Payload::FastPath(_sec_flag, mut stream) => self.read_fast_path(&mut stream, callback)
                 }
             }
         }
@@ -829,7 +852,7 @@ mod test {
     fn test_demand_active_pdu() {
         let mut stream = Cursor::new(vec![234, 3, 1, 0, 4, 0, 179, 1, 82, 68, 80, 0, 17, 0, 0, 0, 9, 0, 8, 0, 234, 3, 0, 0, 1, 0, 24, 0, 1, 0, 3, 0, 0, 2, 0, 0, 0, 0, 29, 4, 0, 0, 0, 0, 0, 0, 1, 1, 20, 0, 12, 0, 2, 0, 0, 0, 64, 6, 0, 0, 10, 0, 8, 0, 6, 0, 0, 0, 8, 0, 10, 0, 1, 0, 25, 0, 25, 0, 27, 0, 6, 0, 3, 0, 14, 0, 8, 0, 1, 0, 0, 0, 2, 0, 28, 0, 32, 0, 1, 0, 1, 0, 1, 0, 32, 3, 88, 2, 0, 0, 1, 0, 1, 0, 0, 30, 1, 0, 0, 0, 29, 0, 96, 0, 4, 185, 27, 141, 202, 15, 0, 79, 21, 88, 159, 174, 45, 26, 135, 226, 214, 0, 3, 0, 1, 1, 3, 18, 47, 119, 118, 114, 189, 99, 68, 175, 179, 183, 60, 156, 111, 120, 134, 0, 4, 0, 0, 0, 0, 0, 166, 81, 67, 156, 53, 53, 174, 66, 145, 12, 205, 252, 229, 118, 11, 88, 0, 4, 0, 0, 0, 0, 0, 212, 204, 68, 39, 138, 157, 116, 78, 128, 60, 14, 203, 238, 161, 156, 84, 0, 4, 0, 0, 0, 0, 0, 3, 0, 88, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 64, 66, 15, 0, 1, 0, 20, 0, 0, 0, 1, 0, 0, 0, 170, 0, 1, 1, 1, 1, 1, 0, 0, 0, 1, 0, 0, 1, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 0, 0, 0, 0, 161, 6, 6, 0, 64, 66, 15, 0, 64, 66, 15, 0, 1, 0, 0, 0, 0, 0, 0, 0, 18, 0, 8, 0, 1, 0, 0, 0, 13, 0, 88, 0, 117, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 23, 0, 8, 0, 255, 0, 0, 0, 24, 0, 11, 0, 2, 0, 0, 0, 3, 12, 0, 26, 0, 8, 0, 43, 72, 9, 0, 28, 0, 12, 0, 82, 0, 0, 0, 0, 0, 0, 0, 30, 0, 8, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
         let mut pdu = ts_demand_active_pdu();
-        pdu.message.read(&mut stream);
+        pdu.message.read(&mut stream).unwrap();
         assert_eq!(cast!(DataType::U16, pdu.message["numberCapabilities"]).unwrap(), 17)
     }
 

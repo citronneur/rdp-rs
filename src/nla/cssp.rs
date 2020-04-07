@@ -174,10 +174,10 @@ fn create_ts_authinfo(auth_info: Vec<u8>) -> Vec<u8> {
 pub fn cssp_connect<S: Read + Write>(link: &mut Link<S>, authentication_protocol: &mut dyn AuthenticationProtocol, restricted_admin_mode: bool) -> RdpResult<()> {
     // first step is to send the negotiate message from authentication protocol
     let negotiate_message = create_ts_request(authentication_protocol.create_negotiate_message()?);
-    link.send(&negotiate_message)?;
+    link.write(&negotiate_message)?;
 
     // now receive server challenge
-    let server_challenge = read_ts_server_challenge(&(link.recv(0)?))?;
+    let server_challenge = read_ts_server_challenge(&(link.read(0)?))?;
 
     // now ask for to authenticate protocol
     let client_challenge = authentication_protocol.read_challenge_message(&server_challenge)?;
@@ -191,10 +191,10 @@ pub fn cssp_connect<S: Read + Write>(link: &mut Link<S>, authentication_protocol
 
     // Now we can send back our challenge payload wit the public key encoded
     let challenge = create_ts_authenticate(client_challenge, security_interface.gss_wrapex(certificate.tbs_certificate.subject_pki.subject_public_key.data)?);
-    link.send(&challenge)?;
+    link.write(&challenge)?;
 
     // now server respond normally with the original public key incremented by one
-    let inc_pub_key = security_interface.gss_unwrapex(&(read_ts_validate(&(link.recv(0)?))?))?;
+    let inc_pub_key = security_interface.gss_unwrapex(&(read_ts_validate(&(link.read(0)?))?))?;
 
     // Check possible man in the middle using cssp
     if BigUint::from_bytes_le(&inc_pub_key) != BigUint::from_bytes_le(certificate.tbs_certificate.subject_pki.subject_public_key.data) + BigUint::new(vec![1]) {
@@ -208,7 +208,7 @@ pub fn cssp_connect<S: Read + Write>(link: &mut Link<S>, authentication_protocol
     let password = if restricted_admin_mode { vec![] } else { authentication_protocol.get_password() };
 
     let credentials = create_ts_authinfo(security_interface.gss_wrapex(&create_ts_credentials(domain, user, password))?);
-    link.send(&credentials)?;
+    link.write(&credentials)?;
 
     Ok(())
 }

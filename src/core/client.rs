@@ -6,10 +6,7 @@ use core::sec;
 use core::global;
 use std::io::{Read, Write};
 use model::error::{RdpResult, Error, RdpError, RdpErrorKind};
-use std::net::{SocketAddr, TcpStream};
 use model::link::{Link, Stream};
-use std::rc::Rc;
-use std::collections::HashMap;
 use core::event::{RdpEvent, PointerButton};
 use core::global::{ts_pointer_event, PointerFlag, ts_keyboard_event, KeyboardFlag};
 use nla::ntlm::Ntlm;
@@ -38,7 +35,10 @@ impl<S: Read + Write> RdpClient<S> {
     /// during a read call
     ///
     /// # Example
-    /// ```rust, ignore
+    /// ```no_run
+    /// use std::net::{SocketAddr, TcpStream};
+    /// use rdp::core::client::Connector;
+    /// use rdp::core::event::RdpEvent;
     /// let addr = "127.0.0.1:3389".parse::<SocketAddr>().unwrap();
     /// let tcp = TcpStream::connect(&addr).unwrap();
     /// let mut connector = Connector::new()
@@ -48,13 +48,13 @@ impl<S: Read + Write> RdpClient<S> {
     /// client.read(|rdp_event| {
     ///     match rdp_event {
     ///         RdpEvent::Bitmap(bitmap) => {
-    ///             ...
-    ///         },
+    ///             // do something with bitmap
+    ///         }
     ///          _ => println!("Unhandled event")
     ///     }
     /// }).unwrap()
     /// ```
-    pub fn read<T>(&mut self, mut callback: T) -> RdpResult<()>
+    pub fn read<T>(&mut self, callback: T) -> RdpResult<()>
     where T: FnMut(RdpEvent) {
         let (channel_name, message) = self.mcs.read()?;
         match channel_name.as_str() {
@@ -67,7 +67,10 @@ impl<S: Read + Write> RdpClient<S> {
     /// Typically is all about input event like mouse and keyboard
     ///
     /// # Example
-    /// ```rust, ignore
+    /// ```no_run
+    /// use std::net::{SocketAddr, TcpStream};
+    /// use rdp::core::client::Connector;
+    /// use rdp::core::event::{RdpEvent, PointerEvent, PointerButton};
     /// let addr = "127.0.0.1:3389".parse::<SocketAddr>().unwrap();
     /// let tcp = TcpStream::connect(&addr).unwrap();
     /// let mut connector = Connector::new()
@@ -108,7 +111,7 @@ impl<S: Read + Write> RdpClient<S> {
             // Raw keyboard input
             RdpEvent::Key(key) => {
                 let mut flags: u16 = 0;
-                if key.down {
+                if !key.down {
                     flags |= KeyboardFlag::KbdflagsRelease as u16;
                 }
                 self.global.write_input_event(ts_keyboard_event(Some(flags), Some(key.code)), &mut self.mcs)
@@ -149,7 +152,7 @@ impl Connector {
     /// You can configure your client
     ///
     /// # Example
-    /// ```
+    /// ```no_run
     /// use rdp::core::client::Connector;
     /// let mut connector = Connector::new()
     ///     .screen(800, 600)
@@ -173,7 +176,9 @@ impl Connector {
     /// use to interact with server
     ///
     /// # Example
-    /// ```rust, ignore
+    /// ```no_run
+    /// use std::net::{SocketAddr, TcpStream};
+    /// use rdp::core::client::Connector;
     /// let addr = "127.0.0.1:3389".parse::<SocketAddr>().unwrap();
     /// let tcp = TcpStream::connect(&addr).unwrap();
     /// let mut connector = Connector::new()
@@ -223,7 +228,7 @@ impl Connector {
         }
 
         // Now the global channel
-        let mut global = global::Client::new(
+        let global = global::Client::new(
             mcs.get_user_id(),
             mcs.get_global_channel_id(),
             self.width,
@@ -256,13 +261,12 @@ impl Connector {
 
     /// Enable or disable restricted admin mode
     pub fn set_restricted_admin_mode(mut self, state: bool) -> Self {
-        self.restricted_admin_mode = true;
+        self.restricted_admin_mode = state;
         self
     }
 
     /// Try authenticate using NTLM hashes and restricted admin mode
     pub fn set_password_hash(mut self, password_hash: Vec<u8>) -> Self {
-        self.restricted_admin_mode = true;
         self.password_hash = Some(password_hash);
         self
     }
