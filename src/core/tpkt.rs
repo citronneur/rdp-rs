@@ -1,11 +1,11 @@
 use model::link::{Link};
 use model::data::{Message, U16, Component, Trame};
-use model::error::{RdpResult, RdpError, RdpErrorKind, Error};
+use model::error::{RdpResult};
 use std::io::{Cursor, Write, Read};
 use nla::cssp::cssp_connect;
 use nla::sspi::AuthenticationProtocol;
 
-/// TPKT must implement this two form of payload
+/// TPKT must implement this two kind of payload
 pub enum Payload {
     Raw(Cursor<Vec<u8>>),
     FastPath(u8, Cursor<Vec<u8>>)

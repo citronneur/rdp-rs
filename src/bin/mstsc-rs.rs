@@ -1,34 +1,40 @@
+#[cfg(target_os = "windows")]
 extern crate winapi;
+#[cfg(target_os = "linux")]
+extern crate libc;
 extern crate minifb;
 extern crate rdp;
 extern crate hex;
 extern crate clap;
+extern crate hmac;
 
 use minifb::{Key, Window, WindowOptions, MouseMode, MouseButton, KeyRepeat};
 use std::net::{SocketAddr, TcpStream};
-use std::io::Read;
-use std::os::raw::c_long;
+use std::io::{Read, Write};
 use std::time::{Instant};
-use std::ops::Add;
-use winapi::_core::time::Duration;
 use std::ptr;
 use std::mem;
 use std::mem::{size_of, forget};
 use rdp::core::client::{RdpClient, Connector};
-use winapi::um::winsock2::{select, fd_set, timeval};
+#[cfg(target_os = "windows")]
+use winapi::um::winsock2::{select, fd_set};
+#[cfg(target_os = "linux")]
+use libc::{select, FD_SET as fd_set};
+#[cfg(target_os = "windows")]
 use std::os::windows::io::{AsRawSocket};
+#[cfg(target_os = "linux")]
+use std::os::unix::io::{AsRawFd};
 use rdp::core::event::{RdpEvent, BitmapEvent, PointerEvent, PointerButton, KeyboardEvent};
-use winapi::_core::intrinsics::copy_nonoverlapping;
+use std::ptr::copy_nonoverlapping;
 use std::convert::TryFrom;
 use std::thread;
 use std::sync::{mpsc, Arc, Mutex};
-use std::thread::sleep;
-use winapi::_core::sync::atomic::{AtomicBool, Ordering};
+use std::thread::{JoinHandle};
+use std::sync::atomic::{AtomicBool, Ordering};
 use rdp::model::error::{Error, RdpErrorKind, RdpError, RdpResult};
-use clap::{Arg, App};
-use winapi::_core::ptr::hash;
-use std::process::exit;
+use clap::{Arg, App, ArgMatches};
 use rdp::core::gcc::KeyboardLayout;
+use std::sync::mpsc::{Receiver, Sender};
 
 const APPLICATION_NAME: &str = "mstsc-rs";
 
@@ -198,6 +204,210 @@ fn to_scancode(key: Key) -> u16 {
     }
 }
 
+/// Create a tcp stream from main args
+fn tcp_from_args(args: &ArgMatches) -> RdpResult<TcpStream> {
+    let ip = args.value_of("destination").expect("You need to provide a destination argument");
+    let port = args.value_of("port").unwrap_or_default();
+
+    // TCP connection
+    let addr = format!("{}:{}", ip, port).parse::<SocketAddr>().map_err( |e| {
+        Error::RdpError(RdpError::new(RdpErrorKind::InvalidData, &format!("Cannot parse the IP PORT input [{}]", e)))
+    })?;
+    let tcp = TcpStream::connect(&addr).unwrap();
+    tcp.set_nodelay(true).map_err(|e| {
+        Error::RdpError(RdpError::new(RdpErrorKind::InvalidData, &format!("Unable to set no delay option [{}]", e)))
+    })?;
+
+    Ok(tcp)
+}
+
+/// Create rdp client from args
+fn rdp_from_args<S: Read + Write>(args: &ArgMatches, stream: S) -> RdpResult<RdpClient<S>> {
+
+    let width = args.value_of("width").unwrap_or_default().parse().map_err(|e| {
+        Error::RdpError(RdpError::new(RdpErrorKind::UnexpectedType, &format!("Cannot parse the input width argument [{}]", e)))
+    })?;
+    let height = args.value_of("height").unwrap_or_default().parse().map_err(|e| {
+        Error::RdpError(RdpError::new(RdpErrorKind::UnexpectedType, &format!("Cannot parse the input height argument [{}]", e)))
+    })?;
+    let domain = args.value_of("domain").unwrap_or_default();
+    let username = args.value_of("username").unwrap_or_default();
+    let password = args.value_of("password").unwrap_or_default();
+    let ntlm_hash = args.value_of("hash");
+    let restricted_admin_mode = args.is_present("admin");
+    let layout = KeyboardLayout::from(args.value_of("layout").unwrap_or_default());
+
+    let mut rdp_connector =  Connector::new()
+        .screen(width, height)
+        .credentials(domain.to_string(), username.to_string(), password.to_string())
+        .set_restricted_admin_mode(restricted_admin_mode)
+        .layout(layout);
+
+    if let Some(hash) = ntlm_hash {
+        rdp_connector = rdp_connector.set_password_hash(hex::decode(hash).map_err(|e| {
+            Error::RdpError(RdpError::new(RdpErrorKind::InvalidData, &format!("Cannot parse the input hash [{}]", e)))
+        })?)
+    }
+    // RDP connection
+    Ok(rdp_connector.connect(stream)?)
+}
+
+/// This function is in charge of the
+/// window refresh loop
+/// It's also in charge to send input
+/// like keyboard and mouse to the
+/// RDP protocol
+fn window_from_args(args: &ArgMatches) -> RdpResult<Window> {
+    let width = args.value_of("width").unwrap_or_default().parse().map_err(|e| {
+        Error::RdpError(RdpError::new(RdpErrorKind::UnexpectedType, &format!("Cannot parse the input width argument [{}]", e)))
+    })?;
+    let height = args.value_of("height").unwrap_or_default().parse().map_err(|e| {
+        Error::RdpError(RdpError::new(RdpErrorKind::UnexpectedType, &format!("Cannot parse the input height argument [{}]", e)))
+    })?;
+
+    let window = Window::new(
+        "mstsc-rs Remote Desktop in Rust",
+        width,
+        height,
+        WindowOptions::default(),
+    ).map_err(|e| {
+        Error::RdpError(RdpError::new(RdpErrorKind::Unknown, &format!("Unable to create window [{}]", e)))
+    })?;
+
+    Ok(window)
+}
+
+/// This will launch the thread in charge
+/// of receiving event (mostly bitmap event)
+/// And send back to the gui thread
+fn launch_rdp_thread<S: 'static + Read + Write + Send>(
+    handle: usize,
+    rdp_client: Arc<Mutex<RdpClient<S>>>,
+    sync: Arc<AtomicBool>,
+    bitmap_channel: Sender<BitmapEvent>) -> RdpResult<JoinHandle<()>> {
+    // Create the rdp thread
+    Ok(thread::spawn(move || {
+        while wait_for_fd(handle as usize) && sync.load(Ordering::Relaxed) {
+            let mut guard = rdp_client.lock().unwrap();
+            if let Err(Error::RdpError(e)) = guard.read(|event| {
+                match event {
+                    RdpEvent::Bitmap(bitmap) => {
+                        bitmap_channel.send(bitmap).unwrap();
+                    },
+                    _ => println!("{}: ignore event", APPLICATION_NAME)
+                }
+            }) {
+                match e.kind() {
+                    RdpErrorKind::Disconnect => {
+                        println!("{}: Server ask for disconnect", APPLICATION_NAME);
+                    },
+                    _ => println!("{}: {:?}", APPLICATION_NAME, e)
+                }
+                break;
+            }
+        }
+    }))
+}
+
+/// This is the main loop
+/// Print Window and handle all input (mous + keyboard)
+/// to RDP
+fn main_gui_loop<S: Read + Write>(
+    mut window: Window,
+    rdp_client: Arc<Mutex<RdpClient<S>>>,
+    sync: Arc<AtomicBool>,
+    bitmap_receiver: Receiver<BitmapEvent>) -> RdpResult<()> {
+
+    let (width, height) = window.get_size();
+    // Now we continue with the graphical main thread
+    // Limit to max ~60 fps update rate
+    window.limit_update_rate(Some(std::time::Duration::from_micros(16600)));
+
+    // The window buffer
+    let mut buffer: Vec<u32> = vec![0; width * height];
+
+    // State for mouse button
+    let mut last_button = PointerButton::None;
+
+    // state for keyboard keys
+    let mut last_keys = vec![];
+
+    // Start the refresh loop
+    while window.is_open() && sync.load(Ordering::Relaxed) {
+        let now = Instant::now();
+
+        // Refresh loop must faster than 30 Hz
+        while now.elapsed().as_micros() < 16600 * 2 {
+            match bitmap_receiver.try_recv() {
+                Ok(bitmap) => fast_bitmap_transfer(&mut buffer, width, bitmap),
+                Err(mpsc::TryRecvError::Empty) => break,
+                Err(mpsc::TryRecvError::Disconnected) => {
+                    sync.store(false, Ordering::Relaxed);
+                    break
+                }
+            };
+        }
+
+        // Mouse position input
+        if let Some((x, y)) = window.get_mouse_pos(MouseMode::Clamp) {
+            let mut rdp_client_guard = rdp_client.lock().map_err(|e| {
+                Error::RdpError(RdpError::new(RdpErrorKind::Unknown, &format!("Thread error during access to mutex [{}]", e)))
+            })?;
+
+            // Button is down if not 0
+            let current_button = get_rdp_pointer_down(&window);
+            rdp_client_guard.write(RdpEvent::Pointer(
+                PointerEvent{
+                    x: x as u16,
+                    y: y as u16,
+                    button: if last_button == current_button { PointerButton::None } else { PointerButton::try_from(last_button as u8 | current_button as u8).unwrap() },
+                    down: (last_button != current_button) && last_button == PointerButton::None
+                })
+            )?;
+
+            last_button = current_button;
+        }
+
+        // Keyboard inputs
+        if let Some(keys) = window.get_keys() {
+            let mut rdp_client_guard = rdp_client.lock().unwrap();
+
+            for key in last_keys.iter() {
+                if !keys.contains(key) {
+                    rdp_client_guard.write(RdpEvent::Key(
+                        KeyboardEvent {
+                            code: to_scancode(*key),
+                            down: false
+                        })
+                    )?
+                }
+            }
+
+            for key in keys.iter() {
+                if window.is_key_pressed(*key, KeyRepeat::Yes){
+                    rdp_client_guard.write(RdpEvent::Key(
+                        KeyboardEvent {
+                            code: to_scancode(*key),
+                            down: true
+                        })
+                    )?
+                }
+            }
+
+            last_keys = keys;
+        }
+
+        // We unwrap here as we want this code to exit if it fails. Real applications may want to handle this in a different way
+        window.update_with_buffer(&buffer, width, height).map_err(|e| {
+            Error::RdpError(RdpError::new(RdpErrorKind::Unknown, &format!("Unable to update screen buffer [{}]", e)))
+        })?;
+    }
+
+    sync.store(false, Ordering::Relaxed);
+    rdp_client.lock().unwrap().shutdown()?;
+    Ok(())
+}
+
 fn main() {
     // Parsing argument
     let matches = App::new(APPLICATION_NAME)
@@ -261,205 +471,46 @@ fn main() {
                  .help("Keyboard layout: us or fr"))
         .get_matches();
 
-    let ip = matches.value_of("destination").expect("You need to provide a destination argument");
-    let port = matches.value_of("port").unwrap_or_default();
-    let width = matches.value_of("width").unwrap_or_default().parse().unwrap_or(800);
-    let height = matches.value_of("height").unwrap_or_default().parse().unwrap_or(600);
-    let domain = matches.value_of("domain").unwrap_or_default();
-    let username = matches.value_of("username").unwrap_or_default();
-    let password = matches.value_of("password").unwrap_or_default();
-    let ntlm_hash = matches.value_of("hash");
-    let restricted_admin_mode = matches.is_present("admin");
-    let layout = KeyboardLayout::from(matches.value_of("layout").unwrap_or_default());
+    // Create a tcp stream from args
+    let tcp = tcp_from_args(&matches).unwrap();
 
-    let mut window = Window::new(
-        "mstsc-rs Remote Desktop in Rust",
-        width,
-        height,
-        WindowOptions::default(),
-    ).unwrap_or_else(|e| {
-        println!("{}: {}", APPLICATION_NAME, e);
-        exit(-1);
-    });
-
-    // TCP connection
-    let addr = format!("{}:{}", ip, port).parse::<SocketAddr>().unwrap_or_else(|e| {
-        println!("{}: {}", APPLICATION_NAME, e);
-        exit(-1);
-    });
-    ;
-    let tcp = TcpStream::connect(&addr).unwrap_or_else(|e| {
-        println!("{}: {}", APPLICATION_NAME, e);
-        exit(-1);
-    });
-
+    // Keep trace of the handle
+    #[cfg(target_os = "windows")]
     let handle = tcp.as_raw_socket();
-    tcp.set_nodelay(true).unwrap_or_else(|e| {
-        println!("{}: {}", APPLICATION_NAME, e);
-        exit(-1);
-    });
 
+    #[cfg(target_os = "linux")]
+    let handle = tcp.as_raw_fd();
+
+    // Create rdp client
+    let rdp_client = rdp_from_args(&matches, tcp).unwrap();
+
+    let window = window_from_args(&matches).unwrap();
+
+    // All relative to sync
     // channel use by the back channel to send bitmap to main GUI thread
-    let (tx_bitmap, rx_bitmap) = mpsc::channel();
-
-    // Try to inject ntlmv2 hash
-    let mut rdp_client = if let Some(hash) = ntlm_hash {
-        Connector::new()
-            .screen(width as u16, height as u16)
-            .credentials(domain.to_string(), username.to_string(), password.to_string())
-            .set_password_hash(hex::decode(hash).unwrap())
-            .set_restricted_admin_mode(restricted_admin_mode)
-            .layout(layout)
-            .connect(tcp).unwrap_or_else(|e| {
-                println!("{}: {:?}", APPLICATION_NAME, e);
-                exit(-1);
-            })
-    }
-    // or send credentials
-    else {
-        Connector::new()
-            .screen(width as u16, height as u16)
-            .credentials(domain.to_string(), username.to_string(), password.to_string())
-            .set_restricted_admin_mode(restricted_admin_mode)
-            .layout(layout)
-            .connect(tcp).unwrap_or_else(|e| {
-                println!("{}: {:?}", APPLICATION_NAME, e);
-                exit(-1);
-            })
-    };
+    let (bitmap_sender, bitmap_receiver) = mpsc::channel();
 
     // Once connected we will create safe thread variable
-    let mut rdp_client_tx = Arc::new(Mutex::new(rdp_client));
-    let mut rdp_client_rx = Arc::clone(&rdp_client_tx);
+    let rdp_client_mutex = Arc::new(Mutex::new(rdp_client));
 
     // Use to sync threads
-    let mut sync_main_thread = Arc::new(AtomicBool::new(true));
-    let mut sync_bitmap_thread = Arc::clone(&sync_main_thread);
+    let sync = Arc::new(AtomicBool::new(true));
 
-    // Create the rdp thread
-    let rdp_thread = thread::spawn(move || {
-        while wait_for_fd(handle as usize) && sync_bitmap_thread.load(Ordering::Relaxed) {
-            let mut guard = rdp_client_rx.lock().unwrap();
-            if let Err(Error::RdpError(e)) = guard.read(|event| {
-                match event {
-                    RdpEvent::Bitmap(bitmap) => {
-                        tx_bitmap.send(bitmap).unwrap();
-                    },
-                    _ => println!("{}: ignore event", APPLICATION_NAME)
-                }
-            }) {
-                match e.kind() {
-                    RdpErrorKind::Disconnect => {
-                        println!("{}: Server ask for disconnect", APPLICATION_NAME);
-                    },
-                    _ => println!("{}: {:?}", APPLICATION_NAME, e)
-                }
-                break;
-            }
-        }
-    });
+    // launch RDP thread
+    let rdp_thread = launch_rdp_thread(
+        handle as usize,
+        Arc::clone(&rdp_client_mutex),
+        Arc::clone(&sync),
+        bitmap_sender
+    ).unwrap();
 
-    // Now we continue with the graphical main thread
-    // Limit to max ~60 fps update rate
-    window.limit_update_rate(Some(std::time::Duration::from_micros(16600)));
+    // Launch the GUI
+    main_gui_loop(
+        window,
+        rdp_client_mutex,
+        sync,
+        bitmap_receiver
+    ).unwrap();
 
-    // The window buffer
-    let mut buffer: Vec<u32> = vec![0; width * height];
-
-    // State for mouse button
-    let mut last_button = PointerButton::None;
-
-    // state for keyboard keys
-    let mut last_keys = vec![];
-
-    let mut connected = true;
-    // Start the refresh loop
-    while window.is_open() && sync_main_thread.load(Ordering::Relaxed) {
-        let now = Instant::now();
-
-        loop {
-            match rx_bitmap.try_recv() {
-                Ok(bitmap) => fast_bitmap_transfer(&mut buffer, width, bitmap),
-                Err(mpsc::TryRecvError::Empty) => break,
-                Err(mpsc::TryRecvError::Disconnected) => {
-                    sync_main_thread.store(false, Ordering::Relaxed);
-                    break
-                },
-            }
-            if now.elapsed().as_micros() > 16600 * 2 {
-                break;
-            }
-        }
-
-        // Mouse position input
-        if let Some((x, y)) = window.get_mouse_pos(MouseMode::Clamp) {
-            let mut rdp_client_guard = rdp_client_tx.lock().unwrap_or_else(|e| {
-                println!("{}: {}", APPLICATION_NAME, e);
-                exit(-1);
-            });
-
-            // Button is down if not 0
-            let current_button = get_rdp_pointer_down(&window);
-            rdp_client_guard.write(RdpEvent::Pointer(
-                PointerEvent{
-                    x: x as u16,
-                    y: y as u16,
-                    button: if last_button == current_button { PointerButton::None } else { PointerButton::try_from(last_button as u8 | current_button as u8).unwrap() },
-                    down: (last_button != current_button) && last_button == PointerButton::None
-                })
-            ).unwrap_or_else(|e| {
-                println!("{}: {:?}", APPLICATION_NAME, e);
-                exit(-1);
-            });
-
-            last_button = current_button;
-        }
-
-        // Keyboard inputs
-        if let Some(keys) = window.get_keys() {
-            let mut rdp_client_guard = rdp_client_tx.lock().unwrap();
-
-            for key in last_keys.iter() {
-                if !keys.contains(key) {
-                    println!("release : {:?}", key);
-                    rdp_client_guard.write(RdpEvent::Key(
-                        KeyboardEvent {
-                            code: to_scancode(*key),
-                            down: false
-                        })
-                    ).unwrap_or_else(|e| {
-                        println!("{}: {:?}", APPLICATION_NAME, e);
-                        exit(-1);
-                    })
-                }
-            }
-
-            for key in keys.iter() {
-                if window.is_key_pressed(*key, KeyRepeat::Yes){
-                    println!("down1 : {:?}", key);
-                    rdp_client_guard.write(RdpEvent::Key(
-                        KeyboardEvent {
-                            code: to_scancode(*key),
-                            down: true
-                        })
-                    ).unwrap_or_else(|e| {
-                        println!("{}: {:?}", APPLICATION_NAME, e);
-                        exit(-1);
-                    })
-                }
-            }
-
-            last_keys = keys;
-        }
-
-        // We unwrap here as we want this code to exit if it fails. Real applications may want to handle this in a different way
-        window.update_with_buffer(&buffer, width, height).unwrap_or_else(|e| {
-            println!("{}: {:?}", APPLICATION_NAME, e);
-            exit(-1);
-        });
-    }
-
-    sync_main_thread.store(false, Ordering::Relaxed);
-    rdp_client_tx.lock().unwrap().shutdown();
-    rdp_thread.join();
+    rdp_thread.join().unwrap();
 }

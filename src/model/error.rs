@@ -3,7 +3,6 @@ extern crate native_tls;
 use std::io::{Read, Write};
 use std::io::Error as IoError;
 use std::string::String;
-use std::net::{AddrParseError};
 use self::native_tls::HandshakeError;
 use self::native_tls::Error as SslError;
 use yasna::ASN1Error;

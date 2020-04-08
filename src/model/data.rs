@@ -928,23 +928,30 @@ impl<T> DynOption<T> {
     }
 }
 
+/// Dynamic option
+/// is a transparent object for the inner
 impl<T: Message> Message for DynOption<T> {
+    /// Transparent
     fn write(&self, writer: &mut dyn Write) -> RdpResult<()> {
         self.inner.write(writer)
     }
 
+    /// Transparent
     fn read(&mut self, reader: &mut dyn Read) -> RdpResult<()> {
         self.inner.read(reader)
     }
 
+    /// Transparent
     fn length(&self) -> u64 {
         self.inner.length()
     }
 
+    /// Transparent
     fn visit(&self) -> DataType {
         self.inner.visit()
     }
 
+    /// Transparent
     fn options(&self) -> MessageOption {
         (self.filter)(&self.inner)
     }
@@ -1078,7 +1085,9 @@ impl<T: Message> Message for Option<T> {
 /// A factory callback to fill the result trame
 pub type ArrayFnSend<T> = dyn Fn() -> T + Send;
 pub struct Array<T> {
+    /// This is the inner trame
     inner: Trame,
+    /// function call to build each element of the array
     factory: Box<ArrayFnSend<T>>
 }
 
@@ -1110,6 +1119,9 @@ impl<T: Message> Array<T> {
         }
     }
 
+    /// This is to be symmetric
+    /// We can instanciate an array directly from a trame
+    /// This is for the write side of the pattern
     pub fn from_trame(inner: Trame) -> Self {
         Array {
             inner,
@@ -1122,7 +1134,7 @@ impl<T: Message> Array<T> {
     }
 }
 
-/// Implement tye message trait for Array
+/// Implement the message trait for Array
 impl<T: 'static + Message> Message for Array<T> {
     /// Write an array
     /// You may not use even if it works prefer using trame object
@@ -1189,13 +1201,6 @@ impl<T> AsRef<Trame> for Array<T> {
         &self.inner
     }
 }
-
-//#[macro_use]
-//macro_rules! debug_value {
-//    ($expr: expr) => {
-//        DynOption::new($expr, |element| { println!("{:?}", element.get()); MessageOption::None })
-//    };
-//}
 
 #[cfg(test)]
 mod test {
