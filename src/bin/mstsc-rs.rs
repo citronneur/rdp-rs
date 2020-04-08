@@ -19,7 +19,7 @@ use rdp::core::client::{RdpClient, Connector};
 #[cfg(target_os = "windows")]
 use winapi::um::winsock2::{select, fd_set};
 #[cfg(target_os = "linux")]
-use libc::{select, FD_SET as fd_set};
+use libc::{select, fd_set, FD_SET};
 #[cfg(target_os = "windows")]
 use std::os::windows::io::{AsRawSocket};
 #[cfg(target_os = "linux")]
@@ -40,12 +40,25 @@ const APPLICATION_NAME: &str = "mstsc-rs";
 
 /// This is a function just to check if data
 /// is available on socket to work only in one thread
+#[cfg(target_os = "windows")]
 fn wait_for_fd(fd: usize) -> bool {
     unsafe {
         let mut raw_fds: fd_set = mem::zeroed();
         raw_fds.fd_array[0] = fd;
         raw_fds.fd_count = 1;
         let result = select(0, &mut raw_fds, ptr::null_mut(), ptr::null_mut(), ptr::null());
+        result == 1
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn wait_for_fd(fd: usize) -> bool {
+    unsafe {
+        let mut raw_fds: fd_set = mem::zeroed();
+
+        FD_SET(fd as i32, &mut raw_fds);
+        
+        let result = select(fd as i32 + 1, &mut raw_fds, ptr::null_mut(), ptr::null_mut(), ptr::null_mut());
         result == 1
     }
 }
@@ -206,7 +219,7 @@ fn to_scancode(key: Key) -> u16 {
 
 /// Create a tcp stream from main args
 fn tcp_from_args(args: &ArgMatches) -> RdpResult<TcpStream> {
-    let ip = args.value_of("destination").expect("You need to provide a destination argument");
+    let ip = args.value_of("target").expect("You need to provide a target argument");
     let port = args.value_of("port").unwrap_or_default();
 
     // TCP connection
@@ -414,57 +427,48 @@ fn main() {
         .version("0.1.0")
         .author("Sylvain Peyrefitte <citronneur@gmail.com>")
         .about("Secure Remote Desktop Client in RUST")
-        .arg(Arg::with_name("destination")
-                 .short("d")
-                 .long("dest")
+        .arg(Arg::with_name("target")
+                 .long("target")
                  .takes_value(true)
-                 .help("Destination IP of the server"))
+                 .help("Target IP of the server"))
         .arg(Arg::with_name("port")
                  .long("port")
                  .takes_value(true)
                  .default_value("3389")
                  .help("Destination Port"))
         .arg(Arg::with_name("width")
-                 .short("w")
                  .long("width")
                  .takes_value(true)
                  .default_value("800")
                  .help("Screen width"))
         .arg(Arg::with_name("height")
-                 .short("h")
                  .long("height")
                  .takes_value(true)
                  .default_value("600")
                  .help("Screen height"))
         .arg(Arg::with_name("domain")
-                 .short("d")
                  .long("dom")
                  .takes_value(true)
                  .default_value("")
                  .help("Windows domain"))
         .arg(Arg::with_name("username")
-                 .short("u")
                  .long("user")
                  .takes_value(true)
                  .default_value("")
                  .help("Username"))
         .arg(Arg::with_name("password")
-                 .short("p")
                  .long("pass")
                  .takes_value(true)
                  .default_value("")
                  .help("Password"))
         .arg(Arg::with_name("hash")
-                 .short("h")
                  .long("hash")
                  .takes_value(true)
                  .help("NTLM Hash"))
         .arg(Arg::with_name("admin")
-                 .short("a")
                  .long("admin")
                  .help("Restricted admin mode"))
         .arg(Arg::with_name("layout")
-                 .short("l")
                  .long("layout")
                  .takes_value(true)
                  .default_value("us")
