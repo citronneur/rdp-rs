@@ -1,6 +1,6 @@
 use model::link::{Link};
 use model::data::{Message, U16, Component, Trame};
-use model::error::{RdpResult};
+use model::error::{RdpResult, RdpError, RdpErrorKind, Error};
 use std::io::{Cursor, Write, Read};
 use nla::cssp::cssp_connect;
 use nla::sspi::AuthenticationProtocol;

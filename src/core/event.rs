@@ -67,7 +67,7 @@ impl BitmapEvent {
 
         // actually only handle 32 bpp
         if self.bpp != 32 {
-            return Err(Error::RdpError(RdpError::new(RdpErrorKind::NotImplemented, "Decompression Algorithm not implemented")))
+            return Err(Error::RdpError(RdpError::new(RdpErrorKind::NotImplemented, &format!("Decompression Algorithm not implemented for bpp {}", self.bpp))))
         }
 
         let mut result = vec![0 as u8; self.width as usize * self.height as usize * 4];

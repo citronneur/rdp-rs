@@ -162,11 +162,4 @@ pub fn connect<T: Read + Write>(mcs: &mut mcs::Client<T>, domain: &String, usern
     Ok(())
 }
 
-#[cfg(test)]
-mod test {
-    use super::*;
-
-    // Test format of rdp_infos
-}
-
 

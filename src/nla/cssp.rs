@@ -1,4 +1,4 @@
-use nla::asn1::{ASN1, Sequence, ExplicitTag, SequenceOf, ASN1Type, OctetString, Integer};
+use nla::asn1::{ASN1, Sequence, ExplicitTag, SequenceOf, ASN1Type, OctetString, Integer, to_der};
 use model::error::{RdpError, RdpErrorKind, Error, RdpResult};
 use num_bigint::{BigUint};
 use yasna::Tag;
@@ -28,9 +28,7 @@ pub fn create_ts_request(nego: Vec<u8>) -> Vec<u8> {
                 ]
             ])
     ];
-    yasna::construct_der(|writer| {
-        ts_request.write_asn1(writer).unwrap();
-    })
+    to_der(&ts_request)
 }
 
 /// This is the second step in CSSP handshake
@@ -53,11 +51,11 @@ pub fn read_ts_server_challenge(stream: &[u8]) -> RdpResult<Vec<u8>> {
     let mut ts_request = sequence![
         "version" => ExplicitTag::new(Tag::context(0), 2 as Integer),
         "negoTokens" => ExplicitTag::new(Tag::context(1),
-            SequenceOf::reader(Box::new(|| {
+            SequenceOf::reader(|| {
                 Box::new(sequence![
                     "negoToken" => ExplicitTag::new(Tag::context(0), OctetString::new())
                 ])
-            }))
+            })
          )
     ];
 
@@ -98,9 +96,7 @@ pub fn create_ts_authenticate(nego: Vec<u8>, pub_key_auth: Vec<u8>) -> Vec<u8> {
         "pubKeyAuth" => ExplicitTag::new(Tag::context(3), pub_key_auth as OctetString)
     ];
 
-    yasna::construct_der(|writer| {
-        ts_challenge.write_asn1(writer).unwrap();
-    })
+    to_der(&ts_challenge)
 }
 
 pub fn read_public_certificate(stream: &[u8]) -> RdpResult<X509Certificate> {
@@ -152,9 +148,7 @@ fn create_ts_credentials(domain: Vec<u8>, user: Vec<u8>, password: Vec<u8>) -> V
         "credentials" => ExplicitTag::new(Tag::context(1), ts_password_cred_encoded as OctetString)
     ];
 
-    yasna::construct_der(|writer| {
-        ts_credentials.write_asn1(writer).unwrap();
-    })
+    to_der(&ts_credentials)
 }
 
 fn create_ts_authinfo(auth_info: Vec<u8>) -> Vec<u8> {
@@ -163,9 +157,7 @@ fn create_ts_authinfo(auth_info: Vec<u8>) -> Vec<u8> {
         "authInfo" => ExplicitTag::new(Tag::context(2), auth_info)
     ];
 
-    yasna::construct_der(|writer| {
-        ts_authinfo.write_asn1(writer).unwrap()
-    })
+    to_der(&ts_authinfo)
 }
 
 /// This the main function for CSSP protocol

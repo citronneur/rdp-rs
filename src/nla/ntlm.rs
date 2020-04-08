@@ -9,6 +9,8 @@ use md5::{Md5};
 use model::rnd::{random};
 use crypto::rc4::{Rc4};
 use crypto::symmetriccipher::SynchronousStreamCipher;
+use num_enum::TryFromPrimitive;
+use std::convert::TryFrom;
 
 #[repr(u32)]
 #[allow(dead_code)]
@@ -169,7 +171,7 @@ fn get_payload_field(message: &Component, length: u16, buffer_offset: u32) -> Rd
 
 
 #[repr(u16)]
-#[derive(Eq, PartialEq, Hash, Debug)]
+#[derive(Eq, PartialEq, Hash, Debug, TryFromPrimitive)]
 enum AvId {
     MsvAvEOL = 0x0000,
     MsvAvNbComputerName = 0x0001,
@@ -182,25 +184,6 @@ enum AvId {
     MsvAvSingleHost = 0x0008,
     MsvAvTargetName = 0x0009,
     MsvChannelBindings = 0x000A
-}
-
-impl AvId {
-    fn from(code: u16) -> RdpResult<AvId> {
-        match code {
-            0x0000 => Ok(AvId::MsvAvEOL),
-            0x0001 => Ok(AvId::MsvAvNbComputerName),
-            0x0002 => Ok(AvId::MsvAvNbDomainName),
-            0x0003 => Ok(AvId::MsvAvDnsComputerName),
-            0x0004 => Ok(AvId::MsvAvDnsDomainName),
-            0x0005 => Ok(AvId::MsvAvDnsTreeName),
-            0x0006 => Ok(AvId::MsvAvFlags),
-            0x0007 => Ok(AvId::MsvAvTimestamp),
-            0x0008 => Ok(AvId::MsvAvSingleHost),
-            0x0009 => Ok(AvId::MsvAvTargetName),
-            0x000A => Ok(AvId::MsvChannelBindings),
-            _ => Err(Error::RdpError(RdpError::new(RdpErrorKind::InvalidCast, "Invalid convertion for AvId")))
-        }
-    }
 }
 
 /// Av Pair is a Key Value pair structure
@@ -248,7 +231,7 @@ fn read_target_info(data: &[u8]) -> RdpResult<HashMap<AvId, Vec<u8>>> {
     loop {
         let mut element = av_pair();
         element.read(&mut stream)?;
-        let av_id = AvId::from(cast!(DataType::U16, element["AvId"])?)?;
+        let av_id = AvId::try_from(cast!(DataType::U16, element["AvId"])?)?;
         if av_id == AvId::MsvAvEOL {
             break;
         }

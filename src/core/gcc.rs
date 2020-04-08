@@ -217,9 +217,9 @@ pub fn client_core_data(parameter: Option<ClientData>) -> Component {
         "serialNumber" => U32::LE(0),
         "highColorDepth" => U16::LE(HighColor::HighColor24BPP as u16),
         "supportedColorDepths" => U16::LE(
-            Support::RnsUd15BPPSupport as u16 |
+            //Support::RnsUd15BPPSupport as u16 |
             Support::RnsUd16BPPSupport as u16 |
-            Support::RnsUd24BPPSupport as u16 |
+            //Support::RnsUd24BPPSupport as u16 |
             Support::RnsUd32BPPSupport as u16
             ),
         "earlyCapabilityFlags" => U16::LE(CapabilityFlag::RnsUdCsSupportErrinfoPDU as u16),
@@ -308,7 +308,6 @@ pub fn write_conference_create_request(user_data: &[u8]) ->RdpResult<Vec<u8>> {
 }
 
 pub struct ServerData {
-    pub early_capability_flags: u32,
     pub channel_ids: Vec<u16>,
     pub rdp_version : Version
 }
@@ -330,6 +329,7 @@ pub fn read_conference_create_response(cc_response: &mut dyn Read) -> RdpResult<
     let mut result = HashMap::new();
     let mut sub = cc_response.take(length as u64);
     loop {
+
         let mut header = block_header(None, None);
         // No more blocks to read
         if header.read(&mut sub).is_err() {
@@ -361,7 +361,6 @@ pub fn read_conference_create_response(cc_response: &mut dyn Read) -> RdpResult<
 
     // All section are important
     Ok(ServerData{
-        early_capability_flags: cast!(DataType::U32, result[&MessageType::ScCore]["earlyCapabilityFlags"])?,
         channel_ids: cast!(DataType::Trame, result[&MessageType::ScNet]["channelIdArray"])?.into_iter().map(|x| cast!(DataType::U16, x).unwrap()).collect(),
         rdp_version: Version::from(cast!(DataType::U32, result[&MessageType::ScCore]["rdpVersion"])?)
     })

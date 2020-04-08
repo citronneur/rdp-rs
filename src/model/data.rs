@@ -58,11 +58,11 @@ pub enum DataType<'a> {
 /// # use rdp::model::data::{Component, DataType, U32};
 /// # use rdp::model::error::{Error, RdpError, RdpResult, RdpErrorKind};
 /// # fn main() {
-/// let message = component!(
-///     "header" => U32::LE(1234)
-/// );
-/// let header = cast!(DataType::U32, message["header"]).unwrap();
-/// assert_eq!(header, 1234)
+///     let message = component!(
+///         "header" => U32::LE(1234)
+///     );
+///     let header = cast!(DataType::U32, message["header"]).unwrap();
+///     assert_eq!(header, 1234)
 /// # }
 /// ```
 #[macro_export]
