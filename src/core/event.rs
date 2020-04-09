@@ -1,6 +1,6 @@
 use model::error::{RdpResult, Error, RdpError, RdpErrorKind};
 use num_enum::TryFromPrimitive;
-use codec::rle::rle_32_decompress;
+use codec::rle::{rle_32_decompress, rle_16_decompress};
 
 /// A bitmap event is used
 /// to notify client that it received
@@ -66,13 +66,30 @@ impl BitmapEvent {
         }
 
         // actually only handle 32 bpp
-        if self.bpp != 32 {
-            return Err(Error::RdpError(RdpError::new(RdpErrorKind::NotImplemented, &format!("Decompression Algorithm not implemented for bpp {}", self.bpp))))
+        match self.bpp {
+            32 => {
+                let mut result = vec![0 as u8; self.width as usize * self.height as usize * 4];
+                rle_32_decompress(&self.data, self.width as u32, self.height as u32, &mut result)?;
+                Ok(result)
+            },
+            16 => {
+                let mut temp = vec![0 as u16; self.width as usize * self.height as usize];
+                rle_16_decompress(&self.data, self.width as usize, self.height as usize, &mut temp)?;
+                let mut result = vec![0 as u8; self.width as usize * self.height as usize * 4];
+                for i in 0..self.height {
+                    for j in 0..self.width {
+                        let index = (i * self.width + j) as usize;
+                        let v = temp[index];
+                        result[index * 4 + 3] = 0xff;
+                        result[index * 4 + 2] = (((((v >> 11) & 0x1f) * 527) + 23) >> 6) as u8;
+                        result[index * 4 + 1] = (((((v >> 5) & 0x3f) * 259) + 33) >> 6) as u8;
+                        result[index * 4] = ((((v & 0x1f) * 527) + 23) >> 6) as u8;
+                    }
+                }
+                Ok(result)
+            },
+            _ => Err(Error::RdpError(RdpError::new(RdpErrorKind::NotImplemented, &format!("Decompression Algorithm not implemented for bpp {}", self.bpp))))
         }
-
-        let mut result = vec![0 as u8; self.width as usize * self.height as usize * 4];
-        rle_32_decompress(&self.data, self.width as u32, self.height as u32, &mut result)?;
-        Ok(result)
     }
 }
 

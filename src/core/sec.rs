@@ -77,7 +77,7 @@ fn rdp_extended_infos() -> Component {
 /// When CSSP is not used
 /// interactive logon used credentials
 /// present in this payload
-fn rdp_infos(is_extended_info: bool, domain: &String, username: &String, password: &String) -> Component {
+fn rdp_infos(is_extended_info: bool, domain: &String, username: &String, password: &String, auto_logon: bool) -> Component {
     let mut domain_format = domain.to_unicode();
     domain_format.push(0);
     domain_format.push(0);
@@ -98,7 +98,8 @@ fn rdp_infos(is_extended_info: bool, domain: &String, username: &String, passwor
             InfoFlag::InfoLogonnotify as u32 |
             InfoFlag::InfoLogonerrors as u32 |
             InfoFlag::InfoDisablectrlaltdel as u32 |
-            InfoFlag::InfoEnablewindowskey as u32
+            InfoFlag::InfoEnablewindowskey as u32 |
+            if auto_logon { InfoFlag::InfoAutologon as u32 } else { 0 }
         ),
         "cbDomain" => U16::LE((domain_format.len() - 2) as u16),
         "cbUserName" => U16::LE((username_format.len() - 2) as u16),
@@ -135,7 +136,7 @@ fn security_header() -> Component {
 /// let mut mcs = mcs::Client(...).unwrap();
 /// sec::connect(&mut mcs).unwrap();
 /// ```
-pub fn connect<T: Read + Write>(mcs: &mut mcs::Client<T>, domain: &String, username: &String, password: &String) -> RdpResult<()> {
+pub fn connect<T: Read + Write>(mcs: &mut mcs::Client<T>, domain: &String, username: &String, password: &String, auto_logon: bool) -> RdpResult<()> {
     mcs.write(
         &"global".to_string(),
         trame![
@@ -145,7 +146,8 @@ pub fn connect<T: Read + Write>(mcs: &mut mcs::Client<T>, domain: &String, usern
                 mcs.is_rdp_version_5_plus(),
                 domain,
                 username,
-                password
+                password,
+                auto_logon
             )
         ]
     )?;

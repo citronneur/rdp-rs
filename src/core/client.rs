@@ -144,7 +144,11 @@ pub struct Connector {
     /// Password
     password: String,
     /// When you only want to pass the hash
-    password_hash: Option<Vec<u8>>
+    password_hash: Option<Vec<u8>>,
+    /// Set autologon flags during security logon
+    auto_logon: bool,
+    /// Do not send creds to CredSSP
+    blank_creds: bool
 }
 
 impl Connector {
@@ -167,7 +171,9 @@ impl Connector {
             domain: "".to_string(),
             username: "".to_string(),
             password: "".to_string(),
-            password_hash: None
+            password_hash: None,
+            auto_logon: false,
+            blank_creds: false
         }
     }
 
@@ -204,7 +210,8 @@ impl Connector {
             tpkt::Client::new(tcp),
             x224::Protocols::ProtocolSSL as u32 | x224::Protocols::ProtocolHybrid as u32,
             Some(&mut authentication),
-            self.restricted_admin_mode
+            self.restricted_admin_mode,
+            self.blank_creds
         )?;
 
         // Create MCS layer and connect it
@@ -216,14 +223,16 @@ impl Connector {
                 &mut mcs,
                 &"".to_string(),
                 &"".to_string(),
-                &"".to_string()
+                &"".to_string(),
+                self.auto_logon
             )?;
         } else {
             sec::connect(
                 &mut mcs,
                 &self.domain,
                 &self.username,
-                &self.password
+                &self.password,
+                self.auto_logon
             )?;
         }
 
@@ -274,6 +283,18 @@ impl Connector {
     /// Set the keyboard layout
     pub fn layout(mut self, layout: KeyboardLayout) -> Self {
         self.layout = layout;
+        self
+    }
+
+    /// Switch on the AutoLogon flag
+    pub fn auto_logon(mut self, auto_logon: bool) -> Self {
+        self.auto_logon = auto_logon;
+        self
+    }
+
+    /// Send blank creds at the end of CRedSSP
+    pub fn blank_creds(mut self, blank_creds: bool) -> Self {
+        self.blank_creds = blank_creds;
         self
     }
 }

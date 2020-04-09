@@ -78,7 +78,13 @@ pub unsafe fn transmute_vec<S, T>(mut vec: Vec<S>) -> Vec<T> {
 /// to accelerate data transfer
 fn fast_bitmap_transfer(buffer: &mut Vec<u32>, width: usize, bitmap: BitmapEvent) {
     let data = if bitmap.is_compress {
-        bitmap.decompress().unwrap()
+        match bitmap.decompress() {
+            Ok(e) => e,
+            Err(_) => {
+                println!("Error during decompression");
+                return;
+            }
+        }
     } else {
         bitmap.data
     };
@@ -249,11 +255,15 @@ fn rdp_from_args<S: Read + Write>(args: &ArgMatches, stream: S) -> RdpResult<Rdp
     let ntlm_hash = args.value_of("hash");
     let restricted_admin_mode = args.is_present("admin");
     let layout = KeyboardLayout::from(args.value_of("layout").unwrap_or_default());
+    let auto_logon = args.is_present("auto_logon");
+    let blank_creds = args.is_present("blank_creds");
 
     let mut rdp_connector =  Connector::new()
         .screen(width, height)
         .credentials(domain.to_string(), username.to_string(), password.to_string())
         .set_restricted_admin_mode(restricted_admin_mode)
+        .auto_logon(auto_logon)
+        .blank_creds(blank_creds)
         .layout(layout);
 
     if let Some(hash) = ntlm_hash {
@@ -473,6 +483,12 @@ fn main() {
                  .takes_value(true)
                  .default_value("us")
                  .help("Keyboard layout: us or fr"))
+        .arg(Arg::with_name("auto_logon")
+                 .long("auto")
+                 .help("AutoLogon mode in case of SSL nego"))
+        .arg(Arg::with_name("blank_creds")
+                 .long("blank")
+                 .help("Do not send credentials at the last CredSSP payload"))
         .get_matches();
 
     // Create a tcp stream from args

@@ -175,11 +175,14 @@ impl<S: Read + Write> Client<S> {
     /// Authentication is negotiated
     ///
     /// # Example
-    /// ```rust, ignore
+    /// ```no_run
+    /// use std::net::{SocketAddr, TcpStream};
+    /// use rdp::core::tpkt;
+    /// use rdp::nla::ntlm::Ntlm;
     /// let addr = "127.0.0.1:3389".parse::<SocketAddr>().unwrap();
     /// let mut tcp = TcpStream::connect(&addr).unwrap();
-    /// let mut tpkt = tpkt::Client(Stream::Raw(tcp));
-    /// let mut tpkt_nla = tpkt.start_nla(&mut Ntlm::new("domain".to_string(), "username".to_string(), "password".to_string(), false)
+    /// let mut tpkt = tpkt::Client(tpkt::Stream::Raw(tcp));
+    /// let mut tpkt_nla = tpkt.start_nla(&mut Ntlm::new("domain".to_string(), "username".to_string(), "password".to_string()), false, false);
     /// ```
     pub fn start_nla(self, authentication_protocol: &mut dyn AuthenticationProtocol, restricted_admin_mode: bool) -> RdpResult<Client<S>> {
         let mut link = self.transport.start_ssl()?;
