@@ -171,13 +171,12 @@ impl<S: Read + Write> Link<S> {
     /// use std::net::{TcpStream, SocketAddr};
     /// let addr = "127.0.0.1:3389".parse::<SocketAddr>().unwrap();
     /// let link_tcp = Link::new(Stream::Raw(TcpStream::connect(&addr).unwrap()));
-    /// let link_ssl = link_tcp.start_ssl().unwrap();
+    /// let link_ssl = link_tcp.start_ssl(false).unwrap();
     /// ```
-    pub fn start_ssl(self) -> RdpResult<Link<S>> {
+    pub fn start_ssl(self, check_certificate: bool) -> RdpResult<Link<S>> {
         let mut builder = TlsConnector::builder();
-        builder.danger_accept_invalid_certs(true);
+        builder.danger_accept_invalid_certs(!check_certificate);
         builder.use_sni(false);
-        builder.danger_accept_invalid_hostnames(true);
 
         let connector = builder.build()?;
 
@@ -196,7 +195,7 @@ impl<S: Read + Write> Link<S> {
     /// use std::net::{TcpStream, SocketAddr};
     /// let addr = "127.0.0.1:3389".parse::<SocketAddr>().unwrap();
     /// let link_tcp = Link::new(Stream::Raw(TcpStream::connect(&addr).unwrap()));
-    /// let link_ssl = link_tcp.start_ssl().unwrap();
+    /// let link_ssl = link_tcp.start_ssl(false).unwrap();
     /// let certificate = link_ssl.get_peer_certificate().unwrap().unwrap();
     /// ```
     pub fn get_peer_certificate(&self) -> RdpResult<Option<Certificate>> {

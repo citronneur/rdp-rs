@@ -183,13 +183,14 @@ impl From<u16> for MessageType {
 
 /// In case of client
 /// This is all mandatory fields need by client core data
-#[derive(Copy, Clone)]
+#[derive(Clone)]
 pub struct ClientData {
     pub width: u16,
     pub height: u16,
     pub layout: KeyboardLayout,
     pub server_selected_protocol: u32,
-    pub rdp_version: Version
+    pub rdp_version: Version,
+    pub name: String
 }
 
 /// This is the first client specific data
@@ -198,7 +199,22 @@ pub struct ClientData {
 /// RDP they are not use
 /// https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-rdpbcgr/00f1da4a-ee9c-421a-852f-c19f92343d73?redirectedfrom=MSDN
 pub fn client_core_data(parameter: Option<ClientData>) -> Component {
-    let client_parameter = parameter.unwrap_or(ClientData { width: 0, height: 0, layout: KeyboardLayout::French, server_selected_protocol: 0, rdp_version: Version::RdpVersion5plus});
+    let client_parameter = parameter.unwrap_or(
+        ClientData {
+            width: 0,
+            height: 0,
+            layout: KeyboardLayout::French,
+            server_selected_protocol: 0,
+            rdp_version: Version::RdpVersion5plus,
+            name: "".to_string()
+        });
+
+    let client_name = if client_parameter.name.len() >= 16 {
+        (&client_parameter.name[0..16]).to_string()
+    } else {
+        client_parameter.name.clone() + &"\x00".repeat(16 - client_parameter.name.len())
+    };
+
     component![
         "version" => U32::LE(client_parameter.rdp_version as u32),
         "desktopWidth" => U16::LE(client_parameter.width),
@@ -207,7 +223,7 @@ pub fn client_core_data(parameter: Option<ClientData>) -> Component {
         "sasSequence" => U16::LE(Sequence::RnsUdSasDel as u16),
         "kbdLayout" => U32::LE(client_parameter.layout as u32),
         "clientBuild" => U32::LE(3790),
-        "clientName" => "rdp-rs\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00".to_string().to_unicode(),
+        "clientName" => client_name.to_string().to_unicode(),
         "keyboardType" => U32::LE(KeyboardType::Ibm101102Keys as u32),
         "keyboardSubType" => U32::LE(0),
         "keyboardFnKeys" => U32::LE(12),

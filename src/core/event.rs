@@ -1,6 +1,6 @@
 use model::error::{RdpResult, Error, RdpError, RdpErrorKind};
 use num_enum::TryFromPrimitive;
-use codec::rle::{rle_32_decompress, rle_16_decompress};
+use codec::rle::{rle_32_decompress, rle_16_decompress, rgb565torgb32};
 
 /// A bitmap event is used
 /// to notify client that it received
@@ -59,34 +59,40 @@ impl BitmapEvent {
     ///     }
     /// }).unwrap()
     /// ```
-    pub fn decompress(&self) -> RdpResult<Vec<u8>> {
-        // no compress
-        if !self.is_compress {
-            return Err(Error::RdpError(RdpError::new(RdpErrorKind::InvalidData, "Trying decompress non compressed image")))
-        }
+    pub fn decompress(self) -> RdpResult<Vec<u8>> {
 
         // actually only handle 32 bpp
         match self.bpp {
             32 => {
-                let mut result = vec![0 as u8; self.width as usize * self.height as usize * 4];
-                rle_32_decompress(&self.data, self.width as u32, self.height as u32, &mut result)?;
-                Ok(result)
+                // 32 bpp is straight forward
+                Ok(
+                    if self.is_compress {
+                        let mut result = vec![0 as u8; self.width as usize * self.height as usize * 4];
+                        rle_32_decompress(&self.data, self.width as u32, self.height as u32, &mut result)?;
+                        result
+                    } else {
+                        self.data
+                    }
+                )
             },
             16 => {
-                let mut temp = vec![0 as u16; self.width as usize * self.height as usize];
-                rle_16_decompress(&self.data, self.width as usize, self.height as usize, &mut temp)?;
-                let mut result = vec![0 as u8; self.width as usize * self.height as usize * 4];
-                for i in 0..self.height {
-                    for j in 0..self.width {
-                        let index = (i * self.width + j) as usize;
-                        let v = temp[index];
-                        result[index * 4 + 3] = 0xff;
-                        result[index * 4 + 2] = (((((v >> 11) & 0x1f) * 527) + 23) >> 6) as u8;
-                        result[index * 4 + 1] = (((((v >> 5) & 0x3f) * 259) + 33) >> 6) as u8;
-                        result[index * 4] = ((((v & 0x1f) * 527) + 23) >> 6) as u8;
+                // 16 bpp is more consumer
+                let result_16bpp = if self.is_compress {
+                    let mut result = vec![0 as u16; self.width as usize * self.height as usize * 2];
+                    rle_16_decompress(&self.data, self.width as usize, self.height as usize, &mut result)?;
+                    result
+                } else {
+                    let mut result = vec![0 as u16; self.width as usize * self.height as usize];
+                    for i in 0..self.height {
+                        for j in 0..self.width {
+                            let src = (((self.height - i - 1) * self.width + j) * 2) as usize;
+                            result[(i * self.width + j) as usize] = (self.data[src + 1] as u16) << 8 | self.data[src] as u16;
+                        }
                     }
-                }
-                Ok(result)
+                    result
+                };
+
+                Ok(rgb565torgb32(&result_16bpp, self.width as usize, self.height as usize))
             },
             _ => Err(Error::RdpError(RdpError::new(RdpErrorKind::NotImplemented, &format!("Decompression Algorithm not implemented for bpp {}", self.bpp))))
         }

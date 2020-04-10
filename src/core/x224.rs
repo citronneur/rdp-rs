@@ -205,11 +205,11 @@ impl<S: Read + Write> Client<S> {
     ///     false
     /// ).unwrap()
     /// ```
-    pub fn connect(mut tpkt: tpkt::Client<S>, security_protocols: u32, authentication_protocol: Option<&mut dyn AuthenticationProtocol>, restricted_admin_mode: bool, blank_creds: bool) -> RdpResult<Client<S>> {
+    pub fn connect(mut tpkt: tpkt::Client<S>, security_protocols: u32, check_certificate: bool, authentication_protocol: Option<&mut dyn AuthenticationProtocol>, restricted_admin_mode: bool, blank_creds: bool) -> RdpResult<Client<S>> {
         Self::write_connection_request(&mut tpkt, security_protocols, Some(if restricted_admin_mode { RequestMode::RestrictedAdminModeRequired as u8} else { 0 }))?;
         match Self::read_connection_confirm(&mut tpkt)? {
-            Protocols::ProtocolHybrid => Ok(Client::new(tpkt.start_nla(authentication_protocol.unwrap(), restricted_admin_mode || blank_creds)?,Protocols::ProtocolHybrid)),
-            Protocols::ProtocolSSL => Ok(Client::new(tpkt.start_ssl()?, Protocols::ProtocolSSL)),
+            Protocols::ProtocolHybrid => Ok(Client::new(tpkt.start_nla(check_certificate, authentication_protocol.unwrap(), restricted_admin_mode || blank_creds)?,Protocols::ProtocolHybrid)),
+            Protocols::ProtocolSSL => Ok(Client::new(tpkt.start_ssl(check_certificate)?, Protocols::ProtocolSSL)),
             Protocols::ProtocolRDP => Ok(Client::new(tpkt, Protocols::ProtocolRDP)),
             _ => Err(Error::RdpError(RdpError::new(RdpErrorKind::InvalidProtocol, "Security protocol not handled")))
         }

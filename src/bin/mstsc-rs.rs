@@ -77,22 +77,27 @@ pub unsafe fn transmute_vec<S, T>(mut vec: Vec<S>) -> Vec<T> {
 /// This function use unsafe copy
 /// to accelerate data transfer
 fn fast_bitmap_transfer(buffer: &mut Vec<u32>, width: usize, bitmap: BitmapEvent) {
-    let data = if bitmap.is_compress {
-        match bitmap.decompress() {
-            Ok(e) => e,
-            Err(_) => {
-                println!("Error during decompression");
-                return;
-            }
+    let bitmap_dest_left = bitmap.dest_left;
+    let bitmap_dest_right = bitmap.dest_right;
+    let bitmap_dest_bottom = bitmap.dest_bottom;
+    let bitmap_dest_top = bitmap.dest_top;
+    let bitmap_width = bitmap.width;
+
+    let data = match bitmap.decompress() {
+        Ok(e) => e,
+        Err(_) => {
+            println!("Error during decompression");
+            return;
         }
-    } else {
-        bitmap.data
     };
+
+    // Use some unsafe method to faster
+    // data transfert between buffers
     unsafe {
         let data_aligned :Vec<u32> = transmute_vec(data);
-        for i in 0..((bitmap.dest_bottom - bitmap.dest_top + 1) as u16) {
-            let dest_i = (i + bitmap.dest_top) as usize * width as usize + bitmap.dest_left as usize;
-            copy_nonoverlapping(data_aligned.as_ptr().offset((i * bitmap.width) as isize), buffer.as_mut_ptr().offset(dest_i as isize), (bitmap.dest_right - bitmap.dest_left + 1) as usize)
+        for i in 0..((bitmap_dest_bottom - bitmap_dest_top + 1) as u16) {
+            let dest_i = (i + bitmap_dest_top) as usize * width as usize + bitmap_dest_left as usize;
+            copy_nonoverlapping(data_aligned.as_ptr().offset((i * bitmap_width) as isize), buffer.as_mut_ptr().offset(dest_i as isize), (bitmap_dest_right - bitmap_dest_left + 1) as usize)
         }
     }
 
@@ -196,29 +201,29 @@ fn to_scancode(key: Key) -> u16 {
         Key::NumPad3 => 0x0051,
         Key::NumPad0 => 0x0052,
         Key::NumPadDot => 0x0053,
- 	 	Key::F11 => 0x0057,
- 	 	Key::F12 => 0x0058,
- 	 	Key::F13 => 0x0064,
- 	 	Key::F14 => 0x0065,
- 	 	Key::F15 => 0x0066,
- 	 	Key::NumPadEnter => 0xE01C,
- 	 	Key::RightCtrl => 0xE01D,
- 	 	Key::NumPadSlash => 0xE035,
- 	 	Key::RightAlt => 0xE038,
- 	 	Key::NumLock => 0xE045,
- 	 	Key::Home => 0xE047,
- 	 	Key::Up => 0xE048,
- 	 	Key::PageUp => 0xE049,
- 	 	Key::Left => 0xE04B,
- 	 	Key::Right => 0xE04D,
- 	 	Key::End => 0xE04F,
- 	 	Key::Down => 0xE050,
- 	 	Key::PageDown => 0xE051,
- 	 	Key::Insert => 0xE052,
- 	 	Key::Delete => 0xE053,
- 	 	Key::LeftSuper => 0xE05B,
- 	 	Key::RightSuper => 0xE05C,
- 	 	Key::Menu => 0xE05D,
+        Key::F11 => 0x0057,
+        Key::F12 => 0x0058,
+        Key::F13 => 0x0064,
+        Key::F14 => 0x0065,
+        Key::F15 => 0x0066,
+        Key::NumPadEnter => 0xE01C,
+        Key::RightCtrl => 0xE01D,
+        Key::NumPadSlash => 0xE035,
+        Key::RightAlt => 0xE038,
+        Key::NumLock => 0xE045,
+        Key::Home => 0xE047,
+        Key::Up => 0xE048,
+        Key::PageUp => 0xE049,
+        Key::Left => 0xE04B,
+        Key::Right => 0xE04D,
+        Key::End => 0xE04F,
+        Key::Down => 0xE050,
+        Key::PageDown => 0xE051,
+        Key::Insert => 0xE052,
+        Key::Delete => 0xE053,
+        Key::LeftSuper => 0xE05B,
+        Key::RightSuper => 0xE05C,
+        Key::Menu => 0xE05D,
         _ => panic!("foo")
     }
 }
@@ -252,11 +257,14 @@ fn rdp_from_args<S: Read + Write>(args: &ArgMatches, stream: S) -> RdpResult<Rdp
     let domain = args.value_of("domain").unwrap_or_default();
     let username = args.value_of("username").unwrap_or_default();
     let password = args.value_of("password").unwrap_or_default();
+    let name = args.value_of("name").unwrap_or_default();
     let ntlm_hash = args.value_of("hash");
     let restricted_admin_mode = args.is_present("admin");
     let layout = KeyboardLayout::from(args.value_of("layout").unwrap_or_default());
     let auto_logon = args.is_present("auto_logon");
     let blank_creds = args.is_present("blank_creds");
+    let check_certificate = args.is_present("check_certificate");
+    let use_nla = !args.is_present("disable_nla");
 
     let mut rdp_connector =  Connector::new()
         .screen(width, height)
@@ -264,7 +272,10 @@ fn rdp_from_args<S: Read + Write>(args: &ArgMatches, stream: S) -> RdpResult<Rdp
         .set_restricted_admin_mode(restricted_admin_mode)
         .auto_logon(auto_logon)
         .blank_creds(blank_creds)
-        .layout(layout);
+        .layout(layout)
+        .check_certificate(check_certificate)
+        .name(name.to_string())
+        .use_nla(use_nla);
 
     if let Some(hash) = ntlm_hash {
         rdp_connector = rdp_connector.set_password_hash(hex::decode(hash).map_err(|e| {
@@ -489,6 +500,16 @@ fn main() {
         .arg(Arg::with_name("blank_creds")
                  .long("blank")
                  .help("Do not send credentials at the last CredSSP payload"))
+        .arg(Arg::with_name("check_certificate")
+                 .long("check")
+                 .help("Check the target SSL certificate"))
+        .arg(Arg::with_name("disable_nla")
+                 .long("ssl")
+                 .help("Disable Netwoek Level Authentication and only use SSL"))
+        .arg(Arg::with_name("name")
+                 .long("name")
+                 .default_value("mstsc-rs")
+                 .help("Name of the client send to the server"))
         .get_matches();
 
     // Create a tcp stream from args

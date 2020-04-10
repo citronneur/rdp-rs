@@ -1,6 +1,11 @@
 use model::error::{RdpResult, Error, RdpError, RdpErrorKind};
-use std::io::{Cursor, Read, BufRead};
-use byteorder::{ReadBytesExt, BigEndian, LittleEndian};
+use std::io::{Cursor, Read};
+use byteorder::{ReadBytesExt, LittleEndian};
+
+/// All this uncompress code
+/// Are directly inspired from the source code
+/// of rdesktop and diretly port to rust
+/// Need a little bit of refactoring for rust
 
 fn process_plane(input: &mut dyn Read, width: u32, height: u32, output: &mut [u8]) -> RdpResult<()> {
     let mut indexw;
@@ -105,10 +110,6 @@ pub fn rle_32_decompress(input: &[u8], width: u32, height: u32, output: &mut [u8
 	Ok(())
 }
 
-
-/// # Example
-/// ```
-/// ```
 macro_rules! repeat {
     ($expr:expr, $count:expr, $x:expr, $width:expr) => {
     	while (($count & !0x7) != 0) && ($x + 8) < $width {
@@ -135,9 +136,9 @@ pub fn rle_16_decompress(input: &[u8], width: usize, mut height: usize, output: 
 	let mut code: u8;
 	let mut opcode: u8;
 	let mut lastopcode: u8 = 0xFF;
-	let mut count: u16 = 0;
-	let mut offset: u16 = 0;
-	let mut isfillormix = false;
+	let mut count: u16;
+	let mut offset: u16;
+	let mut isfillormix;
 	let mut insertmix = false;
 	let mut x: usize = width;
 	let mut prevline : Option<usize> = None;
@@ -146,8 +147,8 @@ pub fn rle_16_decompress(input: &[u8], width: usize, mut height: usize, output: 
 	let mut colour2 = 0;
 	let mut mix = 0xffff;
 	let mut mask:u8 = 0;
-	let mut fom_mask : u8 = 0;
-	let mut mixmask:u8 = 0;
+	let mut fom_mask : u8;
+	let mut mixmask:u8;
 	let mut bicolour = false;
 
 	while (input_cursor.position() as usize) < input.len() {
@@ -326,4 +327,20 @@ pub fn rle_16_decompress(input: &[u8], width: usize, mut height: usize, output: 
 	}
 
 	Ok(())
+}
+
+
+pub fn rgb565torgb32(input: &[u16], width: usize, height: usize) -> Vec<u8> {
+	let mut result_32_bpp = vec![0 as u8; width as usize * height as usize * 4];
+	for i in 0..height {
+		for j in 0..width {
+			let index = (i * width + j) as usize;
+			let v = input[index];
+			result_32_bpp[index * 4 + 3] = 0xff;
+			result_32_bpp[index * 4 + 2] = (((((v >> 11) & 0x1f) * 527) + 23) >> 6) as u8;
+			result_32_bpp[index * 4 + 1] = (((((v >> 5) & 0x3f) * 259) + 33) >> 6) as u8;
+			result_32_bpp[index * 4] = ((((v & 0x1f) * 527) + 23) >> 6) as u8;
+		}
+	}
+	result_32_bpp
 }

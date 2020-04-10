@@ -161,14 +161,17 @@ impl<S: Read + Write> Client<S> {
     /// raw data stream into a SSL data stream
     ///
     /// # Example
-    /// ```rust, ignore
+    /// ```no_run
+    /// use std::net::{SocketAddr, TcpStream};
+    /// use rdp::core::tpkt;
+    /// use rdp::model::link;
     /// let addr = "127.0.0.1:3389".parse::<SocketAddr>().unwrap();
     /// let mut tcp = TcpStream::connect(&addr).unwrap();
-    /// let mut tpkt = tpkt::Client(Stream::Raw(tcp));
-    /// let mut tpkt_ssl = tpkt.start_ssl().unwrap();
+    /// let mut tpkt = tpkt::Client::new(link::Link::new(link::Stream::Raw(tcp)));
+    /// let mut tpkt_ssl = tpkt.start_ssl(false).unwrap();
     /// ```
-    pub fn start_ssl(self) -> RdpResult<Client<S>> {
-        Ok(Client::new(self.transport.start_ssl()?))
+    pub fn start_ssl(self, check_certificate: bool) -> RdpResult<Client<S>> {
+        Ok(Client::new(self.transport.start_ssl(check_certificate)?))
     }
 
     /// This function is used when NLA (Network Level Authentication)
@@ -179,17 +182,19 @@ impl<S: Read + Write> Client<S> {
     /// use std::net::{SocketAddr, TcpStream};
     /// use rdp::core::tpkt;
     /// use rdp::nla::ntlm::Ntlm;
+    /// use rdp::model::link;
     /// let addr = "127.0.0.1:3389".parse::<SocketAddr>().unwrap();
     /// let mut tcp = TcpStream::connect(&addr).unwrap();
-    /// let mut tpkt = tpkt::Client(tpkt::Stream::Raw(tcp));
-    /// let mut tpkt_nla = tpkt.start_nla(&mut Ntlm::new("domain".to_string(), "username".to_string(), "password".to_string()), false, false);
+    /// let mut tpkt = tpkt::Client::new(link::Link::new(link::Stream::Raw(tcp)));
+    /// let mut tpkt_nla = tpkt.start_nla(false, &mut Ntlm::new("domain".to_string(), "username".to_string(), "password".to_string()), false);
     /// ```
-    pub fn start_nla(self, authentication_protocol: &mut dyn AuthenticationProtocol, restricted_admin_mode: bool) -> RdpResult<Client<S>> {
-        let mut link = self.transport.start_ssl()?;
+    pub fn start_nla(self, check_certificate: bool, authentication_protocol: &mut dyn AuthenticationProtocol, restricted_admin_mode: bool) -> RdpResult<Client<S>> {
+        let mut link = self.transport.start_ssl(check_certificate)?;
         cssp_connect(&mut link, authentication_protocol, restricted_admin_mode)?;
         Ok(Client::new(link))
     }
 
+    /// Shutdown current connection
     pub fn shutdown(&mut self) -> RdpResult<()> {
         self.transport.shutdown()
     }

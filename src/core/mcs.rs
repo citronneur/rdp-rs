@@ -180,13 +180,14 @@ impl<S: Read + Write> Client<S> {
     /// Write connection initial payload
     /// This payload include a lot of
     /// client specific config parameters
-    fn write_connect_initial(&mut self, screen_width: u16, screen_height: u16, keyboard_layout: KeyboardLayout) -> RdpResult<()> {
+    fn write_connect_initial(&mut self, screen_width: u16, screen_height: u16, keyboard_layout: KeyboardLayout, client_name: String) -> RdpResult<()> {
         let client_core_data = client_core_data(Some(ClientData {
             width: screen_width,
             height: screen_height,
             layout: keyboard_layout,
             server_selected_protocol: self.x224.get_selected_protocols() as u32,
-            rdp_version: Version::RdpVersion5plus
+            rdp_version: Version::RdpVersion5plus,
+            name: client_name
         }));
         let client_security_data = client_security_data();
         let client_network_data = client_network_data(trame![]);
@@ -222,8 +223,8 @@ impl<S: Read + Write> Client<S> {
     /// let mut mcs = mcs::Client(x224);
     /// mcs.connect(800, 600, KeyboardLayout::French).unwrap()
     /// ```
-    pub fn connect(&mut self, screen_width: u16, screen_height: u16, keyboard_layout: KeyboardLayout) -> RdpResult<()> {
-        self.write_connect_initial(screen_width, screen_height, keyboard_layout)?;
+    pub fn connect(&mut self, client_name: String, screen_width: u16, screen_height: u16, keyboard_layout: KeyboardLayout) -> RdpResult<()> {
+        self.write_connect_initial(screen_width, screen_height, keyboard_layout, client_name)?;
         self.read_connect_response()?;
         self.x224.write(erect_domain_request()?)?;
         self.x224.write(attach_user_request())?;

@@ -415,7 +415,9 @@ impl FastPathUpdate {
         let mut result = match fp_update_type {
             FastPathUpdateType::FastpathUpdatetypeBitmap => ts_fp_update_bitmap(),
             FastPathUpdateType::FastpathUpdatetypeColor => ts_colorpointerattribute(),
-            _ => return Err(Error::RdpError(RdpError::new(RdpErrorKind::NotImplemented, &format!("GLOBAL: Fast PAth parsing not implemented {:?}", fp_update_type))))
+            FastPathUpdateType::FastpathUpdatetypeSynchronize => ts_fp_update_synchronize(),
+            FastPathUpdateType::FastpathUpdatetypePtrNull => ts_fp_systempointerhiddenattribute(),
+            _ => return Err(Error::RdpError(RdpError::new(RdpErrorKind::NotImplemented, &format!("GLOBAL: Fast Path parsing not implemented {:?}", fp_update_type))))
         };
         result.message.read(&mut Cursor::new(cast!(DataType::Slice, fast_path["updateData"])?))?;
         Ok(result)
@@ -492,6 +494,25 @@ fn ts_colorpointerattribute() -> FastPathUpdate {
     }
 }
 
+/// Empty fields
+///
+/// https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-rdpbcgr/406dc477-c516-41cb-a8a0-ab4cc7119621
+fn ts_fp_update_synchronize() -> FastPathUpdate {
+    FastPathUpdate {
+        fp_type: FastPathUpdateType::FastpathUpdatetypeSynchronize,
+        message: component![]
+    }
+}
+
+/// Empty fields
+///
+/// https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-rdpbcgr/406dc477-c516-41cb-a8a0-ab4cc7119621
+fn ts_fp_systempointerhiddenattribute() -> FastPathUpdate {
+    FastPathUpdate {
+        fp_type: FastPathUpdateType::FastpathUpdatetypePtrNull,
+        message: component![]
+    }
+}
 
 enum ClientState {
     /// Wait for demand active pdu from server
@@ -527,7 +548,9 @@ pub struct Client {
     /// channel during connection sequence
     share_id: Option<u32>,
     /// Keep tracing of server capabilities
-    server_capabilities: Vec<Capability>
+    server_capabilities: Vec<Capability>,
+    /// Name send to the server
+    name: String
 }
 
 impl Client {
@@ -544,10 +567,11 @@ impl Client {
     ///     mcs.get_global_channel_id(),
     ///     800,
     ///     600,
-    ///     KeyboardLayout::US
+    ///     KeyboardLayout::US,
+    ///     "mstsc-rs"
     /// );
     /// ```
-    pub fn new(user_id: u16, channel_id: u16, width: u16, height: u16, layout: KeyboardLayout) -> Client {
+    pub fn new(user_id: u16, channel_id: u16, width: u16, height: u16, layout: KeyboardLayout, name: &str) -> Client {
         Client {
             state: ClientState::DemandActivePDU,
             server_capabilities: Vec::new(),
@@ -556,7 +580,8 @@ impl Client {
             channel_id,
             width,
             height,
-            layout
+            layout,
+            name: String::from(name)
         }
     }
 
@@ -696,9 +721,8 @@ impl Client {
                                 ));
                             }
                         },
-                        FastPathUpdateType::FastpathUpdatetypeColor => {
-                            // TODO handle cursor
-                        },
+                        // do nothing
+                        FastPathUpdateType::FastpathUpdatetypeColor | FastPathUpdateType::FastpathUpdatetypePtrNull | FastPathUpdateType::FastpathUpdatetypeSynchronize => (),
                         _ => println!("GLOBAL: Fast Path order not handled {:?}", order.fp_type)
                     }
                 },
@@ -712,7 +736,7 @@ impl Client {
     /// Write confirm active pdu
     /// This PDU include all client capabilities
     fn write_confirm_active_pdu<S: Read + Write>(&mut self, mcs: &mut mcs::Client<S>) -> RdpResult<()> {
-        let pdu = ts_confirm_active_pdu(self.share_id, Some(b"rdp-rs".to_vec()), Some(Array::from_trame(
+        let pdu = ts_confirm_active_pdu(self.share_id, Some(self.name.as_bytes().to_vec()), Some(Array::from_trame(
             trame![
                 capability_set(Some(capability::ts_general_capability_set(Some(capability::GeneralExtraFlag::LongCredentialsSupported as u16 | capability::GeneralExtraFlag::NoBitmapCompressionHdr as u16 | capability::GeneralExtraFlag::EncSaltedChecksum as u16 | capability::GeneralExtraFlag::FastpathOutputSupported as u16)))),
                 capability_set(Some(capability::ts_bitmap_capability_set(Some(0x0018), Some(self.width), Some(self.height)))),

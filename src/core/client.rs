@@ -148,7 +148,15 @@ pub struct Connector {
     /// Set autologon flags during security logon
     auto_logon: bool,
     /// Do not send creds to CredSSP
-    blank_creds: bool
+    blank_creds: bool,
+    /// When using SSL check or not
+    /// the certificate during SSL handshake
+    check_certificate: bool,
+    /// Client name exposed to the server
+    name: String,
+    /// Use network level authentication
+    /// default TRUE
+    use_nla: bool
 }
 
 impl Connector {
@@ -173,7 +181,10 @@ impl Connector {
             password: "".to_string(),
             password_hash: None,
             auto_logon: false,
-            blank_creds: false
+            blank_creds: false,
+            check_certificate: false,
+            name: "rdp-rs".to_string(),
+            use_nla: true
         }
     }
 
@@ -206,9 +217,15 @@ impl Connector {
         };
         // Create the x224 layer
         // With all negotiated security stuff and credentials
+        let mut protocols = x224::Protocols::ProtocolSSL as u32;
+        if self.use_nla {
+            protocols |= x224::Protocols::ProtocolHybrid as u32
+        }
+
         let x224 = x224::Client::connect(
             tpkt::Client::new(tcp),
-            x224::Protocols::ProtocolSSL as u32 | x224::Protocols::ProtocolHybrid as u32,
+            protocols,
+            self.check_certificate,
             Some(&mut authentication),
             self.restricted_admin_mode,
             self.blank_creds
@@ -216,7 +233,7 @@ impl Connector {
 
         // Create MCS layer and connect it
         let mut mcs = mcs::Client::new(x224);
-        mcs.connect(self.width, self.height, self.layout)?;
+        mcs.connect(self.name.clone(), self.width, self.height, self.layout)?;
         // state less connection for old secure layer
         if self.restricted_admin_mode {
             sec::connect(
@@ -242,7 +259,8 @@ impl Connector {
             mcs.get_global_channel_id(),
             self.width,
             self.height,
-            self.layout
+            self.layout,
+            &self.name
         );
 
         Ok(RdpClient {
@@ -295,6 +313,24 @@ impl Connector {
     /// Send blank creds at the end of CRedSSP
     pub fn blank_creds(mut self, blank_creds: bool) -> Self {
         self.blank_creds = blank_creds;
+        self
+    }
+
+    /// Enable or not the check of SSL certificate
+    pub fn check_certificate(mut self, check_certificate: bool) -> Self {
+        self.check_certificate = check_certificate;
+        self
+    }
+
+    /// Set the default name send to server
+    pub fn name(mut self, name: String) -> Self {
+        self.name = name;
+        self
+    }
+
+    /// Enable or disable Network Level Authentication
+    pub fn use_nla(mut self, use_nla: bool) -> Self {
+        self.use_nla = use_nla;
         self
     }
 }
