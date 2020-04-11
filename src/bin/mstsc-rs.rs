@@ -92,7 +92,7 @@ fn fast_bitmap_transfer(buffer: &mut Vec<u32>, width: usize, bitmap: BitmapEvent
         for i in 0..(bitmap_dest_bottom - bitmap_dest_top + 1) {
             let dest_i = (i + bitmap_dest_top) * width + bitmap_dest_left;
             let src_i = i * bitmap_width;
-            let count = (bitmap_dest_right - bitmap_dest_left + 1);
+            let count = bitmap_dest_right - bitmap_dest_left + 1;
             if dest_i > buffer.len() || dest_i + count > buffer.len() || src_i > data_aligned.len() || src_i + count > data_aligned.len() {
                 return Err(Error::RdpError(RdpError::new(RdpErrorKind::InvalidSize, "Image have invalide size")))
             }
@@ -374,7 +374,7 @@ fn main_gui_loop<S: Read + Write>(
         // Refresh loop must faster than 30 Hz
         while now.elapsed().as_micros() < 16600 * 2 {
             match bitmap_receiver.try_recv() {
-                Ok(bitmap) => fast_bitmap_transfer(&mut buffer, width, bitmap),
+                Ok(bitmap) => fast_bitmap_transfer(&mut buffer, width, bitmap)?,
                 Err(mpsc::TryRecvError::Empty) => break,
                 Err(mpsc::TryRecvError::Disconnected) => {
                     sync.store(false, Ordering::Relaxed);
