@@ -4,7 +4,7 @@ Remote Desktop Protocol in RUST
 `rdp-rs` is a pure Rust implementation of Microsoft Remote Desktop Protocol.
 `rdp-rs` is delivery with an client implementation named `mstsc-rs`.
 
-This package is main focused on security, and allows to address user who wants a safe client or security researcher that want to play with RDP.
+This package is focus on security, and allows to address user who wants a safe client or security researcher that want to play with RDP.
 
 ## Why ?
 
