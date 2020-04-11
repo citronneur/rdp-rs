@@ -76,31 +76,31 @@ pub unsafe fn transmute_vec<S, T>(mut vec: Vec<S>) -> Vec<T> {
 /// Copy a bitmap event into the buffer
 /// This function use unsafe copy
 /// to accelerate data transfer
-fn fast_bitmap_transfer(buffer: &mut Vec<u32>, width: usize, bitmap: BitmapEvent) {
-    let bitmap_dest_left = bitmap.dest_left;
-    let bitmap_dest_right = bitmap.dest_right;
-    let bitmap_dest_bottom = bitmap.dest_bottom;
-    let bitmap_dest_top = bitmap.dest_top;
-    let bitmap_width = bitmap.width;
+fn fast_bitmap_transfer(buffer: &mut Vec<u32>, width: usize, bitmap: BitmapEvent) -> RdpResult<()>{
+    let bitmap_dest_left = bitmap.dest_left as usize;
+    let bitmap_dest_right = bitmap.dest_right as usize;
+    let bitmap_dest_bottom = bitmap.dest_bottom as usize;
+    let bitmap_dest_top = bitmap.dest_top as usize;
+    let bitmap_width = bitmap.width as usize;
 
-    let data = match bitmap.decompress() {
-        Ok(e) => e,
-        Err(_) => {
-            println!("Error during decompression");
-            return;
-        }
-    };
+    let data = bitmap.decompress()?;
 
     // Use some unsafe method to faster
-    // data transfert between buffers
+    // data transfer between buffers
     unsafe {
         let data_aligned :Vec<u32> = transmute_vec(data);
-        for i in 0..((bitmap_dest_bottom - bitmap_dest_top + 1) as u16) {
-            let dest_i = (i + bitmap_dest_top) as usize * width as usize + bitmap_dest_left as usize;
-            copy_nonoverlapping(data_aligned.as_ptr().offset((i * bitmap_width) as isize), buffer.as_mut_ptr().offset(dest_i as isize), (bitmap_dest_right - bitmap_dest_left + 1) as usize)
+        for i in 0..(bitmap_dest_bottom - bitmap_dest_top + 1) {
+            let dest_i = (i + bitmap_dest_top) * width + bitmap_dest_left;
+            let src_i = i * bitmap_width;
+            let count = (bitmap_dest_right - bitmap_dest_left + 1);
+            if dest_i > buffer.len() || dest_i + count > buffer.len() || src_i > data_aligned.len() || src_i + count > data_aligned.len() {
+                return Err(Error::RdpError(RdpError::new(RdpErrorKind::InvalidSize, "Image have invalide size")))
+            }
+            copy_nonoverlapping(data_aligned.as_ptr().offset((src_i) as isize), buffer.as_mut_ptr().offset(dest_i as isize), count)
         }
     }
 
+    Ok(())
 }
 
 /// Translate minifb mouse to rdp-rs
@@ -116,6 +116,7 @@ fn get_rdp_pointer_down(window: &Window) -> PointerButton {
     }
 }
 
+/// Translate minifb key to scancode
 fn to_scancode(key: Key) -> u16 {
     match key {
         Key::Escape => 0x0001,

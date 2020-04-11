@@ -899,28 +899,28 @@ mod test {
     #[test]
     fn test_read_synchronize_pdu() {
         let mut stream = Cursor::new(vec![22, 0, 23, 0, 234, 3, 234, 3, 1, 0, 0, 2, 22, 0, 31, 0, 0, 0, 1, 0, 0, 0]);
-        let mut global = Client::new(0,0, 800, 600, KeyboardLayout::US);
+        let mut global = Client::new(0,0, 800, 600, KeyboardLayout::US, "foo");
         assert!(global.read_synchronize_pdu(&mut stream).unwrap())
     }
 
     #[test]
     fn test_read_control_cooperate_pdu() {
         let mut stream = Cursor::new(vec![26, 0, 23, 0, 234, 3, 234, 3, 1, 0, 0, 2, 26, 0, 20, 0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0]);
-        let mut global = Client::new(0,0, 800, 600, KeyboardLayout::US);
+        let mut global = Client::new(0,0, 800, 600, KeyboardLayout::US, "foo");
         assert!(global.read_control_pdu(&mut stream, Action::CtrlactionCooperate).unwrap())
     }
 
     #[test]
     fn test_read_control_granted_pdu() {
         let mut stream = Cursor::new(vec![26, 0, 23, 0, 234, 3, 234, 3, 1, 0, 0, 2, 26, 0, 20, 0, 0, 0, 2, 0, 236, 3, 234, 3, 0, 0]);
-        let mut global = Client::new(0,0, 800, 600, KeyboardLayout::US);
+        let mut global = Client::new(0,0, 800, 600, KeyboardLayout::US, "foo");
         assert!(global.read_control_pdu(&mut stream, Action::CtrlactionGrantedControl).unwrap())
     }
 
     #[test]
     fn test_read_font_map_pdu() {
         let mut stream = Cursor::new(vec![26, 0, 23, 0, 234, 3, 234, 3, 1, 0, 0, 2, 26, 0, 40, 0, 0, 0, 0, 0, 0, 0, 3, 0, 4, 0]);
-        let mut global = Client::new(0,0, 800, 600, KeyboardLayout::US);
+        let mut global = Client::new(0,0, 800, 600, KeyboardLayout::US, "foo");
         assert!(global.read_font_map_pdu(&mut stream).unwrap())
     }
 }
