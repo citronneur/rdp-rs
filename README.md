@@ -2,29 +2,36 @@
 Remote Desktop Protocol in RUST
 
 `rdp-rs` is a pure Rust implementation of Microsoft Remote Desktop Protocol.
-`rdp-rs` is delivery with an client implementation named `mstsc-rs`.
+`rdp-rs` is delivered with an client implementation named `mstsc-rs`.
 
-This package is focus on security, and allows to address user who wants a safe client or security researcher that want to play with RDP.
+This crate is focus on security, and address user who wants a safe client, or security researcher that want to play with RDP.
 
 ## Why ?
 
-Remote Desktop Protocol is a complex protocol, and it's hard to play easily with. 
-I've already implemented in Python and Javascript with an event driven pattern.
+On one side, Remote Desktop Protocol is a complex protocol, and it's hard to play easily with it. 
+I've already implemented RDP in [Python](https://github.com/citronneur/rdpy) and [Javascript](https://github.com/citronneur/node-rdpjs) with an event driven pattern.
 It appears that this kind of pattern raise the complexity of the library, and at the end there is a lot of bugs and no PR, and nobody can't play with RDP in deeper.
 
 On other side, there is no *secure* implementation of the RDP protocol open sourced.
 
-At the end, I would like to build an high secure, cross platform and highly customizable client.
+In the end, I would like to build a highly secure, cross-platform and highly customizable client.
 
-## Where ?
+## Install
 
-For windows platform, there is some prebuilt binaries here.
-
-To use the `rdp-rs` library in your project, add the following to `Cargo.toml`:
+To use the `rdp-rs` as library in your project, add the following to `Cargo.toml`:
 ```
 [dependencies]
-rdp-rs = "0.4"
+rdp-rs = "0.1.0"
 ```
+
+You can install binaries through cargo :
+
+```
+cargo install rdp-rs
+mstsc-rs --help
+```
+
+For windows platform, there is some prebuilt binaries in [release]() session.
  
 ## Play with `mstsc-rs`
 
@@ -60,7 +67,7 @@ OPTIONS:
         --width <width>      Screen width [default: 800]
 ```
 
-`mstsc-rs` have been tested to connect to server ran from Windows 7 to Windows 10.
+`mstsc-rs` have been tested to connect to server that ran from Windows 7 to Windows 10.
 
 ### Basic connection (using Network Level Authentication over SSL)
 
@@ -88,13 +95,13 @@ mstsc-rs --target IP --user foo --hash a4c37e22527cc1479a8d620d2953b6c0 --admin
 ### Check already logon User
 
 In certain case, it's useful to use SSL in order to NLA.
-When server doesn't enforce NLA, using SSL allow to view which are connected on the server without still the session :
+When server doesn't enforce NLA, using SSL allow to view which users are connected on the server without steal the session :
 
 ```
 mstsc-rs --target IP --ssl
 ```
 
-When NLA is enforced, You can send blank credentials for the `Interactive` authentication by using the `blank` option :
+When NLA is enforced, You can check opened or available session by sending blank credentials for the `Interactive` authentication by using the `blank` option :
 
 ```
 mstsc-rs --target IP --user foo --pass bar --blank
@@ -102,7 +109,7 @@ mstsc-rs --target IP --user foo --pass bar --blank
 
 ### Tamper LogonType=10 to LogonType=7
 
-When you mix `blank` option and `auto` option on a NLA session, you can logon without emmited `4624` with `LogonType=10` but with `LogonType=7` :
+When you mix `blank` option and `auto` option on a NLA session, that will lead to logon without emitted `4624` with `LogonType=10` but with `LogonType=7` :
 ```
 mstsc-rs --target IP --user foo --pass bar --blank --auto
 ```
@@ -116,4 +123,42 @@ mstsc-rs --target IP --user foo --pass bar --name mstsc
 
 ## Play with `rdp-rs` crate
 
+`rdp-rs` is designed to be easily integrated into Rust environment.
 
+If you want to connect using normal credentials and NLA:
+```rust
+use std::net::{SocketAddr, TcpStream};
+use rdp::core::client::Connector;
+use rdp::core::event::{RdpEvent, PointerEvent, PointerButton};
+let addr = "192.168.0.1:3389".parse::<SocketAddr>().unwrap();
+let tcp = TcpStream::connect(&addr).unwrap();
+let mut connector = Connector::new()
+    .screen(800, 600)
+    .credentials("domain".to_string(), "username".to_string(), "password".to_string());
+let mut client = connector.connect(tcp).unwrap();
+```
+
+Now you want to send an input, a mouse for example :
+```rust
+client.write(RdpEvent::Pointer(
+    // Send a mouse click down at 100x100
+    PointerEvent {
+        x: 100 as u16,
+        y: 100 as u16,
+        button: PointerButton::Left,
+        down: true
+    }
+ )).unwrap()
+```
+
+Now you want to receive an event from server, a bitmap event for example:
+```rust
+client.read(|rdp_event| {
+    match rdp_event {
+        RdpEvent::Bitmap(bitmap) => {
+            // do something with bitmap
+        }
+         _ => println!("Unhandled event")
+    }
+}).unwrap()
+```
