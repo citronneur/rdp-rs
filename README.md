@@ -1,6 +1,12 @@
 # rdp-rs
 Remote Desktop Protocol in RUST
 
+[![API Docs](https://docs.rs/rdp-rs/badge.svg)](https://docs.rs/rdp-rs)
+[![Build Status](https://travis-ci.org/citronneur/rdp-rs.svg?branch=master)](https://travis-ci.org/github/citronneur/rdp-rs/)
+[![LICENSE](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![Downloads](https://img.shields.io/crates/d/rdp-rs.svg)](https://crates.io/crates/rdp-rs)
+
+
 `rdp-rs` is a pure Rust implementation of Microsoft Remote Desktop Protocol.
 `rdp-rs` is delivered with an client implementation named `mstsc-rs`.
 
