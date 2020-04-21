@@ -37,7 +37,7 @@ cargo install rdp-rs --features=mstsc-rs
 mstsc-rs --help
 ```
 
-For windows platform, there is some prebuilt binaries in [release]() session.
+For windows platform, there is some prebuilt binaries in [release](https://github.com/citronneur/rdp-rs/releases) session.
  
 ## Play with `mstsc-rs`
 
