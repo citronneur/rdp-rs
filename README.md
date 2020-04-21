@@ -33,7 +33,7 @@ rdp-rs = "0.1.0"
 You can install binaries through cargo :
 
 ```
-cargo install rdp-rs
+cargo install rdp-rs --features=mstsc-rs
 mstsc-rs --help
 ```
 

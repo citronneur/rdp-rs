@@ -391,7 +391,7 @@ fn main_gui_loop<S: Read + Write>(
 
             // Button is down if not 0
             let current_button = get_rdp_pointer_down(&window);
-            rdp_client_guard.write(RdpEvent::Pointer(
+            rdp_client_guard.try_write(RdpEvent::Pointer(
                 PointerEvent{
                     x: x as u16,
                     y: y as u16,
@@ -409,7 +409,7 @@ fn main_gui_loop<S: Read + Write>(
 
             for key in last_keys.iter() {
                 if !keys.contains(key) {
-                    rdp_client_guard.write(RdpEvent::Key(
+                    rdp_client_guard.try_write(RdpEvent::Key(
                         KeyboardEvent {
                             code: to_scancode(*key),
                             down: false
@@ -420,7 +420,7 @@ fn main_gui_loop<S: Read + Write>(
 
             for key in keys.iter() {
                 if window.is_key_pressed(*key, KeyRepeat::Yes){
-                    rdp_client_guard.write(RdpEvent::Key(
+                    rdp_client_guard.try_write(RdpEvent::Key(
                         KeyboardEvent {
                             code: to_scancode(*key),
                             down: true
