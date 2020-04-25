@@ -1,6 +1,6 @@
 #[cfg(target_os = "windows")]
 extern crate winapi;
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 extern crate libc;
 extern crate minifb;
 extern crate rdp;
@@ -18,11 +18,11 @@ use std::mem::{size_of, forget};
 use rdp::core::client::{RdpClient, Connector};
 #[cfg(target_os = "windows")]
 use winapi::um::winsock2::{select, fd_set};
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 use libc::{select, fd_set, FD_SET};
 #[cfg(target_os = "windows")]
 use std::os::windows::io::{AsRawSocket};
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 use std::os::unix::io::{AsRawFd};
 use rdp::core::event::{RdpEvent, BitmapEvent, PointerEvent, PointerButton, KeyboardEvent};
 use std::ptr::copy_nonoverlapping;
@@ -51,7 +51,7 @@ fn wait_for_fd(fd: usize) -> bool {
     }
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 fn wait_for_fd(fd: usize) -> bool {
     unsafe {
         let mut raw_fds: fd_set = mem::zeroed();
@@ -520,7 +520,7 @@ fn main() {
     #[cfg(target_os = "windows")]
     let handle = tcp.as_raw_socket();
 
-    #[cfg(target_os = "linux")]
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
     let handle = tcp.as_raw_fd();
 
     // Create rdp client
