@@ -111,15 +111,7 @@ When NLA is enforced, You can check opened or available session by sending blank
 
 ```
 mstsc-rs --target IP --user foo --pass bar --blank
-```
-
-### Tamper LogonType=10 to LogonType=7
-
-When you mix `blank` option and `auto` option on a NLA session, that will lead to logon without emitted `4624` with `LogonType=10` but with `LogonType=7` :
-```
-mstsc-rs --target IP --user foo --pass bar --blank --auto
-```
-
+``
 ### Tamper the client name
 
 A RDP client send the client name. `mstsc-rs` allow a user to customize it :
