@@ -111,7 +111,8 @@ When NLA is enforced, You can check opened or available session by sending blank
 
 ```
 mstsc-rs --target IP --user foo --pass bar --blank
-``
+```
+
 ### Tamper the client name
 
 A RDP client send the client name. `mstsc-rs` allow a user to customize it :
