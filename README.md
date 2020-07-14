@@ -120,6 +120,13 @@ A RDP client send the client name. `mstsc-rs` allow a user to customize it :
 mstsc-rs --target IP --user foo --pass bar --name mstsc
 ```
 
+### Tamper LogonType=10 to LogonType=7
+
+ When you mix `blank` option and `auto` option on a NLA session, that will lead to logon without emitted `4624` with `LogonType=10` but with `LogonType=7` :
+ ```
+ mstsc-rs --target IP --user foo --pass bar --blank --auto
+ ```
+
 ## Play with `rdp-rs` crate
 
 `rdp-rs` is designed to be easily integrated into Rust environment.
