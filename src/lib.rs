@@ -6,7 +6,6 @@ extern crate md4;
 extern crate hmac;
 extern crate md5;
 extern crate rand;
-extern crate crypto;
 extern crate num_bigint;
 extern crate x509_parser;
 extern crate num_enum;

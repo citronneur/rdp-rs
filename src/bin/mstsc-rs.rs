@@ -231,7 +231,7 @@ fn to_scancode(key: Key) -> u16 {
 
 /// Create a tcp stream from main args
 fn tcp_from_args(args: &ArgMatches) -> RdpResult<TcpStream> {
-    let ip = args.value_of("target").expect("You need to provide a target argument");
+    let ip = args.value_of("host").expect("You need to provide a target argument");
     let port = args.value_of("port").unwrap_or_default();
 
     // TCP connection
@@ -449,10 +449,10 @@ fn main() {
         .version("0.1.0")
         .author("Sylvain Peyrefitte <citronneur@gmail.com>")
         .about("Secure Remote Desktop Client in RUST")
-        .arg(Arg::with_name("target")
-                 .long("target")
+        .arg(Arg::with_name("host")
+                 .long("host")
                  .takes_value(true)
-                 .help("Target IP of the server"))
+                 .help("host IP of the target machine"))
         .arg(Arg::with_name("port")
                  .long("port")
                  .takes_value(true)
@@ -469,7 +469,7 @@ fn main() {
                  .default_value("600")
                  .help("Screen height"))
         .arg(Arg::with_name("domain")
-                 .long("dom")
+                 .long("domain")
                  .takes_value(true)
                  .default_value("")
                  .help("Windows domain"))
@@ -479,7 +479,7 @@ fn main() {
                  .default_value("")
                  .help("Username"))
         .arg(Arg::with_name("password")
-                 .long("pass")
+                 .long("password")
                  .takes_value(true)
                  .default_value("")
                  .help("Password"))
@@ -506,7 +506,7 @@ fn main() {
                  .help("Check the target SSL certificate"))
         .arg(Arg::with_name("disable_nla")
                  .long("ssl")
-                 .help("Disable Netwoek Level Authentication and only use SSL"))
+                 .help("Disable Network Level Authentication and only use SSL"))
         .arg(Arg::with_name("name")
                  .long("name")
                  .default_value("mstsc-rs")

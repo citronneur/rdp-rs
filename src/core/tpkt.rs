@@ -105,17 +105,17 @@ impl<S: Read + Write> Client<S> {
     ///     panic!("unexpected result")
     /// }
     ///
-    /// tpkt = tpkt::Client::new(link::Link::new(link::Stream::Raw(Cursor::new(vec![0, 6, 0, 0, 0, 0]))));
+    /// tpkt = tpkt::Client::new(link::Link::new(link::Stream::Raw(Cursor::new(vec![0, 7, 0, 0, 0, 0, 0]))));
     /// if let tpkt::Payload::FastPath(_, c) = tpkt.read().unwrap() {
-    ///     assert_eq!(c.into_inner(), vec![0, 0, 0, 0])
+    ///     assert_eq!(c.into_inner(), vec![0, 0, 0, 0, 0])
     /// }
     /// else {
     ///     panic!("unexpected result")
     /// }
     ///
-    /// tpkt = tpkt::Client::new(link::Link::new(link::Stream::Raw(Cursor::new(vec![0, 0x80, 7, 0, 0, 0, 0]))));
+    /// tpkt = tpkt::Client::new(link::Link::new(link::Stream::Raw(Cursor::new(vec![0, 0x80, 8, 0, 0, 0, 0, 0]))));
     /// if let tpkt::Payload::FastPath(_, c) = tpkt.read().unwrap() {
-    ///     assert_eq!(c.into_inner(), vec![0, 0, 0, 0])
+    ///     assert_eq!(c.into_inner(), vec![0, 0, 0, 0, 0])
     /// }
     /// else {
     ///     panic!("unexpected result")
@@ -136,9 +136,15 @@ impl<S: Read + Write> Client<S> {
             let mut size = U16::BE(0);
             size.read(&mut buffer)?;
 
-            // now wait for body
-            Ok(Payload::Raw(Cursor::new(self.transport.read(size.inner() as usize - 4)?)))
-
+            // Minimal size must be 7
+            // https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-rdpbcgr/18a27ef9-6f9a-4501-b000-94b1fe3c2c10
+            if size.inner() < 7 {
+                Err(Error::RdpError(RdpError::new(RdpErrorKind::InvalidSize, "Invalid minimal size for TPKT")))
+            }
+            else {
+                // now wait for body
+                Ok(Payload::Raw(Cursor::new(self.transport.read(size.inner() as usize - 4)?)))
+            }
         } else {
             // fast path
             let sec_flag = (action >> 6) & 0x3;
@@ -147,12 +153,20 @@ impl<S: Read + Write> Client<S> {
             if short_length & 0x80 != 0 {
                 let mut hi_length: u8 = 0;
                 hi_length.read(&mut Cursor::new(self.transport.read(1)?))?;
-                let length :u16 = ((short_length & !0x80) as u16) << 8;
+                let length: u16 = ((short_length & !0x80) as u16) << 8;
                 let length = length | hi_length as u16;
-                Ok(Payload::FastPath(sec_flag, Cursor::new(self.transport.read(length as usize - 3)?)))
+                if length < 7 {
+                    Err(Error::RdpError(RdpError::new(RdpErrorKind::InvalidSize, "Invalid minimal size for TPKT")))
+                } else {
+                    Ok(Payload::FastPath(sec_flag, Cursor::new(self.transport.read(length as usize - 3)?)))
+                }
             }
             else {
-                Ok(Payload::FastPath(sec_flag, Cursor::new(self.transport.read(short_length as usize - 2)?)))
+                if short_length < 7 {
+                    Err(Error::RdpError(RdpError::new(RdpErrorKind::InvalidSize, "Invalid minimal size for TPKT")))
+                } else {
+                    Ok(Payload::FastPath(sec_flag, Cursor::new(self.transport.read(short_length as usize - 2)?)))
+                }
             }
          }
     }
@@ -210,6 +224,7 @@ mod test {
     use super::*;
     use std::io::Cursor;
     use model::data::{U32, DataType};
+    use model::link::Stream;
 
     /// Test the tpkt header type in write context
     #[test]
@@ -232,5 +247,30 @@ mod test {
         message.read(&mut buffer).unwrap();
         assert_eq!(cast!(DataType::U16, message["size"]).unwrap(), 8);
         assert_eq!(cast!(DataType::U8, message["action"]).unwrap(), Action::FastPathActionX224 as u8);
+    }
+
+    fn process(data: &[u8]) {
+        let cur = Cursor::new(data.to_vec());
+        let link = Link::new(Stream::Raw(cur));
+        let mut client = Client::new(link);
+        let _ = client.read();
+    }
+
+    #[test]
+    fn test_tpkt_size_overflow_case_1() {
+        let buf = b"\x00\x00\x03\x00\x00\x00";
+        process(buf);
+    }
+
+    #[test]
+    fn test_tpkt_size_overflow_case_2() {
+        let buf = b"\x00\x80\x00\x00\x00\x00";
+        process(buf);
+    }
+
+    #[test]
+    fn test_tpkt_size_overflow_case_3() {
+        let buf = b"\x03\xe8\x00\x00\x80\x00";
+        process(buf);
     }
 }
