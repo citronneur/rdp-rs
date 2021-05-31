@@ -24,6 +24,7 @@ required-features = ["mstsc-rs"]
 # See: https://github.com/rust-lang/cargo/issues/4669
 integration = []
 mstsc-rs = ["hex", "winapi", "minifb", "clap", "libc"]
+with-serde = ["serde"]
 
 [dependencies]
 native-tls = "^0.2"
@@ -39,9 +40,12 @@ num-bigint = "^0.2"
 x509-parser = "0.6.5"
 num_enum = "0.4.3"
 
+# serde support
+serde = { version = "1.0", features = ["derive"], optional = true }
+
 # for mtsc-rs
 hex = { version = "^0.4", optional = true }
 winapi = { version = "^0.3", features = ["winsock2"], optional = true }
 minifb = { version = "^0.15", optional = true }
-clap = { version = "^2.33", optional = true}
-libc = { version = "^0.2", optional = true}
+clap = { version = "^2.33", optional = true }
+libc = { version = "^0.2", optional = true }

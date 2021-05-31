@@ -1,6 +1,9 @@
-use model::error::{RdpResult, Error, RdpError, RdpErrorKind};
 use num_enum::TryFromPrimitive;
+#[cfg(feature = "with-serde")]
+use serde::{Deserialize, Serialize};
+
 use codec::rle::{rle_32_decompress, rle_16_decompress, rgb565torgb32};
+use model::error::{RdpResult, Error, RdpError, RdpErrorKind};
 
 /// A bitmap event is used
 /// to notify client that it received
@@ -8,6 +11,7 @@ use codec::rle::{rle_32_decompress, rle_16_decompress, rgb565torgb32};
 ///
 /// If bitmap is compress you can use the
 /// decompress function to handle it
+#[cfg_attr(feature = "with-serde", derive(Deserialize, Serialize))]
 pub struct BitmapEvent {
     /// Pixel position from left of the left top angle
     pub dest_left: u16,
@@ -101,6 +105,7 @@ impl BitmapEvent {
 
 #[repr(u8)]
 #[derive(Eq, PartialEq, TryFromPrimitive, Copy, Clone)]
+#[cfg_attr(feature = "with-serde", derive(Deserialize, Serialize))]
 pub enum PointerButton {
     /// No button but a move
     None = 0,
@@ -113,6 +118,7 @@ pub enum PointerButton {
 }
 
 /// A mouse pointer event
+#[cfg_attr(feature = "with-serde", derive(Deserialize, Serialize))]
 pub struct PointerEvent {
     /// horizontal position from top left angle of the window
     pub x: u16,
@@ -127,6 +133,7 @@ pub struct PointerEvent {
 /// Keyboard event
 /// It's a raw event using Scancode
 /// to inform which key is pressed
+#[cfg_attr(feature = "with-serde", derive(Deserialize, Serialize))]
 pub struct KeyboardEvent {
     /// Scancode of the key
     pub code: u16,
@@ -135,6 +142,7 @@ pub struct KeyboardEvent {
 }
 
 /// All event handle by RDP protocol implemented by rdp-rs
+#[cfg_attr(feature = "with-serde", derive(Deserialize, Serialize), serde(untagged))]
 pub enum RdpEvent {
     /// Classic bitmap event
     Bitmap(BitmapEvent),
