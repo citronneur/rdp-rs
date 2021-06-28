@@ -56,7 +56,7 @@ FLAGS:
         --auto       AutoLogon mode in case of SSL nego
         --blank      Do not send credentials at the last CredSSP payload
         --check      Check the target SSL certificate
-        --ssl        Disable Netwoek Level Authentication and only use SSL
+        --ssl        Disable Network Level Authentication and only use SSL
     -h, --help       Prints help information
     -V, --version    Prints version information
 
