@@ -1,10 +1,10 @@
-use core::mcs;
-use core::license;
-use core::tpkt;
-use model::error::{RdpResult, Error, RdpError, RdpErrorKind};
-use model::data::{Message, Component, U16, U32, DynOption, MessageOption, Trame, DataType};
+use crate::core::mcs;
+use crate::core::license;
+use crate::core::tpkt;
+use crate::model::error::{RdpResult, Error, RdpError, RdpErrorKind};
+use crate::model::data::{Message, Component, U16, U32, DynOption, MessageOption, Trame, DataType};
 use std::io::{Write, Read};
-use model::unicode::Unicode;
+use crate::model::unicode::Unicode;
 
 /// Security flag send as header flage in core ptotocol
 /// https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-rdpbcgr/e13405c5-668b-4716-94b2-1c2654ca1ad4?redirectedfrom=MSDN

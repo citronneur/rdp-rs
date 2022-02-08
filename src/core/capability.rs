@@ -1,7 +1,7 @@
-use model::data::{Component, U16, U32, DynOption, MessageOption, Message, DataType, Check, Trame, to_vec};
-use model::error::{RdpResult, Error, RdpError, RdpErrorKind};
+use crate::model::data::{Component, U16, U32, DynOption, MessageOption, Message, DataType, Check, Trame, to_vec};
+use crate::model::error::{RdpResult, Error, RdpError, RdpErrorKind};
 use std::io::Cursor;
-use core::gcc::{KeyboardLayout, KeyboardType};
+use crate::core::gcc::{KeyboardLayout, KeyboardType};
 use num_enum::TryFromPrimitive;
 use std::convert::TryFrom;
 

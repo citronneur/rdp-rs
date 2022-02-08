@@ -1,10 +1,10 @@
-use nla::asn1::{ASN1, Sequence, ExplicitTag, SequenceOf, ASN1Type, OctetString, Integer, to_der};
-use model::error::{RdpError, RdpErrorKind, Error, RdpResult};
+use crate::nla::asn1::{ASN1, Sequence, ExplicitTag, SequenceOf, ASN1Type, OctetString, Integer, to_der};
+use crate::model::error::{RdpError, RdpErrorKind, Error, RdpResult};
 use num_bigint::{BigUint};
 use yasna::Tag;
 use x509_parser::{parse_x509_der, X509Certificate};
-use nla::sspi::AuthenticationProtocol;
-use model::link::Link;
+use crate::nla::sspi::AuthenticationProtocol;
+use crate::model::link::Link;
 use std::io::{Read, Write};
 
 /// Create a ts request as expected by the specification
