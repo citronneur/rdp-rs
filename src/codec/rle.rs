@@ -1,4 +1,4 @@
-use model::error::{RdpResult, Error, RdpError, RdpErrorKind};
+use crate::model::error::{RdpResult, Error, RdpError, RdpErrorKind};
 use std::io::{Cursor, Read};
 use byteorder::{ReadBytesExt, LittleEndian};
 

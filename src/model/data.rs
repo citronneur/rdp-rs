@@ -1,5 +1,5 @@
 use std::io::{Write, Read, Cursor};
-use model::error::{RdpResult, RdpErrorKind, RdpError, Error};
+use crate::model::error::{RdpResult, RdpErrorKind, RdpError, Error};
 use byteorder::{WriteBytesExt, ReadBytesExt, LittleEndian, BigEndian};
 use indexmap::IndexMap;
 use std::collections::{HashSet, HashMap};

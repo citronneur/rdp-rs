@@ -1,5 +1,5 @@
-use model::data::{Component, Check, DynOption, U16, MessageOption, U32, DataType, Message};
-use model::error::{RdpResult, Error, RdpError, RdpErrorKind};
+use crate::model::data::{Component, Check, DynOption, U16, MessageOption, U32, DataType, Message};
+use crate::model::error::{RdpResult, Error, RdpError, RdpErrorKind};
 use std::io::{Cursor, Read};
 use num_enum::TryFromPrimitive;
 use std::convert::TryFrom;

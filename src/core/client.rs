@@ -1,15 +1,15 @@
-use core::x224;
-use core::gcc::KeyboardLayout;
-use core::mcs;
-use core::tpkt;
-use core::sec;
-use core::global;
+use crate::core::x224;
+use crate::core::gcc::KeyboardLayout;
+use crate::core::mcs;
+use crate::core::tpkt;
+use crate::core::sec;
+use crate::core::global;
 use std::io::{Read, Write};
-use model::error::{RdpResult, Error, RdpError, RdpErrorKind};
-use model::link::{Link, Stream};
-use core::event::{RdpEvent, PointerButton};
-use core::global::{ts_pointer_event, PointerFlag, ts_keyboard_event, KeyboardFlag};
-use nla::ntlm::Ntlm;
+use crate::model::error::{RdpResult, Error, RdpError, RdpErrorKind};
+use crate::model::link::{Link, Stream};
+use crate::core::event::{RdpEvent, PointerButton};
+use crate::core::global::{ts_pointer_event, PointerFlag, ts_keyboard_event, KeyboardFlag};
+use crate::nla::ntlm::Ntlm;
 
 impl From<&str> for KeyboardLayout {
     fn from(e: &str) -> Self {
