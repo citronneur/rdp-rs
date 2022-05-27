@@ -1,7 +1,7 @@
-use model::data::{Component, U16, U32, DynOption, MessageOption, Message, DataType, Check, Trame, to_vec};
-use model::error::{RdpResult, Error, RdpError, RdpErrorKind};
+use crate::model::data::{Component, U16, U32, DynOption, MessageOption, Message, DataType, Check, Trame, to_vec};
+use crate::model::error::{RdpResult, Error, RdpError, RdpErrorKind};
 use std::io::Cursor;
-use core::gcc::{KeyboardLayout, KeyboardType};
+use crate::core::gcc::{KeyboardLayout, KeyboardType};
 use num_enum::TryFromPrimitive;
 use std::convert::TryFrom;
 
@@ -187,8 +187,8 @@ pub fn ts_general_capability_set(extra_flags: Option<u16>) -> Capability {
             "updateCapabilityFlag" => Check::new(U16::LE(0)),
             "remoteUnshareFlag" => Check::new(U16::LE(0)),
             "generalCompressionLevel" => Check::new(U16::LE(0)),
-            "refreshRectSupport" => 0 as u8,
-            "suppressOutputSupport" => 0 as u8
+            "refreshRectSupport" => 0_u8,
+            "suppressOutputSupport" => 0_u8
         ]
     }
 }
@@ -219,8 +219,8 @@ pub fn ts_bitmap_capability_set(preferred_bits_per_pixel: Option<u16>, desktop_w
             "pad2octets" => U16::LE(0),
             "desktopResizeFlag" => U16::LE(0),
             "bitmapCompressionFlag" => Check::new(U16::LE(0x0001)),
-            "highColorFlags" => Check::new(0 as u8),
-            "drawingFlags" => 0 as u8,
+            "highColorFlags" => Check::new(0_u8),
+            "drawingFlags" => 0_u8,
             "multipleRectangleSupport" => Check::new(U16::LE(0x0001)),
             "pad2octetsB" => U16::LE(0)
         ]
@@ -253,7 +253,7 @@ pub fn ts_order_capability_set(order_flags: Option<u16>) -> Capability {
     Capability {
         cap_type: CapabilitySetType::CapstypeOrder,
         message: component![
-            "terminalDescriptor" => vec![0 as u8; 16],
+            "terminalDescriptor" => vec![0_u8; 16],
             "pad4octetsA" => U32::LE(0),
             "desktopSaveXGranularity" => U16::LE(1),
             "desktopSaveYGranularity" => U16::LE(20),
@@ -261,7 +261,7 @@ pub fn ts_order_capability_set(order_flags: Option<u16>) -> Capability {
             "maximumOrderLevel" => U16::LE(1),
             "numberFonts" => U16::LE(0),
             "orderFlags" => U16::LE(order_flags.unwrap_or(OrderFlag::NEGOTIATEORDERSUPPORT as u16)),
-            "orderSupport" => vec![0 as u8; 32],
+            "orderSupport" => vec![0_u8; 32],
             "textFlags" => U16::LE(0),
             "orderSupportExFlags" => U16::LE(0),
             "pad4octetsB" => U32::LE(0),
@@ -375,7 +375,7 @@ pub fn ts_input_capability_set(input_flags: Option<u16>, keyboard_layout: Option
             "keyboardType" => U32::LE(KeyboardType::Ibm101102Keys as u32),
             "keyboardSubType" => U32::LE(0),
             "keyboardFunctionKey" => U32::LE(12),
-            "imeFileName" => vec![0 as u8; 64]
+            "imeFileName" => vec![0_u8; 64]
         ]
     }
 }

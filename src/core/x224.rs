@@ -1,9 +1,9 @@
-use core::tpkt;
-use model::data::{Message, Check, U16, U32, Component, DataType, Trame};
-use model::error::{Error, RdpError, RdpResult, RdpErrorKind};
+use crate::core::tpkt;
+use crate::model::data::{Message, Check, U16, U32, Component, DataType, Trame};
+use crate::model::error::{Error, RdpError, RdpResult, RdpErrorKind};
 use std::io::{Read, Write};
 use std::option::{Option};
-use nla::sspi::AuthenticationProtocol;
+use crate::nla::sspi::AuthenticationProtocol;
 use num_enum::TryFromPrimitive;
 use std::convert::TryFrom;
 
@@ -77,7 +77,7 @@ fn x224_crq(len: u8, code: MessageType) -> Component {
     component! [
         "len" => (len + 6) as u8,
         "code" => code as u8,
-        "padding" => trame! [U16::LE(0), U16::LE(0), 0 as u8]
+        "padding" => trame! [U16::LE(0), U16::LE(0), 0_u8]
     ]
 }
 
@@ -103,9 +103,9 @@ fn x224_connection_pdu(
 /// X224 header
 fn x224_header() -> Component {
     component![
-        "header" => 2 as u8,
+        "header" => 2_u8,
         "messageType" => MessageType::X224TPDUData as u8,
-        "separator" => Check::new(0x80 as u8)
+        "separator" => Check::new(0x80_u8)
     ]
 }
 

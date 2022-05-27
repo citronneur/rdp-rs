@@ -1,9 +1,9 @@
-use model::link::{Link};
-use model::data::{Message, U16, Component, Trame};
-use model::error::{RdpResult, RdpError, RdpErrorKind, Error};
+use crate::model::link::{Link};
+use crate::model::data::{Message, U16, Component, Trame};
+use crate::model::error::{RdpResult, RdpError, RdpErrorKind, Error};
 use std::io::{Cursor, Write, Read};
-use nla::cssp::cssp_connect;
-use nla::sspi::AuthenticationProtocol;
+use crate::nla::cssp::cssp_connect;
+use crate::nla::sspi::AuthenticationProtocol;
 
 /// TPKT must implement this two kind of payload
 pub enum Payload {
@@ -26,7 +26,7 @@ pub enum Action {
 fn tpkt_header(size: u16) -> Component {
     component![
         "action" => Action::FastPathActionX224 as u8,
-        "flag" => 0 as u8,
+        "flag" => 0_u8,
         "size" => U16::BE(size + 4)
     ]
 }
@@ -161,12 +161,10 @@ impl<S: Read + Write> Client<S> {
                     Ok(Payload::FastPath(sec_flag, Cursor::new(self.transport.read(length as usize - 3)?)))
                 }
             }
-            else {
-                if short_length < 2 {
-                    Err(Error::RdpError(RdpError::new(RdpErrorKind::InvalidSize, "Invalid minimal size for TPKT")))
-                } else {
-                    Ok(Payload::FastPath(sec_flag, Cursor::new(self.transport.read(short_length as usize - 2)?)))
-                }
+            else if short_length < 2 {
+                Err(Error::RdpError(RdpError::new(RdpErrorKind::InvalidSize, "Invalid minimal size for TPKT")))
+            } else {
+                Ok(Payload::FastPath(sec_flag, Cursor::new(self.transport.read(short_length as usize - 2)?)))
             }
          }
     }
@@ -223,8 +221,8 @@ impl<S: Read + Write> Client<S> {
 mod test {
     use super::*;
     use std::io::Cursor;
-    use model::data::{U32, DataType};
-    use model::link::Stream;
+    use crate::model::data::{U32, DataType};
+    use crate::model::link::Stream;
 
     /// Test the tpkt header type in write context
     #[test]

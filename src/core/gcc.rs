@@ -1,7 +1,7 @@
-use model::data::{Component, U32, U16, Trame, to_vec, Message, DataType, DynOption, MessageOption, Check, Array};
-use model::unicode::Unicode;
-use model::error::{RdpResult, RdpError, RdpErrorKind, Error};
-use core::per;
+use crate::model::data::{Component, U32, U16, Trame, to_vec, Message, DataType, DynOption, MessageOption, Check, Array};
+use crate::model::unicode::Unicode;
+use crate::model::error::{RdpResult, RdpError, RdpErrorKind, Error};
+use crate::core::per;
 use std::io::{Cursor, Read};
 use std::collections::HashMap;
 
@@ -223,11 +223,11 @@ pub fn client_core_data(parameter: Option<ClientData>) -> Component {
         "sasSequence" => U16::LE(Sequence::RnsUdSasDel as u16),
         "kbdLayout" => U32::LE(client_parameter.layout as u32),
         "clientBuild" => U32::LE(3790),
-        "clientName" => client_name.to_string().to_unicode(),
+        "clientName" => client_name.to_unicode(),
         "keyboardType" => U32::LE(KeyboardType::Ibm101102Keys as u32),
         "keyboardSubType" => U32::LE(0),
         "keyboardFnKeys" => U32::LE(12),
-        "imeFileName" => vec![0 as u8; 64],
+        "imeFileName" => vec![0_u8; 64],
         "postBeta2ColorDepth" => U16::LE(ColorDepth::RnsUdColor8BPP as u16),
         "clientProductId" => U16::LE(1),
         "serialNumber" => U32::LE(0),
@@ -240,8 +240,8 @@ pub fn client_core_data(parameter: Option<ClientData>) -> Component {
             ),
         "earlyCapabilityFlags" => U16::LE(CapabilityFlag::RnsUdCsSupportErrinfoPDU as u16),
         "clientDigProductId" => vec![0; 64],
-        "connectionType" => 0 as u8,
-        "pad1octet" => 0 as u8,
+        "connectionType" => 0_u8,
+        "pad1octet" => 0_u8,
         "serverSelectedProtocol" => U32::LE(client_parameter.server_selected_protocol)
     ]
 }
@@ -277,7 +277,7 @@ pub fn server_security_data() -> Component {
 }
 
 /// Actually we have no more classic channel
-pub fn channel_def(name: &String, options: u32) -> Component {
+pub fn channel_def(name: &str, options: u32) -> Component {
     component![
         "name"=> name.as_bytes().to_vec(),
         "options" => U32::LE(options)
@@ -352,7 +352,7 @@ pub fn read_conference_create_response(cc_response: &mut dyn Read) -> RdpResult<
             break;
         }
 
-        let mut buffer = vec![0 as u8; (cast!(DataType::U16, header["length"])? - header.length() as u16) as usize];
+        let mut buffer = vec![0_u8; (cast!(DataType::U16, header["length"])? - header.length() as u16) as usize];
         sub.read_exact(&mut buffer)?;
 
         match MessageType::from(cast!(DataType::U16, header["type"])?) {
@@ -377,7 +377,7 @@ pub fn read_conference_create_response(cc_response: &mut dyn Read) -> RdpResult<
 
     // All section are important
     Ok(ServerData{
-        channel_ids: cast!(DataType::Trame, result[&MessageType::ScNet]["channelIdArray"])?.into_iter().map(|x| cast!(DataType::U16, x).unwrap()).collect(),
+        channel_ids: cast!(DataType::Trame, result[&MessageType::ScNet]["channelIdArray"])?.iter().map(|x| cast!(DataType::U16, x).unwrap()).collect(),
         rdp_version: Version::from(cast!(DataType::U32, result[&MessageType::ScCore]["rdpVersion"])?)
     })
 }

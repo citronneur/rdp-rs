@@ -1,10 +1,10 @@
-use core::mcs;
-use core::license;
-use core::tpkt;
-use model::error::{RdpResult, Error, RdpError, RdpErrorKind};
-use model::data::{Message, Component, U16, U32, DynOption, MessageOption, Trame, DataType};
+use crate::core::mcs;
+use crate::core::license;
+use crate::core::tpkt;
+use crate::model::error::{RdpResult, Error, RdpError, RdpErrorKind};
+use crate::model::data::{Message, Component, U16, U32, DynOption, MessageOption, Trame, DataType};
 use std::io::{Write, Read};
-use model::unicode::Unicode;
+use crate::model::unicode::Unicode;
 
 /// Security flag send as header flage in core ptotocol
 /// https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-rdpbcgr/e13405c5-668b-4716-94b2-1c2654ca1ad4?redirectedfrom=MSDN
@@ -77,7 +77,7 @@ fn rdp_extended_infos() -> Component {
 /// When CSSP is not used
 /// interactive logon used credentials
 /// present in this payload
-fn rdp_infos(is_extended_info: bool, domain: &String, username: &String, password: &String, auto_logon: bool) -> Component {
+fn rdp_infos(is_extended_info: bool, domain: &str, username: &str, password: &str, auto_logon: bool) -> Component {
     let mut domain_format = domain.to_unicode();
     domain_format.push(0);
     domain_format.push(0);
@@ -136,7 +136,7 @@ fn security_header() -> Component {
 /// let mut mcs = mcs::Client(...).unwrap();
 /// sec::connect(&mut mcs).unwrap();
 /// ```
-pub fn connect<T: Read + Write>(mcs: &mut mcs::Client<T>, domain: &String, username: &String, password: &String, auto_logon: bool) -> RdpResult<()> {
+pub fn connect<T: Read + Write>(mcs: &mut mcs::Client<T>, domain: &str, username: &str, password: &str, auto_logon: bool) -> RdpResult<()> {
     mcs.write(
         &"global".to_string(),
         trame![

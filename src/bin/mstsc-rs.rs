@@ -1,13 +1,3 @@
-#[cfg(target_os = "windows")]
-extern crate winapi;
-#[cfg(any(target_os = "linux", target_os = "macos"))]
-extern crate libc;
-extern crate minifb;
-extern crate rdp;
-extern crate hex;
-extern crate clap;
-extern crate hmac;
-
 use minifb::{Key, Window, WindowOptions, MouseMode, MouseButton, KeyRepeat};
 use std::net::{SocketAddr, TcpStream};
 use std::io::{Read, Write};

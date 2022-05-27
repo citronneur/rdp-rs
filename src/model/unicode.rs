@@ -1,4 +1,4 @@
-use model::data::{Message, U16};
+use crate::model::data::{Message, U16};
 use std::io::Cursor;
 
 /// Use to to_unicode function for String
@@ -6,7 +6,7 @@ pub trait Unicode {
     fn to_unicode(&self) -> Vec<u8>;
 }
 
-impl Unicode for String {
+impl Unicode for str {
     /// Convert any string into utf-16le string
     ///
     /// # Example
@@ -21,6 +21,6 @@ impl Unicode for String {
             let encode_char = U16::LE(c);
             encode_char.write(&mut result).unwrap();
         }
-        return result.into_inner()
+        result.into_inner()
     }
 }

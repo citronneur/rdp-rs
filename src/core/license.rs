@@ -1,5 +1,5 @@
-use model::data::{Component, Check, DynOption, U16, MessageOption, U32, DataType, Message};
-use model::error::{RdpResult, Error, RdpError, RdpErrorKind};
+use crate::model::data::{Component, Check, DynOption, U16, MessageOption, U32, DataType, Message};
+use crate::model::error::{RdpResult, Error, RdpError, RdpErrorKind};
 use std::io::{Cursor, Read};
 use num_enum::TryFromPrimitive;
 use std::convert::TryFrom;
@@ -68,7 +68,7 @@ pub enum StateTransition {
 /// https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-rdpbcgr/73170ca2-5f82-4a2d-9d1b-b439f3d8dadc
 fn preamble() -> Component {
     component![
-        "bMsgtype" => 0 as u8,
+        "bMsgtype" => 0_u8,
         "flag" => Check::new(Preambule::PreambleVersion30 as u8),
         "wMsgSize" => DynOption::new(U16::LE(0), |size| MessageOption::Size("message".to_string(), size.inner() as usize - 4)),
         "message" => Vec::<u8>::new()

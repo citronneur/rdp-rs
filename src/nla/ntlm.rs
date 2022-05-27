@@ -1,13 +1,13 @@
-use nla::sspi::{AuthenticationProtocol, GenericSecurityService};
-use model::data::{Message, Component, U16, U32, Trame, DynOption, Check, DataType, MessageOption, to_vec};
+use crate::nla::sspi::{AuthenticationProtocol, GenericSecurityService};
+use crate::model::data::{Message, Component, U16, U32, Trame, DynOption, Check, DataType, MessageOption, to_vec};
 use std::io::{Cursor};
-use model::error::{RdpResult, RdpError, RdpErrorKind, Error};
+use crate::model::error::{RdpResult, RdpError, RdpErrorKind, Error};
 use std::collections::HashMap;
 use md4::{Md4, Digest};
 use hmac::{Hmac, Mac};
 use md5::{Md5};
-use model::rnd::{random};
-use nla::rc4::{Rc4};
+use crate::model::rnd::{random};
+use crate::nla::rc4::{Rc4};
 use num_enum::TryFromPrimitive;
 use std::convert::TryFrom;
 
@@ -63,7 +63,7 @@ fn version() -> Component {
         "ProductMajorVersion" => MajorVersion::WindowsMajorVersion6 as u8,
         "ProductMinorVersion" => MinorVersion::WindowsMinorVersion0 as u8,
         "ProductBuild" => U16::LE(6002),
-        "Reserved" => trame![U16::LE(0), 0 as u8],
+        "Reserved" => trame![U16::LE(0), 0_u8],
         "NTLMRevisionCurrent" => NTLMRevision::NtlmSspRevisionW2K3 as u8
     )
 }
@@ -78,7 +78,7 @@ fn negotiate_message(flags: u32) -> Component {
             if node.inner() & (Negotiate::NtlmsspNegociateVersion as u32) == 0 {
                 return MessageOption::SkipField("Version".to_string())
             }
-            return MessageOption::None
+            MessageOption::None
         }),
         "DomainNameLen" => U16::LE(0),
         "DomainNameMaxLen" => U16::LE(0),
@@ -104,7 +104,7 @@ fn challenge_message() -> Component {
             if node.inner() & (Negotiate::NtlmsspNegociateVersion as u32) == 0 {
                 return MessageOption::SkipField("Version".to_string())
             }
-            return MessageOption::None
+            MessageOption::None
         }),
         "ServerChallenge" => vec![0; 8],
         "Reserved" => vec![0; 8],
@@ -153,7 +153,7 @@ fn authenticate_message(lm_challenge_response: &[u8], nt_challenge_response:&[u8
             if node.inner() & (Negotiate::NtlmsspNegociateVersion as u32) == 0 {
                 return MessageOption::SkipField("Version".to_string())
             }
-            return MessageOption::None
+            MessageOption::None
         }),
         "Version" => version()
     ] , payload)
@@ -237,7 +237,7 @@ fn read_target_info(data: &[u8]) -> RdpResult<HashMap<AvId, Vec<u8>>> {
 
         result.insert(av_id, cast!(DataType::Slice, element["Value"])?.to_vec());
     }
-    return Ok(result);
+    Ok(result)
 }
 
 /// Zero filled array
@@ -264,8 +264,8 @@ fn z(m: usize) -> Vec<u8> {
 /// ```
 fn md4(data: &[u8]) -> Vec<u8> {
     let mut hasher = Md4::new();
-    hasher.input(data);
-    hasher.result().to_vec()
+    hasher.update(data);
+    hasher.finalize().to_vec()
 }
 
 /// Compute the MD5 Hash of input vector
@@ -279,8 +279,8 @@ fn md4(data: &[u8]) -> Vec<u8> {
 /// ```
 fn md5(data: &[u8]) -> Vec<u8> {
     let mut hasher = Md5::new();
-    hasher.input(data);
-    hasher.result().to_vec()
+    hasher.update(data);
+    hasher.finalize().to_vec()
 }
 
 /// Encode a string into utf-16le
@@ -292,13 +292,13 @@ fn md5(data: &[u8]) -> Vec<u8> {
 /// ```rust, ignore
 /// let encoded_string = unicode("foo".to_string());
 /// ```
-fn unicode(data: &String) -> Vec<u8> {
+fn unicode(data: &str) -> Vec<u8> {
     let mut result = Cursor::new(Vec::new());
     for c in data.encode_utf16() {
         let encode_char = U16::LE(c);
         encode_char.write(&mut result).unwrap();
     }
-    return result.into_inner()
+    result.into_inner()
 }
 
 /// Compute HMAC with MD5 hash algorithm
@@ -310,9 +310,10 @@ fn unicode(data: &String) -> Vec<u8> {
 /// let signature = hmac_md5(b"foo", b"bar");
 /// ```
 fn hmac_md5(key: &[u8], data: &[u8]) -> Vec<u8> {
-    let mut stream = Hmac::<Md5>::new_varkey(key).unwrap();
-    stream.input(data);
-    stream.result().code().to_vec()
+    type HmacMd5 = Hmac::<Md5>;
+    let mut stream = HmacMd5::new_from_slice(key).unwrap();
+    stream.update(data);
+    stream.finalize().into_bytes().to_vec()
 }
 
 /// This function is used to compute init key of another hmac_md5
@@ -324,8 +325,8 @@ fn hmac_md5(key: &[u8], data: &[u8]) -> Vec<u8> {
 /// ```rust, ignore
 /// let key = ntowfv2("hello123".to_string(), "user".to_string(), "domain".to_string())
 /// ```
-fn ntowfv2(password: &String, user: &String, domain: &String) -> Vec<u8> {
-    hmac_md5(&md4(&unicode(password)), &unicode(&(user.to_uppercase() + &domain)))
+fn ntowfv2(password: &str, user: &str, domain: &str) -> Vec<u8> {
+    hmac_md5(&md4(&unicode(password)), &unicode(&(user.to_uppercase() + domain)))
 }
 
 /// This function is used to compute init key of another hmac_md5
@@ -338,8 +339,8 @@ fn ntowfv2(password: &String, user: &String, domain: &String) -> Vec<u8> {
 /// ```rust, ignore
 /// let key = ntowfv2("hello123".to_string(), "user".to_string(), "domain".to_string())
 /// ```
-fn ntowfv2_hash(hash: &[u8], user: &String, domain: &String) -> Vec<u8> {
-    hmac_md5(hash, &unicode(&(user.to_uppercase() + &domain)))
+fn ntowfv2_hash(hash: &[u8], user: &str, domain: &str) -> Vec<u8> {
+    hmac_md5(hash, &unicode(&(user.to_uppercase() + domain)))
 }
 
 /// This function is used to compute init key of another hmac_md5
@@ -349,7 +350,7 @@ fn ntowfv2_hash(hash: &[u8], user: &String, domain: &String) -> Vec<u8> {
 /// ```rust, ignore
 /// let key = lmowfv2("hello123".to_string(), "user".to_string(), "domain".to_string())
 /// ```
-fn lmowfv2(password: &String, user: &String, domain: &String) -> Vec<u8> {
+fn lmowfv2(password: &str, user: &str, domain: &str) -> Vec<u8> {
     ntowfv2(password, user, domain)
 }
 
@@ -374,7 +375,7 @@ fn compute_response_v2(
 
     let temp = [response_version.to_vec(), hi_response_version.to_vec(), z(6), time.to_vec(), client_challenge.to_vec(), z(4), server_name.to_vec()].concat();
     let nt_proof_str = hmac_md5(response_key_nt, &[server_challenge.to_vec(), temp.clone()].concat());
-    let nt_challenge_response = [nt_proof_str.clone(), temp.clone()].concat();
+    let nt_challenge_response = [nt_proof_str.clone(), temp].concat();
     let lm_challenge_response = [hmac_md5(response_key_lm, &[server_challenge.to_vec(), client_challenge.to_vec()].concat()), client_challenge.to_vec()].concat();
 
     let session_base_key = hmac_md5(response_key_nt, &nt_proof_str);
@@ -395,7 +396,7 @@ fn kx_key_v2(session_base_key: &[u8], _lm_challenge_response: &[u8], _server_cha
 fn rc4k(key: &[u8], plaintext: &[u8]) -> Vec<u8> {
     let mut result = vec![0; plaintext.len()];
     let mut rc4_handle = Rc4::new(key);
-    rc4_handle.process(&plaintext, &mut result);
+    rc4_handle.process(plaintext, &mut result);
     result
 }
 
@@ -522,7 +523,7 @@ impl AuthenticationProtocol  for Ntlm {
                 Negotiate::NtlmsspNegociateUnicode as u32
         ));
         self.negotiate_message = Some(buffer.clone());
-        return Ok(buffer)
+        Ok(buffer)
     }
 
     /// Read the server challenge
@@ -559,11 +560,11 @@ impl AuthenticationProtocol  for Ntlm {
         // generate client challenge
         let client_challenge = random(8);
 
-        let response = compute_response_v2(&self.response_key_nt, &self.response_key_lm, &server_challenge, &client_challenge, &timestamp, &target_name);
+        let response = compute_response_v2(&self.response_key_nt, &self.response_key_lm, server_challenge, &client_challenge, &timestamp, target_name);
         let nt_challenge_response = response.0;
         let lm_challenge_response = response.1;
         let session_base_key = response.2;
-        let key_exchange_key = kx_key_v2(&session_base_key, &lm_challenge_response, &server_challenge);
+        let key_exchange_key = kx_key_v2(&session_base_key, &lm_challenge_response, server_challenge);
         self.exported_session_key = Some(random(16));
 
         let encrypted_random_session_key = rc4k(&key_exchange_key, self.exported_session_key.as_ref().unwrap());
@@ -682,7 +683,7 @@ impl GenericSecurityService for NTLMv2SecurityInterface {
         let mut encrypted_data = vec![0; data.len()];
         self.encrypt.process(data, &mut encrypted_data);
         let signature = mac(&mut self.encrypt, &self.signing_key, self.seq_num, data);
-        self.seq_num = self.seq_num + 1;
+        self.seq_num += 1;
         Ok(to_vec(&trame![signature, encrypted_data]))
     }
 

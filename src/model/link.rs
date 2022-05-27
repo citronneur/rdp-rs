@@ -1,9 +1,9 @@
 extern crate native_tls;
 
-use model::error::{RdpResult, Error, RdpError, RdpErrorKind};
+use crate::model::error::{RdpResult, Error, RdpError, RdpErrorKind};
 use std::io::{Cursor, Read, Write};
 use self::native_tls::{TlsConnector, TlsStream, Certificate};
-use model::data::{Message};
+use crate::model::data::{Message};
 
 /// This a wrapper to work equals
 /// for a stream and a TLS stream
@@ -78,10 +78,11 @@ impl<S: Read + Write> Stream<S> {
     /// Shutdown the stream
     /// Only works when stream is a SSL stream
     pub fn shutdown(&mut self) -> RdpResult<()> {
-        Ok(match self {
+        match self {
             Stream::Ssl(e) => e.shutdown()?,
             _ => ()
-        })
+        };
+        Ok(())
     }
 }
 
