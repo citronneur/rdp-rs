@@ -1,14 +1,14 @@
-use core::mcs;
-use core::tpkt;
+use crate::core::mcs;
+use crate::core::tpkt;
 use std::io::{Read, Write, Cursor};
-use model::error::{RdpResult, Error, RdpErrorKind, RdpError};
-use model::data::{Component, MessageOption, U32, DynOption, U16, DataType, Message, Array, Trame, Check, to_vec};
-use core::event::{RdpEvent, BitmapEvent};
+use crate::model::error::{RdpResult, Error, RdpErrorKind, RdpError};
+use crate::model::data::{Component, MessageOption, U32, DynOption, U16, DataType, Message, Array, Trame, Check, to_vec};
+use crate::core::event::{RdpEvent, BitmapEvent};
 use num_enum::TryFromPrimitive;
 use std::convert::TryFrom;
-use core::capability::{Capability, capability_set};
-use core::capability;
-use core::gcc::KeyboardLayout;
+use crate::core::capability::{Capability, capability_set};
+use crate::core::capability;
+use crate::core::gcc::KeyboardLayout;
 
 
 /// Raw PDU type use by the protocol

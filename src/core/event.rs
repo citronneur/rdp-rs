@@ -1,6 +1,6 @@
-use model::error::{RdpResult, Error, RdpError, RdpErrorKind};
+use crate::model::error::{RdpResult, Error, RdpError, RdpErrorKind};
 use num_enum::TryFromPrimitive;
-use codec::rle::{rle_32_decompress, rle_16_decompress, rgb565torgb32};
+use crate::codec::rle::{rle_32_decompress, rle_16_decompress, rgb565torgb32};
 
 /// A bitmap event is used
 /// to notify client that it received

@@ -1,7 +1,7 @@
-use model::data::{Component, U32, U16, Trame, to_vec, Message, DataType, DynOption, MessageOption, Check, Array};
-use model::unicode::Unicode;
-use model::error::{RdpResult, RdpError, RdpErrorKind, Error};
-use core::per;
+use crate::model::data::{Component, U32, U16, Trame, to_vec, Message, DataType, DynOption, MessageOption, Check, Array};
+use crate::model::unicode::Unicode;
+use crate::model::error::{RdpResult, RdpError, RdpErrorKind, Error};
+use crate::core::per;
 use std::io::{Cursor, Read};
 use std::collections::HashMap;
 
