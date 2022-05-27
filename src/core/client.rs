@@ -349,3 +349,9 @@ impl Connector {
         self
     }
 }
+
+impl Default for Connector {
+    fn default() -> Self {
+        Self::new()
+    }
+}

@@ -41,6 +41,12 @@ pub struct SequenceOf {
     factory: Option<Box<dyn Fn() -> Box<dyn ASN1>>>
 }
 
+impl Default for SequenceOf {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl SequenceOf {
     /// Create an empty sequenceof
     ///
@@ -49,7 +55,7 @@ impl SequenceOf {
     /// use rdp::nla::asn1::SequenceOf;
     /// let so = SequenceOf::new();
     /// ```
-    pub fn new() -> Self{
+    pub fn new() -> Self {
         SequenceOf {
             inner: Vec::new(),
             factory : None

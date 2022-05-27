@@ -80,8 +80,8 @@ fn ts_demand_active_pdu() -> PDU {
 ///
 /// https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-rdpbcgr/4e9722c3-ad83-43f5-af5a-529f73d88b48
 fn ts_confirm_active_pdu(share_id: Option<u32>, source: Option<Vec<u8>>, capabilities_set: Option<Array<Component>>) -> PDU {
-    let default_capabilities_set = capabilities_set.unwrap_or(Array::new(|| capability_set(None)));
-    let default_source = source.unwrap_or(vec![]);
+    let default_capabilities_set = capabilities_set.unwrap_or_else(|| Array::new(|| capability_set(None)));
+    let default_source = source.unwrap_or_default();
     PDU {
         pdu_type: PDUType::PdutypeConfirmactivepdu,
         message: component![
@@ -113,16 +113,16 @@ fn ts_deactivate_all_pdu() -> PDU {
 
 /// All Data PDU share the same layout
 fn share_data_header(share_id: Option<u32>, pdu_type_2: Option<PDUType2>, message: Option<Vec<u8>>) -> PDU {
-    let default_message = message.unwrap_or(vec![]);
+    let default_message = message.unwrap_or_default();
     PDU {
         pdu_type: PDUType::PdutypeDatapdu,
         message: component![
             "shareId" => U32::LE(share_id.unwrap_or(0)),
-            "pad1" => 0 as u8,
-            "streamId" => 1 as u8,
+            "pad1" => 0_u8,
+            "streamId" => 1_u8,
             "uncompressedLength" => DynOption::new(U16::LE(default_message.length() as u16 + 18), | size | MessageOption::Size("payload".to_string(), size.inner() as usize - 18)),
             "pduType2" => pdu_type_2.unwrap_or(PDUType2::Pdutype2ArcStatusPdu) as u8,
-            "compressedType" => 0 as u8,
+            "compressedType" => 0_u8,
             "compressedLength" => U16::LE(0),
             "payload" => default_message
         ]
@@ -133,7 +133,7 @@ fn share_data_header(share_id: Option<u32>, pdu_type_2: Option<PDUType2>, messag
 /// This is the main PDU payload format
 /// It use the share control header to dispatch between all PDU
 fn share_control_header(pdu_type: Option<PDUType>, pdu_source: Option<u16>, message: Option<Vec<u8>>) -> Component {
-    let default_message = message.unwrap_or(vec![]);
+    let default_message = message.unwrap_or_default();
     component![
         "totalLength" => DynOption::new(U16::LE(default_message.length() as u16 + 6), |total| MessageOption::Size("pduMessage".to_string(), total.inner() as usize - 6)),
         "pduType" => U16::LE(pdu_type.unwrap_or(PDUType::PdutypeDemandactivepdu) as u16),
@@ -277,7 +277,7 @@ fn ts_font_map_pdu() -> DataPDU {
 
 /// Send input event as slow path
 fn ts_input_pdu_data(events: Option<Array<Component>>) -> DataPDU {
-    let default_events = events.unwrap_or(Array::new(|| ts_input_event(None, None)));
+    let default_events = events.unwrap_or_else(|| Array::new(|| ts_input_event(None, None)));
     DataPDU {
         pdu_type: PDUType2::Pdutype2Input,
         message: component![
@@ -293,7 +293,7 @@ fn ts_input_event(message_type: Option<InputEventType>, data: Option<Vec<u8>>) -
     component![
         "eventTime" => U32::LE(0),
         "messageType" => U16::LE(message_type.unwrap_or(InputEventType::InputEventMouse) as u16),
-        "slowPathInputData" => data.unwrap_or(vec![])
+        "slowPathInputData" => data.unwrap_or_default()
     ]
 }
 
@@ -371,15 +371,15 @@ pub fn ts_keyboard_event(flags: Option<u16>, key_code: Option<u16>) -> TSInputEv
 /// https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-rdpbcgr/a1c4caa8-00ed-45bb-a06e-5177473766d3
 fn ts_fp_update() -> Component {
     component![
-        "updateHeader" => DynOption::new(0 as u8, |header| {
-            if (header >> 4) & 0x2 as u8 == 0 as u8 {
+        "updateHeader" => DynOption::new(0_u8, |header| {
+            if (header >> 4) & 0x2_u8 == 0_u8 {
                 MessageOption::SkipField("compressionFlags".to_string())
             }
             else {
                 MessageOption::None
             }
         }),
-        "compressionFlags" => 0 as u8,
+        "compressionFlags" => 0_u8,
         "size" => DynOption::new(U16::LE(0), | size | MessageOption::Size("updateData".to_string(), size.inner() as usize)),
         "updateData" => Vec::<u8>::new()
     ]
@@ -469,7 +469,7 @@ fn ts_fp_update_bitmap() -> FastPathUpdate {
         message: component![
             "header" => Check::new(U16::LE(FastPathUpdateType::FastpathUpdatetypeBitmap as u16)),
             "numberRectangles" => U16::LE(0),
-            "rectangles" => Array::new(|| ts_bitmap_data())
+            "rectangles" => Array::new(ts_bitmap_data)
         ]
     }
 }
@@ -489,7 +489,7 @@ fn ts_colorpointerattribute() -> FastPathUpdate {
             "lengthXorMask" => DynOption::new(U16::LE(0), |length| MessageOption::Size("xorMaskData".to_string(), length.inner() as usize)),
             "xorMaskData" => Vec::<u8>::new(),
             "andMaskData" => Vec::<u8>::new(),
-            "pad" => Some(0 as u8)
+            "pad" => Some(0_u8)
          ]
     }
 }
@@ -602,7 +602,7 @@ impl Client {
             self.share_id = Some(cast!(DataType::U32, pdu.message["shareId"])?);
             return Ok(true)
         }
-        return Ok(false)
+        Ok(false)
     }
 
     /// Read server synchronize pdu
@@ -696,7 +696,7 @@ impl Client {
     fn read_fast_path<T>(&mut self, stream: &mut dyn Read, mut callback: T) -> RdpResult<()>
     where T: FnMut(RdpEvent) {
         // it could be have one or more fast path payload
-        let mut fp_messages = Array::new(|| ts_fp_update());
+        let mut fp_messages = Array::new(ts_fp_update);
         fp_messages.read(stream)?;
 
         for fp_message in fp_messages.inner().iter() {

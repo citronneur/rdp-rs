@@ -45,13 +45,13 @@ fn domain_parameters(max_channel_ids: u32, maw_user_ids: u32, max_token_ids: u32
 /// http://www.itu.int/rec/T-REC-T.125-199802-I/en page 25
 fn connect_initial(user_data: Option<OctetString>) -> ImplicitTag<Sequence> {
     ImplicitTag::new(Tag::application(101), sequence![
-        "callingDomainSelector" => vec![1 as u8] as OctetString,
-        "calledDomainSelector" => vec![1 as u8] as OctetString,
+        "callingDomainSelector" => vec![1_u8] as OctetString,
+        "calledDomainSelector" => vec![1_u8] as OctetString,
         "upwardFlag" => true,
         "targetParameters" => domain_parameters(34, 2, 0, 1, 0, 1, 0xffff, 2),
         "minimumParameters" => domain_parameters(1, 1, 1, 1, 0, 1, 0x420, 2),
         "maximumParameters" => domain_parameters(0xffff, 0xfc17, 0xffff, 1, 0, 1, 0xffff, 2),
-        "userData" => user_data.unwrap_or(Vec::new())
+        "userData" => user_data.unwrap_or_default()
     ])
 }
 
@@ -62,7 +62,7 @@ sequence![
         "result" => 0 as Enumerate,
         "calledConnectId" => 0 as Integer,
         "domainParameters" => domain_parameters(22, 3, 0, 1, 0, 1,0xfff8, 2),
-        "userData" => user_data.unwrap_or(Vec::new())
+        "userData" => user_data.unwrap_or_default()
     ])
 }
 
@@ -75,7 +75,7 @@ fn mcs_pdu_header(pdu: Option<DomainMCSPDU>, options: Option<u8>) -> u8 {
 /// Client -- attach_user_request -> Server
 /// Client <- attach_user_confirm -- Server
 fn read_attach_user_confirm(buffer: &mut dyn Read) -> RdpResult<u16> {
-    let mut confirm = trame![0 as u8, Vec::<u8>::new()];
+    let mut confirm = trame![0_u8, Vec::<u8>::new()];
     confirm.read(buffer)?;
     if cast!(DataType::U8, confirm[0])? >> 2 != mcs_pdu_header(Some(DomainMCSPDU::AttachUserConfirm), None) >> 2 {
         return Err(Error::RdpError(RdpError::new(RdpErrorKind::InvalidData, "MCS: unexpected header on recv_attach_user_confirm")));
@@ -85,7 +85,7 @@ fn read_attach_user_confirm(buffer: &mut dyn Read) -> RdpResult<u16> {
     if per::read_enumerates(&mut request)? != 0 {
         return Err(Error::RdpError(RdpError::new(RdpErrorKind::RejectedByServer, "MCS: recv_attach_user_confirm user rejected by server")));
     }
-    Ok(per::read_integer_16(1001, &mut request)?)
+    per::read_integer_16(1001, &mut request)
 }
 
 /// Create a session for the current user
@@ -133,7 +133,7 @@ fn channel_join_request(user_id: Option<u16>, channel_id: Option<u16>) -> RdpRes
 /// Client -- channel_join_request -> Server
 /// Client <- channel_join_confirm -- Server
 fn read_channel_join_confirm(user_id: u16, channel_id: u16, buffer: &mut dyn Read) -> RdpResult<bool> {
-    let mut confirm = trame![0 as u8, Vec::<u8>::new()];
+    let mut confirm = trame![0_u8, Vec::<u8>::new()];
     confirm.read(buffer)?;
     if cast!(DataType::U8, confirm[0])? >> 2 != mcs_pdu_header(Some(DomainMCSPDU::ChannelJoinConfirm), None) >> 2 {
         return Err(Error::RdpError(RdpError::new(RdpErrorKind::InvalidData, "MCS: unexpected header on read_channel_join_confirm")));
@@ -257,13 +257,13 @@ impl<S: Read + Write> Client<S> {
     /// mcs.connect(800, 600, KeyboardLayout::French).unwrap();
     /// mcs.write("global".to_string(), trame![U16::LE(0)])
     /// ```
-    pub fn write<T: 'static>(&mut self, channel_name: &String, message: T) -> RdpResult<()>
+    pub fn write<T: 'static>(&mut self, channel_name: &str, message: T) -> RdpResult<()>
     where T: Message {
         self.x224.write(trame![
             mcs_pdu_header(Some(DomainMCSPDU::SendDataRequest), None),
             U16::BE(self.user_id.unwrap() - 1001),
             U16::BE(self.channel_ids[channel_name]),
-            0x70 as u8,
+            0x70_u8,
             per::write_length(message.length() as u16)?,
             message
         ])
@@ -301,7 +301,7 @@ impl<S: Read + Write> Client<S> {
                 per::read_integer_16(1001, &mut payload)?;
 
                 let channel_id = per::read_integer_16(0, &mut payload)?;
-                let channel = self.channel_ids.iter().find(|x| *x.1 == channel_id).ok_or(Error::RdpError(RdpError::new(RdpErrorKind::Unknown, "MCS: unknown channel")))?;
+                let channel = self.channel_ids.iter().find(|x| *x.1 == channel_id).ok_or_else(|| Error::RdpError(RdpError::new(RdpErrorKind::Unknown, "MCS: unknown channel")))?;
 
                 per::read_enumerates(&mut payload)?;
                 per::read_length(&mut payload)?;
