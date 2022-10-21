@@ -11,7 +11,7 @@ use crate::model::error::{Error, RdpError, RdpErrorKind, RdpResult};
 use crate::model::link::SecureBio;
 use crate::model::link::{Link, Stream};
 use crate::nla::ntlm::Ntlm;
-use std::io::{Read, Write};
+use tokio::io::*;
 
 impl From<&str> for KeyboardLayout {
     fn from(e: &str) -> Self {
@@ -31,7 +31,7 @@ pub struct RdpClient<S> {
     global: global::Client,
 }
 
-impl<S: Read + Write> RdpClient<S> {
+impl<S: AsyncRead + AsyncWrite + Unpin> RdpClient<S> {
     /// Read a payload from the server
     /// RDpClient use a callback pattern that can be called more than once
     /// during a read call
@@ -56,13 +56,13 @@ impl<S: Read + Write> RdpClient<S> {
     ///     }
     /// }).unwrap()
     /// ```
-    pub fn read<T>(&mut self, callback: T) -> RdpResult<()>
+    pub async fn read<T>(&mut self, callback: T) -> RdpResult<()>
     where
         T: FnMut(RdpEvent),
     {
-        let (channel_name, message) = self.mcs.read()?;
+        let (channel_name, message) = self.mcs.read().await?;
         match channel_name.as_str() {
-            "global" => self.global.read(message, &mut self.mcs, callback),
+            "global" => self.global.read(message, &mut self.mcs, callback).await,
             _ => Err(Error::RdpError(RdpError::new(
                 RdpErrorKind::UnexpectedType,
                 &format!("Invalid channel name {:?}", channel_name),
@@ -94,7 +94,7 @@ impl<S: Read + Write> RdpClient<S> {
     ///     }
     /// )).unwrap()
     /// ```
-    pub fn write(&mut self, event: RdpEvent) -> RdpResult<()> {
+    pub async fn write(&mut self, event: RdpEvent) -> RdpResult<()> {
         match event {
             // Pointer event
             // Mouse position an d button position
@@ -113,10 +113,12 @@ impl<S: Read + Write> RdpClient<S> {
                     flags |= PointerFlag::PtrflagsDown as u16;
                 }
 
-                self.global.write_input_event(
-                    ts_pointer_event(Some(flags), Some(pointer.x), Some(pointer.y)),
-                    &mut self.mcs,
-                )
+                self.global
+                    .write_input_event(
+                        ts_pointer_event(Some(flags), Some(pointer.x), Some(pointer.y)),
+                        &mut self.mcs,
+                    )
+                    .await
             }
             // Raw keyboard input
             RdpEvent::Key(key) => {
@@ -124,10 +126,12 @@ impl<S: Read + Write> RdpClient<S> {
                 if !key.down {
                     flags |= KeyboardFlag::KbdflagsRelease as u16;
                 }
-                self.global.write_input_event(
-                    ts_keyboard_event(Some(flags), Some(key.code)),
-                    &mut self.mcs,
-                )
+                self.global
+                    .write_input_event(
+                        ts_keyboard_event(Some(flags), Some(key.code)),
+                        &mut self.mcs,
+                    )
+                    .await
             }
             _ => Err(Error::RdpError(RdpError::new(
                 RdpErrorKind::UnexpectedType,
@@ -140,8 +144,8 @@ impl<S: Read + Write> RdpClient<S> {
     /// once the global channel is not connected
     /// This will disable InvalidAutomata error in case
     /// if you sent input before end of the sync process
-    pub fn try_write(&mut self, event: RdpEvent) -> RdpResult<()> {
-        let result = self.write(event);
+    pub async fn try_write(&mut self, event: RdpEvent) -> RdpResult<()> {
+        let result = self.write(event).await;
         match result {
             Err(Error::RdpError(e)) => match e.kind() {
                 RdpErrorKind::InvalidAutomata => Ok(()),
@@ -152,11 +156,12 @@ impl<S: Read + Write> RdpClient<S> {
     }
 
     /// Close client is indeed close the switch layer
-    pub fn shutdown(&mut self) -> RdpResult<()> {
-        self.mcs.shutdown()
+    pub async fn shutdown(&mut self) -> RdpResult<()> {
+        self.mcs.shutdown().await
     }
 }
 
+#[derive(Default)]
 pub struct Connector {
     /// Screen width
     width: u16,
@@ -235,13 +240,16 @@ impl Connector {
     /// let mut client = connector.connect(tcp).unwrap();
     /// ```
     #[cfg(feature = "openssl")]
-    pub fn connect<S: Read + Write>(&mut self, stream: S) -> RdpResult<RdpClient<S>> {
+    pub async fn connect<S: AsyncRead + AsyncWrite + Unpin>(
+        &mut self,
+        stream: S,
+    ) -> RdpResult<RdpClient<S>> {
         // Create a wrapper around the stream
         let tcp = Link::new(Stream::Raw(stream));
-        self.connect_further(tcp)
+        self.connect_further(tcp).await
     }
     #[cfg(not(feature = "openssl"))]
-    pub fn connect<S: Read + Write, B: SecureBio<S> + 'static>(
+    pub fn connect<S: AsyncRead + AsyncWrite + Unpin, B: SecureBio<S> + 'static>(
         &mut self,
         stream: Box<B>,
     ) -> RdpResult<RdpClient<S>> {
@@ -250,7 +258,10 @@ impl Connector {
         self.connect_further(tcp)
     }
 
-    fn connect_further<S: Read + Write>(&self, tcp: Link<S>) -> RdpResult<RdpClient<S>> {
+    async fn connect_further<S: AsyncRead + AsyncWrite + Unpin>(
+        &self,
+        tcp: Link<S>,
+    ) -> RdpResult<RdpClient<S>> {
         // Compute authentication method
         let mut authentication = if let Some(hash) = &self.password_hash {
             Ntlm::from_hash(self.domain.clone(), self.username.clone(), hash)
@@ -275,11 +286,13 @@ impl Connector {
             Some(&mut authentication),
             self.restricted_admin_mode,
             self.blank_creds,
-        )?;
+        )
+        .await?;
 
         // Create MCS layer and connect it
         let mut mcs = mcs::Client::new(x224);
-        mcs.connect(self.name.clone(), self.width, self.height, self.layout)?;
+        mcs.connect(self.name.clone(), self.width, self.height, self.layout)
+            .await?;
         // state less connection for old secure layer
         if self.restricted_admin_mode {
             sec::connect(
@@ -288,7 +301,8 @@ impl Connector {
                 &"".to_string(),
                 &"".to_string(),
                 self.auto_logon,
-            )?;
+            )
+            .await?;
         } else {
             sec::connect(
                 &mut mcs,
@@ -296,7 +310,8 @@ impl Connector {
                 &self.username,
                 &self.password,
                 self.auto_logon,
-            )?;
+            )
+            .await?;
         }
 
         // Now the global channel

@@ -65,7 +65,7 @@ impl BitmapEvent {
             32 => {
                 // 32 bpp is straight forward
                 Ok(if self.is_compress {
-                    let mut result = vec![0 as u8; self.width as usize * self.height as usize * 4];
+                    let mut result = vec![0_u8; self.width as usize * self.height as usize * 4];
                     rle_32_decompress(
                         &self.data,
                         self.width as u32,
@@ -80,7 +80,7 @@ impl BitmapEvent {
             16 => {
                 // 16 bpp is more consumer
                 let result_16bpp = if self.is_compress {
-                    let mut result = vec![0 as u16; self.width as usize * self.height as usize * 2];
+                    let mut result = vec![0_u16; self.width as usize * self.height as usize * 2];
                     rle_16_decompress(
                         &self.data,
                         self.width as usize,
@@ -89,7 +89,7 @@ impl BitmapEvent {
                     )?;
                     result
                 } else {
-                    let mut result = vec![0 as u16; self.width as usize * self.height as usize];
+                    let mut result = vec![0_u16; self.width as usize * self.height as usize];
                     for i in 0..self.height {
                         for j in 0..self.width {
                             let src = (((self.height - i - 1) * self.width + j) * 2) as usize;

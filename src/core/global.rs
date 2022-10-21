@@ -10,43 +10,44 @@ use crate::model::data::{
 use crate::model::error::{Error, RdpError, RdpErrorKind, RdpResult};
 use num_enum::TryFromPrimitive;
 use std::convert::TryFrom;
-use std::io::{Cursor, Read, Write};
+use std::io::{Cursor, Read};
+use tokio::io::*;
 
 /// Raw PDU type use by the protocol
 #[repr(u16)]
 #[derive(Copy, Clone, Eq, PartialEq, Debug, TryFromPrimitive)]
-enum PDUType {
-    PdutypeDemandactivepdu = 0x11,
-    PdutypeConfirmactivepdu = 0x13,
-    PdutypeDeactivateallpdu = 0x16,
-    PdutypeDatapdu = 0x17,
-    PdutypeServerRedirPkt = 0x1A,
+enum PduType {
+    Demandactivepdu = 0x11,
+    Confirmactivepdu = 0x13,
+    Deactivateallpdu = 0x16,
+    Datapdu = 0x17,
+    ServerRedirPkt = 0x1A,
 }
 
 /// PDU type available
 /// Most of them are used for initial handshake
 /// Then once connected only Data are send and received
-struct PDU {
-    pub pdu_type: PDUType,
+struct Pdu {
+    pub pdu_type: PduType,
     pub message: Component,
 }
 
-impl PDU {
+impl Pdu {
     /// Build a PDU structure from reading stream
     pub fn from_stream(stream: &mut dyn Read) -> RdpResult<Self> {
         let mut header = share_control_header(None, None, None);
         header.read(stream)?;
-        PDU::from_control(&header)
+        Pdu::from_control(&header)
     }
 
     /// Build a PDU data directly from a control message
     pub fn from_control(control: &Component) -> RdpResult<Self> {
         let pdu_type = cast!(DataType::U16, control["pduType"])?;
-        let mut pdu = match PDUType::try_from(pdu_type)? {
-            PDUType::PdutypeDemandactivepdu => ts_demand_active_pdu(),
-            PDUType::PdutypeDatapdu => share_data_header(None, None, None),
-            PDUType::PdutypeConfirmactivepdu => ts_confirm_active_pdu(None, None, None),
-            PDUType::PdutypeDeactivateallpdu => ts_deactivate_all_pdu(),
+        let mut pdu = match PduType::try_from(pdu_type)? {
+            PduType::Demandactivepdu => ts_demand_active_pdu(),
+            PduType::Datapdu => share_data_header(None, None, None),
+            PduType::Confirmactivepdu => ts_confirm_active_pdu(None, None, None),
+            PduType::Deactivateallpdu => ts_deactivate_all_pdu(),
             _ => {
                 return Err(Error::RdpError(RdpError::new(
                     RdpErrorKind::NotImplemented,
@@ -68,9 +69,9 @@ impl PDU {
 /// of the target server
 ///
 /// https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-rdpbcgr/bd612af5-cb54-43a2-9646-438bc3ecf5db
-fn ts_demand_active_pdu() -> PDU {
-    PDU {
-        pdu_type: PDUType::PdutypeDemandactivepdu,
+fn ts_demand_active_pdu() -> Pdu {
+    Pdu {
+        pdu_type: PduType::Demandactivepdu,
         message: component![
             "shareId" => U32::LE(0),
             "lengthSourceDescriptor" => DynOption::new(U16::LE(0), |length| MessageOption::Size("sourceDescriptor".to_string(), length.inner() as usize)),
@@ -92,11 +93,12 @@ fn ts_confirm_active_pdu(
     share_id: Option<u32>,
     source: Option<Vec<u8>>,
     capabilities_set: Option<Array<Component>>,
-) -> PDU {
-    let default_capabilities_set = capabilities_set.unwrap_or(Array::new(|| capability_set(None)));
-    let default_source = source.unwrap_or(vec![]);
-    PDU {
-        pdu_type: PDUType::PdutypeConfirmactivepdu,
+) -> Pdu {
+    let default_capabilities_set =
+        capabilities_set.unwrap_or_else(|| Array::new(|| capability_set(None)));
+    let default_source = source.unwrap_or_default();
+    Pdu {
+        pdu_type: PduType::Confirmactivepdu,
         message: component![
             "shareId" => U32::LE(share_id.unwrap_or(0)),
             "originatorId" => Check::new(U16::LE(0x03EA)),
@@ -113,9 +115,9 @@ fn ts_confirm_active_pdu(
 /// Use to inform user that a session already exist
 ///
 /// https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-rdpbcgr/fc191c40-e688-4d5a-a550-6609cd5b8b59
-fn ts_deactivate_all_pdu() -> PDU {
-    PDU {
-        pdu_type: PDUType::PdutypeDeactivateallpdu,
+fn ts_deactivate_all_pdu() -> Pdu {
+    Pdu {
+        pdu_type: PduType::Deactivateallpdu,
         message: component![
             "shareId" => U32::LE(0),
             "lengthSourceDescriptor" => DynOption::new(U16::LE(0), |length| MessageOption::Size("sourceDescriptor".to_string(), length.inner() as usize)),
@@ -129,17 +131,17 @@ fn share_data_header(
     share_id: Option<u32>,
     pdu_type_2: Option<PDUType2>,
     message: Option<Vec<u8>>,
-) -> PDU {
-    let default_message = message.unwrap_or(vec![]);
-    PDU {
-        pdu_type: PDUType::PdutypeDatapdu,
+) -> Pdu {
+    let default_message = message.unwrap_or_default();
+    Pdu {
+        pdu_type: PduType::Datapdu,
         message: component![
             "shareId" => U32::LE(share_id.unwrap_or(0)),
-            "pad1" => 0 as u8,
-            "streamId" => 1 as u8,
+            "pad1" => 0_u8,
+            "streamId" => 1_u8,
             "uncompressedLength" => DynOption::new(U16::LE(default_message.length() as u16 + 18), | size | MessageOption::Size("payload".to_string(), size.inner() as usize - 18)),
             "pduType2" => pdu_type_2.unwrap_or(PDUType2::Pdutype2ArcStatusPdu) as u8,
-            "compressedType" => 0 as u8,
+            "compressedType" => 0_u8,
             "compressedLength" => U16::LE(0),
             "payload" => default_message
         ],
@@ -149,14 +151,14 @@ fn share_data_header(
 /// This is the main PDU payload format
 /// It use the share control header to dispatch between all PDU
 fn share_control_header(
-    pdu_type: Option<PDUType>,
+    pdu_type: Option<PduType>,
     pdu_source: Option<u16>,
     message: Option<Vec<u8>>,
 ) -> Component {
-    let default_message = message.unwrap_or(vec![]);
+    let default_message = message.unwrap_or_default();
     component![
         "totalLength" => DynOption::new(U16::LE(default_message.length() as u16 + 6), |total| MessageOption::Size("pduMessage".to_string(), total.inner() as usize - 6)),
-        "pduType" => U16::LE(pdu_type.unwrap_or(PDUType::PdutypeDemandactivepdu) as u16),
+        "pduType" => U16::LE(pdu_type.unwrap_or(PduType::Demandactivepdu) as u16),
         "PDUSource" => Some(U16::LE(pdu_source.unwrap_or(0))),
         "pduMessage" => default_message
     ]
@@ -202,7 +204,7 @@ impl DataPDU {
     /// Build a DATA PDU from a PDU container
     /// User must check that the PDU is a DATA PDU
     /// If not this function will panic
-    pub fn from_pdu(data_pdu: &PDU) -> RdpResult<DataPDU> {
+    pub fn from_pdu(data_pdu: &Pdu) -> RdpResult<DataPDU> {
         let pdu_type = PDUType2::try_from(cast!(DataType::U8, data_pdu.message["pduType2"])?)?;
         let mut result = match pdu_type {
             PDUType2::Pdutype2Synchronize => ts_synchronize_pdu(None),
@@ -267,21 +269,21 @@ fn ts_set_error_info_pdu() -> DataPDU {
 
 #[repr(u16)]
 #[allow(dead_code)]
-enum Action {
-    CtrlactionRequestControl = 0x0001,
-    CtrlactionGrantedControl = 0x0002,
-    CtrlactionDetach = 0x0003,
-    CtrlactionCooperate = 0x0004,
+enum CtrlAction {
+    RequestControl = 0x0001,
+    GrantedControl = 0x0002,
+    Detach = 0x0003,
+    Cooperate = 0x0004,
 }
 
 /// Control payload send during pdu handshake
 ///
 /// https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-rdpbcgr/0448f397-aa11-455d-81b1-f1265085239d
-fn ts_control_pdu(action: Option<Action>) -> DataPDU {
+fn ts_control_pdu(action: Option<CtrlAction>) -> DataPDU {
     DataPDU {
         pdu_type: PDUType2::Pdutype2Control,
         message: component![
-            "action" => U16::LE(action.unwrap_or(Action::CtrlactionCooperate) as u16),
+            "action" => U16::LE(action.unwrap_or(CtrlAction::Cooperate) as u16),
             "grantId" => U16::LE(0),
             "controlId" => U32::LE(0)
         ],
@@ -305,7 +307,7 @@ fn ts_font_map_pdu() -> DataPDU {
 
 /// Send input event as slow path
 fn ts_input_pdu_data(events: Option<Array<Component>>) -> DataPDU {
-    let default_events = events.unwrap_or(Array::new(|| ts_input_event(None, None)));
+    let default_events = events.unwrap_or_else(|| Array::new(|| ts_input_event(None, None)));
     DataPDU {
         pdu_type: PDUType2::Pdutype2Input,
         message: component![
@@ -321,7 +323,7 @@ fn ts_input_event(message_type: Option<InputEventType>, data: Option<Vec<u8>>) -
     component![
         "eventTime" => U32::LE(0),
         "messageType" => U16::LE(message_type.unwrap_or(InputEventType::InputEventMouse) as u16),
-        "slowPathInputData" => data.unwrap_or(vec![])
+        "slowPathInputData" => data.unwrap_or_default()
     ]
 }
 
@@ -399,15 +401,15 @@ pub fn ts_keyboard_event(flags: Option<u16>, key_code: Option<u16>) -> TSInputEv
 /// https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-rdpbcgr/a1c4caa8-00ed-45bb-a06e-5177473766d3
 fn ts_fp_update() -> Component {
     component![
-        "updateHeader" => DynOption::new(0 as u8, |header| {
-            if (header >> 4) & 0x2 as u8 == 0 as u8 {
+        "updateHeader" => DynOption::new(0_u8, |header| {
+            if (header >> 4) & 0x2_u8 == 0_u8 {
                 MessageOption::SkipField("compressionFlags".to_string())
             }
             else {
                 MessageOption::None
             }
         }),
-        "compressionFlags" => 0 as u8,
+        "compressionFlags" => 0_u8,
         "size" => DynOption::new(U16::LE(0), | size | MessageOption::Size("updateData".to_string(), size.inner() as usize)),
         "updateData" => Vec::<u8>::new()
     ]
@@ -508,7 +510,7 @@ fn ts_fp_update_bitmap() -> FastPathUpdate {
         message: component![
             "header" => Check::new(U16::LE(FastPathUpdateType::FastpathUpdatetypeBitmap as u16)),
             "numberRectangles" => U16::LE(0),
-            "rectangles" => Array::new(|| ts_bitmap_data())
+            "rectangles" => Array::new(ts_bitmap_data)
         ],
     }
 }
@@ -528,7 +530,7 @@ fn ts_colorpointerattribute() -> FastPathUpdate {
            "lengthXorMask" => DynOption::new(U16::LE(0), |length| MessageOption::Size("xorMaskData".to_string(), length.inner() as usize)),
            "xorMaskData" => Vec::<u8>::new(),
            "andMaskData" => Vec::<u8>::new(),
-           "pad" => Some(0 as u8)
+           "pad" => Some(0_u8)
         ],
     }
 }
@@ -637,8 +639,8 @@ impl Client {
     ///
     /// This function return true if it read the expected PDU
     fn read_demand_active_pdu(&mut self, stream: &mut dyn Read) -> RdpResult<bool> {
-        let pdu = PDU::from_stream(stream)?;
-        if pdu.pdu_type == PDUType::PdutypeDemandactivepdu {
+        let pdu = Pdu::from_stream(stream)?;
+        if pdu.pdu_type == PduType::Demandactivepdu {
             for capability_set in cast!(DataType::Trame, pdu.message["capabilitySets"])?.iter() {
                 match Capability::from_capability_set(cast!(DataType::Component, capability_set)?) {
                     Ok(capability) => self.server_capabilities.push(capability),
@@ -648,7 +650,7 @@ impl Client {
             self.share_id = Some(cast!(DataType::U32, pdu.message["shareId"])?);
             return Ok(true);
         }
-        return Ok(false);
+        Ok(false)
     }
 
     /// Read server synchronize pdu
@@ -656,8 +658,8 @@ impl Client {
     ///
     /// This function return true if it read the expected PDU
     fn read_synchronize_pdu(&mut self, stream: &mut dyn Read) -> RdpResult<bool> {
-        let pdu = PDU::from_stream(stream)?;
-        if pdu.pdu_type != PDUType::PdutypeDatapdu {
+        let pdu = Pdu::from_stream(stream)?;
+        if pdu.pdu_type != PduType::Datapdu {
             return Ok(false);
         }
         if DataPDU::from_pdu(&pdu)?.pdu_type != PDUType2::Pdutype2Synchronize {
@@ -669,9 +671,9 @@ impl Client {
     /// Read the server control PDU with the expected action
     ///
     /// This function return true if it read the expected PDU with the expected action
-    fn read_control_pdu(&mut self, stream: &mut dyn Read, action: Action) -> RdpResult<bool> {
-        let pdu = PDU::from_stream(stream)?;
-        if pdu.pdu_type != PDUType::PdutypeDatapdu {
+    fn read_control_pdu(&mut self, stream: &mut dyn Read, action: CtrlAction) -> RdpResult<bool> {
+        let pdu = Pdu::from_stream(stream)?;
+        if pdu.pdu_type != PduType::Datapdu {
             return Ok(false);
         }
 
@@ -694,8 +696,8 @@ impl Client {
     ///
     /// This function return true if it read the expected PDU
     fn read_font_map_pdu(&mut self, stream: &mut dyn Read) -> RdpResult<bool> {
-        let pdu = PDU::from_stream(stream)?;
-        if pdu.pdu_type != PDUType::PdutypeDatapdu {
+        let pdu = Pdu::from_stream(stream)?;
+        if pdu.pdu_type != PduType::Datapdu {
             return Ok(false);
         }
         if DataPDU::from_pdu(&pdu)?.pdu_type != PDUType2::Pdutype2Fontmap {
@@ -713,15 +715,15 @@ impl Client {
         message.read(stream)?;
 
         for pdu in message.inner() {
-            let pdu = PDU::from_control(cast!(DataType::Component, pdu)?)?;
+            let pdu = Pdu::from_control(cast!(DataType::Component, pdu)?)?;
 
             // Ask for a new handshake
-            if pdu.pdu_type == PDUType::PdutypeDeactivateallpdu {
+            if pdu.pdu_type == PduType::Deactivateallpdu {
                 println!("GLOBAL: deactive/reactive sequence initiated");
                 self.state = ClientState::DemandActivePDU;
                 continue;
             }
-            if pdu.pdu_type != PDUType::PdutypeDatapdu {
+            if pdu.pdu_type != PduType::Datapdu {
                 println!("GLOBAL: Ignore PDU {:?}", pdu.pdu_type);
                 continue;
             }
@@ -748,7 +750,7 @@ impl Client {
         T: FnMut(RdpEvent),
     {
         // it could be have one or more fast path payload
-        let mut fp_messages = Array::new(|| ts_fp_update());
+        let mut fp_messages = Array::new(ts_fp_update);
         fp_messages.read(stream)?;
 
         for fp_message in fp_messages.inner().iter() {
@@ -790,7 +792,7 @@ impl Client {
 
     /// Write confirm active pdu
     /// This PDU include all client capabilities
-    fn write_confirm_active_pdu<S: Read + Write>(
+    async fn write_confirm_active_pdu<S: AsyncRead + AsyncWrite + Unpin>(
         &mut self,
         mcs: &mut mcs::Client<S>,
     ) -> RdpResult<()> {
@@ -831,20 +833,30 @@ impl Client {
                 capability_set(Some(capability::ts_multifragment_update_capability_ts()))
             ])),
         );
-        self.write_pdu(pdu, mcs)
+        self.write_pdu(pdu, mcs).await
     }
 
     /// This is the finalize connection sequence
     /// sent from client to server
-    fn write_client_finalize<S: Read + Write>(&self, mcs: &mut mcs::Client<S>) -> RdpResult<()> {
-        self.write_data_pdu(ts_synchronize_pdu(Some(self.channel_id)), mcs)?;
-        self.write_data_pdu(ts_control_pdu(Some(Action::CtrlactionCooperate)), mcs)?;
-        self.write_data_pdu(ts_control_pdu(Some(Action::CtrlactionRequestControl)), mcs)?;
-        self.write_data_pdu(ts_font_list_pdu(), mcs)
+    async fn write_client_finalize<S: AsyncRead + AsyncWrite + Unpin>(
+        &self,
+        mcs: &mut mcs::Client<S>,
+    ) -> RdpResult<()> {
+        self.write_data_pdu(ts_synchronize_pdu(Some(self.channel_id)), mcs)
+            .await?;
+        self.write_data_pdu(ts_control_pdu(Some(CtrlAction::Cooperate)), mcs)
+            .await?;
+        self.write_data_pdu(ts_control_pdu(Some(CtrlAction::RequestControl)), mcs)
+            .await?;
+        self.write_data_pdu(ts_font_list_pdu(), mcs).await
     }
 
     /// Send a classic PDU to the global channel
-    fn write_pdu<S: Read + Write>(&self, message: PDU, mcs: &mut mcs::Client<S>) -> RdpResult<()> {
+    async fn write_pdu<S: AsyncRead + AsyncWrite + Unpin>(
+        &self,
+        message: Pdu,
+        mcs: &mut mcs::Client<S>,
+    ) -> RdpResult<()> {
         mcs.write(
             &"global".to_string(),
             share_control_header(
@@ -853,10 +865,11 @@ impl Client {
                 Some(to_vec(&message.message)),
             ),
         )
+        .await
     }
 
     /// Send Data pdu
-    fn write_data_pdu<S: Read + Write>(
+    async fn write_data_pdu<S: AsyncRead + AsyncWrite + Unpin>(
         &self,
         message: DataPDU,
         mcs: &mut mcs::Client<S>,
@@ -869,6 +882,7 @@ impl Client {
             ),
             mcs,
         )
+        .await
     }
 
     /// Public interface to sent input event
@@ -894,19 +908,21 @@ impl Client {
     ///     &mut self.mcs
     /// )
     /// ```
-    pub fn write_input_event<S: Read + Write>(
+    pub async fn write_input_event<S: AsyncRead + AsyncWrite + Unpin>(
         &self,
         event: TSInputEvent,
         mcs: &mut mcs::Client<S>,
     ) -> RdpResult<()> {
         match self.state {
-            ClientState::Data => Ok(self.write_data_pdu(
-                ts_input_pdu_data(Some(Array::from_trame(trame![ts_input_event(
-                    Some(event.event_type),
-                    Some(to_vec(&event.message))
-                )]))),
-                mcs,
-            )?),
+            ClientState::Data => Ok(self
+                .write_data_pdu(
+                    ts_input_pdu_data(Some(Array::from_trame(trame![ts_input_event(
+                        Some(event.event_type),
+                        Some(to_vec(&event.message))
+                    )]))),
+                    mcs,
+                )
+                .await?),
             _ => Err(Error::RdpError(RdpError::new(
                 RdpErrorKind::InvalidAutomata,
                 "You cannot send data once it's not connected",
@@ -929,7 +945,7 @@ impl Client {
     ///     ...
     /// }
     /// ```
-    pub fn read<S: Read + Write, T>(
+    pub async fn read<S: AsyncRead + AsyncWrite + Unpin, T>(
         &mut self,
         payload: tpkt::Payload,
         mcs: &mut mcs::Client<S>,
@@ -941,8 +957,8 @@ impl Client {
         match self.state {
             ClientState::DemandActivePDU => {
                 if self.read_demand_active_pdu(&mut try_let!(tpkt::Payload::Raw, payload)?)? {
-                    self.write_confirm_active_pdu(mcs)?;
-                    self.write_client_finalize(mcs)?;
+                    self.write_confirm_active_pdu(mcs).await?;
+                    self.write_client_finalize(mcs).await?;
                     // now wait for server synchronize
                     self.state = ClientState::SynchronizePDU;
                 }
@@ -958,7 +974,7 @@ impl Client {
             ClientState::ControlCooperate => {
                 if self.read_control_pdu(
                     &mut try_let!(tpkt::Payload::Raw, payload)?,
-                    Action::CtrlactionCooperate,
+                    CtrlAction::Cooperate,
                 )? {
                     // next state is control granted
                     self.state = ClientState::ControlGranted;
@@ -968,7 +984,7 @@ impl Client {
             ClientState::ControlGranted => {
                 if self.read_control_pdu(
                     &mut try_let!(tpkt::Payload::Raw, payload)?,
-                    Action::CtrlactionGrantedControl,
+                    CtrlAction::GrantedControl,
                 )? {
                     // next state is font map pdu
                     self.state = ClientState::FontMap;
@@ -1057,7 +1073,7 @@ mod test {
     fn test_share_control_header() {
         let mut stream = Cursor::new(vec![]);
         share_control_header(
-            Some(PDUType::PdutypeConfirmactivepdu),
+            Some(PduType::Confirmactivepdu),
             Some(12),
             Some(to_vec(
                 &ts_confirm_active_pdu(
@@ -1098,7 +1114,7 @@ mod test {
         ]);
         let mut global = Client::new(0, 0, 800, 600, KeyboardLayout::US, "foo");
         assert!(global
-            .read_control_pdu(&mut stream, Action::CtrlactionCooperate)
+            .read_control_pdu(&mut stream, CtrlAction::Cooperate)
             .unwrap())
     }
 
@@ -1110,7 +1126,7 @@ mod test {
         ]);
         let mut global = Client::new(0, 0, 800, 600, KeyboardLayout::US, "foo");
         assert!(global
-            .read_control_pdu(&mut stream, Action::CtrlactionGrantedControl)
+            .read_control_pdu(&mut stream, CtrlAction::GrantedControl)
             .unwrap())
     }
 

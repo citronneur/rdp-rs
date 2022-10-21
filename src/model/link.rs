@@ -1,13 +1,14 @@
 use crate::model::data::Message;
 use crate::model::error::{Error, RdpError, RdpErrorKind, RdpResult};
 #[cfg(feature = "openssl")]
-use native_tls::{TlsConnector, TlsStream};
-use std::io::{Cursor, Read, Write};
+use async_native_tls::{TlsConnector, TlsStream};
+use std::io::Cursor;
+use tokio::io::*;
 
 #[cfg(not(feature = "openssl"))]
 pub trait SecureBio<S>
 where
-    S: Read + Write,
+    S: AsyncRead + AsyncWrite,
 {
     fn start_ssl(&mut self, check_certificate: bool) -> RdpResult<()>;
     fn get_peer_certificate_der(&self) -> RdpResult<Option<Vec<u8>>>;
@@ -18,7 +19,7 @@ where
 /// This a wrapper to work equals
 /// for a stream and a TLS stream
 pub enum Stream<S> {
-    /// Raw stream that implement Read + Write
+    /// Raw stream that implement AsyncRead + AsyncWrite
     Raw(S),
     /// TLS Stream
     #[cfg(feature = "openssl")]
@@ -27,7 +28,7 @@ pub enum Stream<S> {
     Bio(Box<dyn SecureBio<S>>),
 }
 
-impl<S: Read + Write> Stream<S> {
+impl<S: AsyncRead + AsyncWrite + Unpin> Stream<S> {
     /// Read exactly the number of bytes present in buffer
     ///
     /// # Example
@@ -39,11 +40,11 @@ impl<S: Read + Write> Stream<S> {
     /// s.read_exact(&mut result).unwrap();
     /// assert_eq!(result, [1, 2])
     /// ```
-    pub fn read_exact(&mut self, buf: &mut [u8]) -> RdpResult<()> {
+    pub async fn read_exact(&mut self, buf: &mut [u8]) -> RdpResult<()> {
         match self {
-            Stream::Raw(e) => e.read_exact(buf)?,
+            Stream::Raw(e) => e.read_exact(buf).await?,
             #[cfg(feature = "openssl")]
-            Stream::Ssl(e) => e.read_exact(buf)?,
+            Stream::Ssl(e) => e.read_exact(buf).await?,
             #[cfg(not(feature = "openssl"))]
             Stream::Bio(bio) => bio.get_io().read_exact(buf)?,
         };
@@ -61,11 +62,11 @@ impl<S: Read + Write> Stream<S> {
     /// s.read(&mut result).unwrap();
     /// assert_eq!(result, [1, 2, 3, 0])
     /// ```
-    pub fn read(&mut self, buf: &mut [u8]) -> RdpResult<usize> {
+    pub async fn read(&mut self, buf: &mut [u8]) -> RdpResult<usize> {
         match self {
-            Stream::Raw(e) => Ok(e.read(buf)?),
+            Stream::Raw(e) => Ok(e.read(buf).await?),
             #[cfg(feature = "openssl")]
-            Stream::Ssl(e) => Ok(e.read(buf)?),
+            Stream::Ssl(e) => Ok(e.read(buf).await?),
             #[cfg(not(feature = "openssl"))]
             Stream::Bio(e) => Ok(e.get_io().read(buf)?),
         }
@@ -87,11 +88,11 @@ impl<S: Read + Write> Stream<S> {
     ///     panic!("invalid")
     /// }
     /// ```
-    pub fn write(&mut self, buffer: &[u8]) -> RdpResult<usize> {
+    pub async fn write(&mut self, buffer: &[u8]) -> RdpResult<usize> {
         Ok(match self {
-            Stream::Raw(e) => e.write(buffer)?,
+            Stream::Raw(e) => e.write(buffer).await?,
             #[cfg(feature = "openssl")]
-            Stream::Ssl(e) => e.write(buffer)?,
+            Stream::Ssl(e) => e.write(buffer).await?,
             #[cfg(not(feature = "openssl"))]
             Stream::Bio(e) => e.get_io().write(buffer)?,
         })
@@ -99,14 +100,15 @@ impl<S: Read + Write> Stream<S> {
 
     /// Shutdown the stream
     /// Only works when stream is a SSL stream
-    pub fn shutdown(&mut self) -> RdpResult<()> {
-        Ok(match self {
+    pub async fn shutdown(&mut self) -> RdpResult<()> {
+        match self {
             #[cfg(feature = "openssl")]
-            Stream::Ssl(e) => e.shutdown()?,
+            Stream::Ssl(e) => e.shutdown().await?,
             #[cfg(not(feature = "openssl"))]
             Stream::Bio(e) => e.shutdown()?,
             _ => (),
-        })
+        };
+        Ok(())
     }
 }
 
@@ -116,7 +118,7 @@ pub struct Link<S> {
     stream: Stream<S>,
 }
 
-impl<S: Read + Write> Link<S> {
+impl<S: AsyncRead + AsyncWrite + Unpin> Link<S> {
     /// Create a new link layer from a Stream
     ///
     /// # Example
@@ -156,10 +158,10 @@ impl<S: Read + Write> Link<S> {
     ///     }
     /// # }
     /// ```
-    pub fn write(&mut self, message: &dyn Message) -> RdpResult<()> {
+    pub async fn write(&mut self, message: &dyn Message) -> RdpResult<()> {
         let mut buffer = Cursor::new(Vec::new());
         message.write(&mut buffer)?;
-        self.stream.write(buffer.into_inner().as_slice())?;
+        self.stream.write(buffer.into_inner().as_slice()).await?;
         Ok(())
     }
 
@@ -172,15 +174,15 @@ impl<S: Read + Write> Link<S> {
     /// let mut link = Link::new(Stream::Raw(Cursor::new(vec![0, 1, 2])));
     /// assert_eq!(link.read(2).unwrap(), [0, 1])
     /// ```
-    pub fn read(&mut self, expected_size: usize) -> RdpResult<Vec<u8>> {
+    pub async fn read(&mut self, expected_size: usize) -> RdpResult<Vec<u8>> {
         if expected_size == 0 {
             let mut buffer = vec![0; 1500];
-            let size = self.stream.read(&mut buffer)?;
+            let size = self.stream.read(&mut buffer).await?;
             buffer.resize(size, 0);
             Ok(buffer)
         } else {
             let mut buffer = vec![0; expected_size];
-            self.stream.read_exact(&mut buffer)?;
+            self.stream.read_exact(&mut buffer).await?;
             Ok(buffer)
         }
     }
@@ -196,15 +198,15 @@ impl<S: Read + Write> Link<S> {
     /// let link_ssl = link_tcp.start_ssl(false).unwrap();
     /// ```
     #[cfg(feature = "openssl")]
-    pub fn start_ssl(self, check_certificate: bool) -> RdpResult<Link<S>> {
-        let mut builder = TlsConnector::builder();
-        builder.danger_accept_invalid_certs(!check_certificate);
-        builder.use_sni(false);
-
-        let connector = builder.build()?;
-
+    pub async fn start_ssl(self, check_certificate: bool) -> RdpResult<Link<S>> {
         if let Stream::Raw(stream) = self.stream {
-            return Ok(Link::new(Stream::Ssl(connector.connect("", stream)?)));
+            return Ok(Link::new(Stream::Ssl(
+                TlsConnector::new()
+                    .danger_accept_invalid_certs(!check_certificate)
+                    .use_sni(false)
+                    .connect("", stream)
+                    .await?,
+            )));
         }
         Err(Error::RdpError(RdpError::new(
             RdpErrorKind::NotImplemented,
@@ -251,8 +253,8 @@ impl<S: Read + Write> Link<S> {
 
     /// Close the stream
     /// Only works on SSL Stream
-    pub fn shutdown(&mut self) -> RdpResult<()> {
-        self.stream.shutdown()
+    pub async fn shutdown(&mut self) -> RdpResult<()> {
+        self.stream.shutdown().await
     }
 
     #[cfg(feature = "integration")]

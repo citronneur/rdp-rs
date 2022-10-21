@@ -5,7 +5,7 @@ use crate::nla::asn1::{
 };
 use crate::nla::sspi::AuthenticationProtocol;
 use num_bigint::BigUint;
-use std::io::{Read, Write};
+use tokio::io::*;
 use x509_parser::{parse_x509_der, X509Certificate};
 use yasna::Tag;
 
@@ -165,17 +165,17 @@ fn create_ts_authinfo(auth_info: Vec<u8>) -> Vec<u8> {
 /// This the main function for CSSP protocol
 /// It will use the raw link layer and the selected authenticate protocol
 /// to perform the NLA authenticate
-pub fn cssp_connect<S: Read + Write>(
+pub async fn cssp_connect<S: AsyncRead + AsyncWrite + Unpin>(
     link: &mut Link<S>,
     authentication_protocol: &mut dyn AuthenticationProtocol,
     restricted_admin_mode: bool,
 ) -> RdpResult<()> {
     // first step is to send the negotiate message from authentication protocol
     let negotiate_message = create_ts_request(authentication_protocol.create_negotiate_message()?);
-    link.write(&negotiate_message)?;
+    link.write(&negotiate_message).await?;
 
     // now receive server challenge
-    let server_challenge = read_ts_server_challenge(&(link.read(0)?))?;
+    let server_challenge = read_ts_server_challenge(&(link.read(0).await?))?;
 
     // now ask for to authenticate protocol
     let client_challenge = authentication_protocol.read_challenge_message(&server_challenge)?;
@@ -201,10 +201,11 @@ pub fn cssp_connect<S: Read + Write>(
                 .data,
         )?,
     );
-    link.write(&challenge)?;
+    link.write(&challenge).await?;
 
     // now server respond normally with the original public key incremented by one
-    let inc_pub_key = security_interface.gss_unwrapex(&(read_ts_validate(&(link.read(0)?))?))?;
+    let inc_pub_key =
+        security_interface.gss_unwrapex(&(read_ts_validate(&(link.read(0).await?))?))?;
 
     // Check possible man in the middle using cssp
     if BigUint::from_bytes_le(&inc_pub_key)
@@ -243,7 +244,7 @@ pub fn cssp_connect<S: Read + Write>(
     let credentials = create_ts_authinfo(
         security_interface.gss_wrapex(&create_ts_credentials(domain, user, password))?,
     );
-    link.write(&credentials)?;
+    link.write(&credentials).await?;
 
     Ok(())
 }

@@ -34,6 +34,7 @@ pub trait ASN1 {
 
 /// A sequence of is dynamically build
 /// using a callback factory
+#[derive(Default)]
 pub struct SequenceOf {
     /// The inner vector of ASN1 node
     pub inner: Vec<Box<dyn ASN1>>,
@@ -50,9 +51,8 @@ impl SequenceOf {
     /// let so = SequenceOf::new();
     /// ```
     pub fn new() -> Self {
-        SequenceOf {
-            inner: Vec::new(),
-            factory: None,
+        Self {
+            ..Default::default()
         }
     }
 

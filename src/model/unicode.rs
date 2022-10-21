@@ -21,6 +21,6 @@ impl Unicode for String {
             let encode_char = U16::LE(c);
             encode_char.write(&mut result).unwrap();
         }
-        return result.into_inner();
+        result.into_inner()
     }
 }

@@ -51,7 +51,7 @@ enum Sequence {
 /// Keyboard layout
 /// https://docs.microsoft.com/en-us/previous-versions/windows/it-pro/windows-vista/cc766503(v=ws.10)?redirectedfrom=MSDN
 #[repr(u32)]
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Default)]
 pub enum KeyboardLayout {
     Arabic = 0x00000401,
     Bulgarian = 0x00000402,
@@ -60,6 +60,7 @@ pub enum KeyboardLayout {
     Danish = 0x00000406,
     German = 0x00000407,
     Greek = 0x00000408,
+    #[default]
     US = 0x00000409,
     Spanish = 0x0000040a,
     Finnish = 0x0000040b,
@@ -90,23 +91,23 @@ pub enum KeyboardType {
 
 #[repr(u16)]
 #[allow(dead_code)]
-enum HighColor {
-    HighColor4BPP = 0x0004,
-    HighColor8BPP = 0x0008,
-    HighColor15BPP = 0x000f,
-    HighColor16BPP = 0x0010,
-    HighColor24BPP = 0x0018,
+enum HighColorBpp {
+    Four = 0x0004,
+    Eight = 0x0008,
+    Fifteen = 0x000f,
+    Sixteen = 0x0010,
+    TwentyFour = 0x0018,
 }
 
 /// Supported color depth
 /// https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-rdpbcgr/00f1da4a-ee9c-421a-852f-c19f92343d73?redirectedfrom=MSDN
 #[repr(u16)]
 #[allow(dead_code)]
-enum Support {
-    RnsUd24BPPSupport = 0x0001,
-    RnsUd16BPPSupport = 0x0002,
-    RnsUd15BPPSupport = 0x0004,
-    RnsUd32BPPSupport = 0x0008,
+enum RnsUdBppSupport {
+    TwentyFour = 0x0001,
+    Sixteen = 0x0002,
+    Fifteen = 0x0004,
+    ThirtyTwo = 0x0008,
 }
 
 /// Negotiation of some capability for pdu layer
@@ -209,7 +210,7 @@ pub fn client_core_data(parameter: Option<ClientData>) -> Component {
     });
 
     let client_name = if client_parameter.name.len() >= 16 {
-        (&client_parameter.name[0..16]).to_string()
+        client_parameter.name[0..16].to_string()
     } else {
         client_parameter.name.clone() + &"\x00".repeat(16 - client_parameter.name.len())
     };
@@ -222,25 +223,25 @@ pub fn client_core_data(parameter: Option<ClientData>) -> Component {
         "sasSequence" => U16::LE(Sequence::RnsUdSasDel as u16),
         "kbdLayout" => U32::LE(client_parameter.layout as u32),
         "clientBuild" => U32::LE(3790),
-        "clientName" => client_name.to_string().to_unicode(),
+        "clientName" => client_name.to_unicode(),
         "keyboardType" => U32::LE(KeyboardType::Ibm101102Keys as u32),
         "keyboardSubType" => U32::LE(0),
         "keyboardFnKeys" => U32::LE(12),
-        "imeFileName" => vec![0 as u8; 64],
+        "imeFileName" => vec![0_u8; 64],
         "postBeta2ColorDepth" => U16::LE(ColorDepth::RnsUdColor8BPP as u16),
         "clientProductId" => U16::LE(1),
         "serialNumber" => U32::LE(0),
-        "highColorDepth" => U16::LE(HighColor::HighColor24BPP as u16),
+        "highColorDepth" => U16::LE(HighColorBpp::TwentyFour as u16),
         "supportedColorDepths" => U16::LE(
             //Support::RnsUd15BPPSupport as u16 |
-            Support::RnsUd16BPPSupport as u16 |
+            RnsUdBppSupport::Sixteen as u16 |
             //Support::RnsUd24BPPSupport as u16 |
-            Support::RnsUd32BPPSupport as u16
+            RnsUdBppSupport::ThirtyTwo as u16
             ),
         "earlyCapabilityFlags" => U16::LE(CapabilityFlag::RnsUdCsSupportErrinfoPDU as u16),
         "clientDigProductId" => vec![0; 64],
-        "connectionType" => 0 as u8,
-        "pad1octet" => 0 as u8,
+        "connectionType" => 0_u8,
+        "pad1octet" => 0_u8,
         "serverSelectedProtocol" => U32::LE(client_parameter.server_selected_protocol)
     ]
 }
@@ -350,11 +351,8 @@ pub fn read_conference_create_response(cc_response: &mut dyn Read) -> RdpResult<
             break;
         }
 
-        let mut buffer = vec![
-            0 as u8;
-            (cast!(DataType::U16, header["length"])? - header.length() as u16)
-                as usize
-        ];
+        let mut buffer =
+            vec![0_u8; (cast!(DataType::U16, header["length"])? - header.length() as u16) as usize];
         sub.read_exact(&mut buffer)?;
 
         match MessageType::from(cast!(DataType::U16, header["type"])?) {
@@ -386,7 +384,7 @@ pub fn read_conference_create_response(cc_response: &mut dyn Read) -> RdpResult<
             DataType::Trame,
             result[&MessageType::ScNet]["channelIdArray"]
         )?
-        .into_iter()
+        .iter()
         .map(|x| cast!(DataType::U16, x).unwrap())
         .collect(),
         rdp_version: Version::from(cast!(

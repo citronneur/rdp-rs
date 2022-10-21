@@ -3,7 +3,8 @@ use crate::model::error::{Error, RdpError, RdpErrorKind, RdpResult};
 use crate::model::link::Link;
 use crate::nla::cssp::cssp_connect;
 use crate::nla::sspi::AuthenticationProtocol;
-use std::io::{Cursor, Read, Write};
+use std::io::Cursor;
+use tokio::io::*;
 
 /// TPKT must implement this two kind of payload
 pub enum Payload {
@@ -26,7 +27,7 @@ pub enum Action {
 fn tpkt_header(size: u16) -> Component {
     component![
         "action" => Action::FastPathActionX224 as u8,
-        "flag" => 0 as u8,
+        "flag" => 0_u8,
         "size" => U16::BE(size + 4)
     ]
 }
@@ -45,7 +46,7 @@ pub struct Client<S> {
     transport: Link<S>,
 }
 
-impl<S: Read + Write> Client<S> {
+impl<S: AsyncRead + AsyncWrite + Unpin> Client<S> {
     /// Ctor of TPKT client layer
     pub fn new(transport: Link<S>) -> Self {
         Client { transport }
@@ -76,12 +77,13 @@ impl<S: Read + Write> Client<S> {
     ///     }
     /// }
     /// ```
-    pub fn write<T: 'static>(&mut self, message: T) -> RdpResult<()>
+    pub async fn write<T: 'static>(&mut self, message: T) -> RdpResult<()>
     where
         T: Message,
     {
         self.transport
             .write(&trame![tpkt_header(message.length() as u16), message])
+            .await
     }
 
     /// Read a payload from the underlying layer
@@ -117,8 +119,8 @@ impl<S: Read + Write> Client<S> {
     ///     panic!("unexpected result")
     /// }
     /// ```
-    pub fn read(&mut self) -> RdpResult<Payload> {
-        let mut buffer = Cursor::new(self.transport.read(2)?);
+    pub async fn read(&mut self) -> RdpResult<Payload> {
+        let mut buffer = Cursor::new(self.transport.read(2).await?);
         let mut action: u8 = 0;
         action.read(&mut buffer)?;
         if action == Action::FastPathActionX224 as u8 {
@@ -126,7 +128,7 @@ impl<S: Read + Write> Client<S> {
             let mut padding: u8 = 0;
             padding.read(&mut buffer)?;
             // now wait extended header
-            buffer = Cursor::new(self.transport.read(2)?);
+            buffer = Cursor::new(self.transport.read(2).await?);
 
             let mut size = U16::BE(0);
             size.read(&mut buffer)?;
@@ -141,7 +143,7 @@ impl<S: Read + Write> Client<S> {
             } else {
                 // now wait for body
                 Ok(Payload::Raw(Cursor::new(
-                    self.transport.read(size.inner() as usize - 4)?,
+                    self.transport.read(size.inner() as usize - 4).await?,
                 )))
             }
         } else {
@@ -151,7 +153,7 @@ impl<S: Read + Write> Client<S> {
             short_length.read(&mut buffer)?;
             if short_length & 0x80 != 0 {
                 let mut hi_length: u8 = 0;
-                hi_length.read(&mut Cursor::new(self.transport.read(1)?))?;
+                hi_length.read(&mut Cursor::new(self.transport.read(1).await?))?;
                 let length: u16 = ((short_length & !0x80) as u16) << 8;
                 let length = length | hi_length as u16;
                 if length < 3 {
@@ -162,21 +164,19 @@ impl<S: Read + Write> Client<S> {
                 } else {
                     Ok(Payload::FastPath(
                         sec_flag,
-                        Cursor::new(self.transport.read(length as usize - 3)?),
+                        Cursor::new(self.transport.read(length as usize - 3).await?),
                     ))
                 }
+            } else if short_length < 2 {
+                Err(Error::RdpError(RdpError::new(
+                    RdpErrorKind::InvalidSize,
+                    "Invalid minimal size for TPKT",
+                )))
             } else {
-                if short_length < 2 {
-                    Err(Error::RdpError(RdpError::new(
-                        RdpErrorKind::InvalidSize,
-                        "Invalid minimal size for TPKT",
-                    )))
-                } else {
-                    Ok(Payload::FastPath(
-                        sec_flag,
-                        Cursor::new(self.transport.read(short_length as usize - 2)?),
-                    ))
-                }
+                Ok(Payload::FastPath(
+                    sec_flag,
+                    Cursor::new(self.transport.read(short_length as usize - 2).await?),
+                ))
             }
         }
     }
@@ -194,8 +194,10 @@ impl<S: Read + Write> Client<S> {
     /// let mut tpkt = tpkt::Client::new(link::Link::new(link::Stream::Raw(tcp)));
     /// let mut tpkt_ssl = tpkt.start_ssl(false).unwrap();
     /// ```
-    pub fn start_ssl(self, check_certificate: bool) -> RdpResult<Client<S>> {
-        Ok(Client::new(self.transport.start_ssl(check_certificate)?))
+    pub async fn start_ssl(self, check_certificate: bool) -> RdpResult<Client<S>> {
+        Ok(Client::new(
+            self.transport.start_ssl(check_certificate).await?,
+        ))
     }
 
     /// This function is used when NLA (Network Level Authentication)
@@ -212,20 +214,20 @@ impl<S: Read + Write> Client<S> {
     /// let mut tpkt = tpkt::Client::new(link::Link::new(link::Stream::Raw(tcp)));
     /// let mut tpkt_nla = tpkt.start_nla(false, &mut Ntlm::new("domain".to_string(), "username".to_string(), "password".to_string()), false);
     /// ```
-    pub fn start_nla(
+    pub async fn start_nla(
         self,
         check_certificate: bool,
         authentication_protocol: &mut dyn AuthenticationProtocol,
         restricted_admin_mode: bool,
     ) -> RdpResult<Client<S>> {
-        let mut link = self.transport.start_ssl(check_certificate)?;
-        cssp_connect(&mut link, authentication_protocol, restricted_admin_mode)?;
+        let mut link = self.transport.start_ssl(check_certificate).await?;
+        cssp_connect(&mut link, authentication_protocol, restricted_admin_mode).await?;
         Ok(Client::new(link))
     }
 
     /// Shutdown current connection
-    pub fn shutdown(&mut self) -> RdpResult<()> {
-        self.transport.shutdown()
+    pub async fn shutdown(&mut self) -> RdpResult<()> {
+        self.transport.shutdown().await
     }
 
     #[cfg(feature = "integration")]

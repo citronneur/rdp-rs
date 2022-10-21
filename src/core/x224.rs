@@ -4,8 +4,8 @@ use crate::model::error::{Error, RdpError, RdpErrorKind, RdpResult};
 use crate::nla::sspi::AuthenticationProtocol;
 use num_enum::TryFromPrimitive;
 use std::convert::TryFrom;
-use std::io::{Read, Write};
 use std::option::Option;
+use tokio::io::*;
 
 #[repr(u8)]
 #[derive(Copy, Clone, TryFromPrimitive)]
@@ -81,7 +81,7 @@ fn x224_crq(len: u8, code: MessageType) -> Component {
     component! [
         "len" => (len + 6) as u8,
         "code" => code as u8,
-        "padding" => trame! [U16::LE(0), U16::LE(0), 0 as u8]
+        "padding" => trame! [U16::LE(0), U16::LE(0), 0_u8]
     ]
 }
 
@@ -104,9 +104,9 @@ fn x224_connection_pdu(
 /// X224 header
 fn x224_header() -> Component {
     component![
-        "header" => 2 as u8,
+        "header" => 2_u8,
         "messageType" => MessageType::X224TPDUData as u8,
-        "separator" => Check::new(0x80 as u8)
+        "separator" => Check::new(0x80_u8)
     ]
 }
 
@@ -118,7 +118,7 @@ pub struct Client<S> {
     selected_protocol: Protocols,
 }
 
-impl<S: Read + Write> Client<S> {
+impl<S: AsyncRead + AsyncWrite + Unpin> Client<S> {
     /// Constructor use by the connector
     fn new(transport: tpkt::Client<S>, selected_protocol: Protocols) -> Self {
         Client {
@@ -141,11 +141,11 @@ impl<S: Read + Write> Client<S> {
     /// ).unwrap();
     /// x224.write(trame![U16::LE(0)]).unwrap()
     /// ```
-    pub fn write<T: 'static>(&mut self, message: T) -> RdpResult<()>
+    pub async fn write<T: 'static>(&mut self, message: T) -> RdpResult<()>
     where
         T: Message,
     {
-        self.transport.write(trame![x224_header(), message])
+        self.transport.write(trame![x224_header(), message]).await
     }
 
     /// Start reading an entire X224 paylaod
@@ -163,8 +163,8 @@ impl<S: Read + Write> Client<S> {
     /// ).unwrap();
     /// let payload = x224.read().unwrap(); // you have to check the type
     /// ```
-    pub fn read(&mut self) -> RdpResult<tpkt::Payload> {
-        let s = self.transport.read()?;
+    pub async fn read(&mut self) -> RdpResult<tpkt::Payload> {
+        let s = self.transport.read().await?;
         match s {
             tpkt::Payload::Raw(mut payload) => {
                 let mut x224_header = x224_header();
@@ -207,7 +207,7 @@ impl<S: Read + Write> Client<S> {
     ///     false
     /// ).unwrap()
     /// ```
-    pub fn connect(
+    pub async fn connect(
         mut tpkt: tpkt::Client<S>,
         security_protocols: u32,
         check_certificate: bool,
@@ -223,18 +223,20 @@ impl<S: Read + Write> Client<S> {
             } else {
                 0
             }),
-        )?;
-        match Self::read_connection_confirm(&mut tpkt)? {
+        )
+        .await?;
+        match Self::read_connection_confirm(&mut tpkt).await? {
             Protocols::ProtocolHybrid => Ok(Client::new(
                 tpkt.start_nla(
                     check_certificate,
                     authentication_protocol.unwrap(),
                     restricted_admin_mode || blank_creds,
-                )?,
+                )
+                .await?,
                 Protocols::ProtocolHybrid,
             )),
             Protocols::ProtocolSSL => Ok(Client::new(
-                tpkt.start_ssl(check_certificate)?,
+                tpkt.start_ssl(check_certificate).await?,
                 Protocols::ProtocolSSL,
             )),
             Protocols::ProtocolRDP => Ok(Client::new(tpkt, Protocols::ProtocolRDP)),
@@ -246,7 +248,7 @@ impl<S: Read + Write> Client<S> {
     }
 
     /// Send connection request
-    fn write_connection_request(
+    async fn write_connection_request(
         tpkt: &mut tpkt::Client<S>,
         security_protocols: u32,
         mode: Option<u8>,
@@ -256,11 +258,12 @@ impl<S: Read + Write> Client<S> {
             mode,
             Some(security_protocols),
         ))
+        .await
     }
 
     /// Expect a connection confirm payload
-    fn read_connection_confirm(tpkt: &mut tpkt::Client<S>) -> RdpResult<Protocols> {
-        let mut buffer = try_let!(tpkt::Payload::Raw, tpkt.read()?)?;
+    async fn read_connection_confirm(tpkt: &mut tpkt::Client<S>) -> RdpResult<Protocols> {
+        let mut buffer = try_let!(tpkt::Payload::Raw, tpkt.read().await?)?;
         let mut confirm = x224_connection_pdu(None, None, None);
         confirm.read(&mut buffer)?;
 
@@ -286,8 +289,8 @@ impl<S: Read + Write> Client<S> {
         self.selected_protocol
     }
 
-    pub fn shutdown(&mut self) -> RdpResult<()> {
-        self.transport.shutdown()
+    pub async fn shutdown(&mut self) -> RdpResult<()> {
+        self.transport.shutdown().await
     }
 }
 

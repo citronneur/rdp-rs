@@ -17,7 +17,7 @@ pub fn read_length(s: &mut dyn Read) -> RdpResult<u16> {
     let mut byte: u8 = 0;
     byte.read(s)?;
     if byte & 0x80 != 0 {
-        byte = byte & !0x80;
+        byte &= !0x80;
         let mut size = (byte as u16) << 8;
         byte.read(s)?;
         size += byte as u16;
@@ -336,7 +336,7 @@ pub fn write_object_identifier(oid: &[u8], s: &mut dyn Write) -> RdpResult<()> {
     }
 
     trame![
-        5 as u8,
+        5_u8,
         oid[0] << 4 | oid[1] & 0xF,
         oid[2],
         oid[3],
@@ -357,7 +357,7 @@ pub fn write_object_identifier(oid: &[u8], s: &mut dyn Write) -> RdpResult<()> {
 /// ```
 pub fn read_numeric_string(minimum: usize, s: &mut dyn Read) -> RdpResult<Vec<u8>> {
     let length = read_length(s)?;
-    let mut result = vec![0 as u8; length as usize + minimum + 1];
+    let mut result = vec![0_u8; length as usize + minimum + 1];
     result.read(s)?;
     Ok(result)
 }
@@ -388,13 +388,13 @@ pub fn write_numeric_string(string: &[u8], minimum: usize, s: &mut dyn Write) ->
 /// Read exactly a number of bytes
 pub fn read_padding(length: usize, s: &mut dyn Read) -> RdpResult<()> {
     let mut padding = vec![0; length];
-    s.read(&mut padding)?;
+    s.read_exact(&mut padding)?;
     Ok(())
 }
 
 /// Write length zero bytes
 pub fn write_padding(length: usize, s: &mut dyn Write) -> RdpResult<()> {
-    vec![0 as u8; length].write(s)?;
+    vec![0_u8; length].write(s)?;
     Ok(())
 }
 
@@ -417,10 +417,10 @@ pub fn read_octet_stream(octet_stream: &[u8], minimum: usize, s: &mut dyn Read) 
             "PER: source octet string have an invalid size",
         )));
     }
-    for i in 0..length {
+    for oc in octet_stream.iter().take(length) {
         let mut c: u8 = 0;
         c.read(s)?;
-        if c != octet_stream[i] {
+        if &c != oc {
             return Err(Error::RdpError(RdpError::new(
                 RdpErrorKind::InvalidData,
                 "PER: source octet string have an invalid char",
