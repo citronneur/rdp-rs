@@ -1,12 +1,12 @@
-use model::data::{Component, Check, DynOption, U16, MessageOption, U32, DataType, Message};
-use model::error::{RdpResult, Error, RdpError, RdpErrorKind};
-use std::io::{Cursor, Read};
+use crate::model::data::{Check, Component, DataType, DynOption, Message, MessageOption, U16, U32};
+use crate::model::error::{Error, RdpError, RdpErrorKind, RdpResult};
 use num_enum::TryFromPrimitive;
 use std::convert::TryFrom;
+use std::io::{Cursor, Read};
 
 pub enum LicenseMessage {
     NewLicense,
-    ErrorAlert(Component)
+    ErrorAlert(Component),
 }
 
 /// License preambule
@@ -16,7 +16,7 @@ pub enum LicenseMessage {
 enum Preambule {
     PreambleVersion20 = 0x2,
     PreambleVersion30 = 0x3,
-    ExtendedErrorMsgSupported = 0x80
+    ExtendedErrorMsgSupported = 0x80,
 }
 
 /// All type of message
@@ -32,7 +32,7 @@ pub enum MessageType {
     LicenseInfo = 0x12,
     NewLicenseRequest = 0x13,
     PlatformChallengeResponse = 0x15,
-    ErrorAlert = 0xFF
+    ErrorAlert = 0xFF,
 }
 
 /// Error code of the license automata
@@ -48,7 +48,7 @@ pub enum ErrorCode {
     ErrInvalidClient = 0x00000008,
     ErrInvalidProductid = 0x0000000B,
     ErrInvalidMessageLen = 0x0000000C,
-    ErrInvalidMac = 0x00000003
+    ErrInvalidMac = 0x00000003,
 }
 
 /// All valid state transition available
@@ -60,7 +60,7 @@ pub enum StateTransition {
     StTotalAbort = 0x00000001,
     StNoTransition = 0x00000002,
     StResetPhaseToStart = 0x00000003,
-    StResendLastMessage = 0x00000004
+    StResendLastMessage = 0x00000004,
 }
 
 /// This a license preamble
@@ -94,7 +94,6 @@ fn licensing_error_message() -> Component {
     ]
 }
 
-
 /// Parse a payload that follow an preamble
 /// Actualle we only accept payload with type NewLicense or ErrorAlert
 fn parse_payload(payload: &Component) -> RdpResult<LicenseMessage> {
@@ -106,7 +105,10 @@ fn parse_payload(payload: &Component) -> RdpResult<LicenseMessage> {
             message.read(&mut stream)?;
             Ok(LicenseMessage::ErrorAlert(message))
         }
-        _ => Err(Error::RdpError(RdpError::new(RdpErrorKind::NotImplemented, "Licensing nego not implemented")))
+        _ => Err(Error::RdpError(RdpError::new(
+            RdpErrorKind::NotImplemented,
+            "Licensing nego not implemented",
+        ))),
     }
 }
 
@@ -119,18 +121,23 @@ fn parse_payload(payload: &Component) -> RdpResult<LicenseMessage> {
 /// ```
 /// ```
 pub fn client_connect(s: &mut dyn Read) -> RdpResult<()> {
-
     let mut license_message = preamble();
     license_message.read(s)?;
 
     match parse_payload(&license_message)? {
         LicenseMessage::NewLicense => Ok(()),
         LicenseMessage::ErrorAlert(blob) => {
-            if ErrorCode::try_from(cast!(DataType::U32, blob["dwErrorCode"])?)? == ErrorCode::StatusValidClient &&
-                StateTransition::try_from(cast!(DataType::U32, blob["dwStateTransition"])?)? == StateTransition::StNoTransition {
+            if ErrorCode::try_from(cast!(DataType::U32, blob["dwErrorCode"])?)?
+                == ErrorCode::StatusValidClient
+                && StateTransition::try_from(cast!(DataType::U32, blob["dwStateTransition"])?)?
+                    == StateTransition::StNoTransition
+            {
                 Ok(())
             } else {
-                Err(Error::RdpError(RdpError::new(RdpErrorKind::InvalidRespond, "Server reject license, Actually license nego is not implemented")))
+                Err(Error::RdpError(RdpError::new(
+                    RdpErrorKind::InvalidRespond,
+                    "Server reject license, Actually license nego is not implemented",
+                )))
             }
         }
     }

@@ -1,40 +1,30 @@
-#[cfg(target_os = "windows")]
-extern crate winapi;
+use clap::{App, Arg, ArgMatches};
 #[cfg(any(target_os = "linux", target_os = "macos"))]
-extern crate libc;
-extern crate minifb;
-extern crate rdp;
-extern crate hex;
-extern crate clap;
-extern crate hmac;
-
-use minifb::{Key, Window, WindowOptions, MouseMode, MouseButton, KeyRepeat};
-use std::net::{SocketAddr, TcpStream};
-use std::io::{Read, Write};
-use std::time::{Instant};
-use std::ptr;
-use std::mem;
-use std::mem::{size_of, forget};
-use rdp::core::client::{RdpClient, Connector};
-#[cfg(target_os = "windows")]
-use winapi::um::winsock2::{select, fd_set};
-#[cfg(any(target_os = "linux", target_os = "macos"))]
-use libc::{select, fd_set, FD_SET};
-#[cfg(target_os = "windows")]
-use std::os::windows::io::{AsRawSocket};
-#[cfg(any(target_os = "linux", target_os = "macos"))]
-use std::os::unix::io::{AsRawFd};
-use rdp::core::event::{RdpEvent, BitmapEvent, PointerEvent, PointerButton, KeyboardEvent};
-use std::ptr::copy_nonoverlapping;
-use std::convert::TryFrom;
-use std::thread;
-use std::sync::{mpsc, Arc, Mutex};
-use std::thread::{JoinHandle};
-use std::sync::atomic::{AtomicBool, Ordering};
-use rdp::model::error::{Error, RdpErrorKind, RdpError, RdpResult};
-use clap::{Arg, App, ArgMatches};
+use libc::{fd_set, select, FD_SET};
+use minifb::{Key, KeyRepeat, MouseButton, MouseMode, Window, WindowOptions};
+use rdp::core::client::{Connector, RdpClient};
+use rdp::core::event::{BitmapEvent, KeyboardEvent, PointerButton, PointerEvent, RdpEvent};
 use rdp::core::gcc::KeyboardLayout;
+use rdp::model::error::{Error, RdpError, RdpErrorKind, RdpResult};
+use std::convert::TryFrom;
+use std::io::{Read, Write};
+use std::mem;
+use std::mem::{forget, size_of};
+use std::net::{SocketAddr, TcpStream};
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+use std::os::unix::io::AsRawFd;
+#[cfg(target_os = "windows")]
+use std::os::windows::io::AsRawSocket;
+use std::ptr;
+use std::ptr::copy_nonoverlapping;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{Receiver, Sender};
+use std::sync::{mpsc, Arc, Mutex};
+use std::thread;
+use std::thread::JoinHandle;
+use std::time::Instant;
+#[cfg(target_os = "windows")]
+use winapi::um::winsock2::{fd_set, select};
 
 const APPLICATION_NAME: &str = "mstsc-rs";
 
@@ -46,7 +36,13 @@ fn wait_for_fd(fd: usize) -> bool {
         let mut raw_fds: fd_set = mem::zeroed();
         raw_fds.fd_array[0] = fd;
         raw_fds.fd_count = 1;
-        let result = select(0, &mut raw_fds, ptr::null_mut(), ptr::null_mut(), ptr::null());
+        let result = select(
+            0,
+            &mut raw_fds,
+            ptr::null_mut(),
+            ptr::null_mut(),
+            ptr::null(),
+        );
         result == 1
     }
 }
@@ -57,8 +53,14 @@ fn wait_for_fd(fd: usize) -> bool {
         let mut raw_fds: fd_set = mem::zeroed();
 
         FD_SET(fd as i32, &mut raw_fds);
-        
-        let result = select(fd as i32 + 1, &mut raw_fds, ptr::null_mut(), ptr::null_mut(), ptr::null_mut());
+
+        let result = select(
+            fd as i32 + 1,
+            &mut raw_fds,
+            ptr::null_mut(),
+            ptr::null_mut(),
+            ptr::null_mut(),
+        );
         result == 1
     }
 }
@@ -76,7 +78,7 @@ pub unsafe fn transmute_vec<S, T>(mut vec: Vec<S>) -> Vec<T> {
 /// Copy a bitmap event into the buffer
 /// This function use unsafe copy
 /// to accelerate data transfer
-fn fast_bitmap_transfer(buffer: &mut Vec<u32>, width: usize, bitmap: BitmapEvent) -> RdpResult<()>{
+fn fast_bitmap_transfer(buffer: &mut Vec<u32>, width: usize, bitmap: BitmapEvent) -> RdpResult<()> {
     let bitmap_dest_left = bitmap.dest_left as usize;
     let bitmap_dest_right = bitmap.dest_right as usize;
     let bitmap_dest_bottom = bitmap.dest_bottom as usize;
@@ -88,15 +90,26 @@ fn fast_bitmap_transfer(buffer: &mut Vec<u32>, width: usize, bitmap: BitmapEvent
     // Use some unsafe method to faster
     // data transfer between buffers
     unsafe {
-        let data_aligned :Vec<u32> = transmute_vec(data);
+        let data_aligned: Vec<u32> = transmute_vec(data);
         for i in 0..(bitmap_dest_bottom - bitmap_dest_top + 1) {
             let dest_i = (i + bitmap_dest_top) * width + bitmap_dest_left;
             let src_i = i * bitmap_width;
             let count = bitmap_dest_right - bitmap_dest_left + 1;
-            if dest_i > buffer.len() || dest_i + count > buffer.len() || src_i > data_aligned.len() || src_i + count > data_aligned.len() {
-                return Err(Error::RdpError(RdpError::new(RdpErrorKind::InvalidSize, "Image have invalide size")))
+            if dest_i > buffer.len()
+                || dest_i + count > buffer.len()
+                || src_i > data_aligned.len()
+                || src_i + count > data_aligned.len()
+            {
+                return Err(Error::RdpError(RdpError::new(
+                    RdpErrorKind::InvalidSize,
+                    "Image have invalide size",
+                )));
             }
-            copy_nonoverlapping(data_aligned.as_ptr().offset((src_i) as isize), buffer.as_mut_ptr().offset(dest_i as isize), count)
+            copy_nonoverlapping(
+                data_aligned.as_ptr().offset((src_i) as isize),
+                buffer.as_mut_ptr().offset(dest_i as isize),
+                count,
+            )
         }
     }
 
@@ -225,22 +238,32 @@ fn to_scancode(key: Key) -> u16 {
         Key::LeftSuper => 0xE05B,
         Key::RightSuper => 0xE05C,
         Key::Menu => 0xE05D,
-        _ => panic!("foo")
+        _ => panic!("foo"),
     }
 }
 
 /// Create a tcp stream from main args
 fn tcp_from_args(args: &ArgMatches) -> RdpResult<TcpStream> {
-    let ip = args.value_of("host").expect("You need to provide a target argument");
+    let ip = args
+        .value_of("host")
+        .expect("You need to provide a target argument");
     let port = args.value_of("port").unwrap_or_default();
 
     // TCP connection
-    let addr = format!("{}:{}", ip, port).parse::<SocketAddr>().map_err( |e| {
-        Error::RdpError(RdpError::new(RdpErrorKind::InvalidData, &format!("Cannot parse the IP PORT input [{}]", e)))
-    })?;
+    let addr = format!("{}:{}", ip, port)
+        .parse::<SocketAddr>()
+        .map_err(|e| {
+            Error::RdpError(RdpError::new(
+                RdpErrorKind::InvalidData,
+                &format!("Cannot parse the IP PORT input [{}]", e),
+            ))
+        })?;
     let tcp = TcpStream::connect(&addr).unwrap();
     tcp.set_nodelay(true).map_err(|e| {
-        Error::RdpError(RdpError::new(RdpErrorKind::InvalidData, &format!("Unable to set no delay option [{}]", e)))
+        Error::RdpError(RdpError::new(
+            RdpErrorKind::InvalidData,
+            &format!("Unable to set no delay option [{}]", e),
+        ))
     })?;
 
     Ok(tcp)
@@ -248,13 +271,26 @@ fn tcp_from_args(args: &ArgMatches) -> RdpResult<TcpStream> {
 
 /// Create rdp client from args
 fn rdp_from_args<S: Read + Write>(args: &ArgMatches, stream: S) -> RdpResult<RdpClient<S>> {
-
-    let width = args.value_of("width").unwrap_or_default().parse().map_err(|e| {
-        Error::RdpError(RdpError::new(RdpErrorKind::UnexpectedType, &format!("Cannot parse the input width argument [{}]", e)))
-    })?;
-    let height = args.value_of("height").unwrap_or_default().parse().map_err(|e| {
-        Error::RdpError(RdpError::new(RdpErrorKind::UnexpectedType, &format!("Cannot parse the input height argument [{}]", e)))
-    })?;
+    let width = args
+        .value_of("width")
+        .unwrap_or_default()
+        .parse()
+        .map_err(|e| {
+            Error::RdpError(RdpError::new(
+                RdpErrorKind::UnexpectedType,
+                &format!("Cannot parse the input width argument [{}]", e),
+            ))
+        })?;
+    let height = args
+        .value_of("height")
+        .unwrap_or_default()
+        .parse()
+        .map_err(|e| {
+            Error::RdpError(RdpError::new(
+                RdpErrorKind::UnexpectedType,
+                &format!("Cannot parse the input height argument [{}]", e),
+            ))
+        })?;
     let domain = args.value_of("domain").unwrap_or_default();
     let username = args.value_of("username").unwrap_or_default();
     let password = args.value_of("password").unwrap_or_default();
@@ -267,9 +303,13 @@ fn rdp_from_args<S: Read + Write>(args: &ArgMatches, stream: S) -> RdpResult<Rdp
     let check_certificate = args.is_present("check_certificate");
     let use_nla = !args.is_present("disable_nla");
 
-    let mut rdp_connector =  Connector::new()
+    let mut rdp_connector = Connector::new()
         .screen(width, height)
-        .credentials(domain.to_string(), username.to_string(), password.to_string())
+        .credentials(
+            domain.to_string(),
+            username.to_string(),
+            password.to_string(),
+        )
         .set_restricted_admin_mode(restricted_admin_mode)
         .auto_logon(auto_logon)
         .blank_creds(blank_creds)
@@ -280,7 +320,10 @@ fn rdp_from_args<S: Read + Write>(args: &ArgMatches, stream: S) -> RdpResult<Rdp
 
     if let Some(hash) = ntlm_hash {
         rdp_connector = rdp_connector.set_password_hash(hex::decode(hash).map_err(|e| {
-            Error::RdpError(RdpError::new(RdpErrorKind::InvalidData, &format!("Cannot parse the input hash [{}]", e)))
+            Error::RdpError(RdpError::new(
+                RdpErrorKind::InvalidData,
+                &format!("Cannot parse the input hash [{}]", e),
+            ))
         })?)
     }
     // RDP connection
@@ -293,20 +336,38 @@ fn rdp_from_args<S: Read + Write>(args: &ArgMatches, stream: S) -> RdpResult<Rdp
 /// like keyboard and mouse to the
 /// RDP protocol
 fn window_from_args(args: &ArgMatches) -> RdpResult<Window> {
-    let width = args.value_of("width").unwrap_or_default().parse().map_err(|e| {
-        Error::RdpError(RdpError::new(RdpErrorKind::UnexpectedType, &format!("Cannot parse the input width argument [{}]", e)))
-    })?;
-    let height = args.value_of("height").unwrap_or_default().parse().map_err(|e| {
-        Error::RdpError(RdpError::new(RdpErrorKind::UnexpectedType, &format!("Cannot parse the input height argument [{}]", e)))
-    })?;
+    let width = args
+        .value_of("width")
+        .unwrap_or_default()
+        .parse()
+        .map_err(|e| {
+            Error::RdpError(RdpError::new(
+                RdpErrorKind::UnexpectedType,
+                &format!("Cannot parse the input width argument [{}]", e),
+            ))
+        })?;
+    let height = args
+        .value_of("height")
+        .unwrap_or_default()
+        .parse()
+        .map_err(|e| {
+            Error::RdpError(RdpError::new(
+                RdpErrorKind::UnexpectedType,
+                &format!("Cannot parse the input height argument [{}]", e),
+            ))
+        })?;
 
     let window = Window::new(
         "mstsc-rs Remote Desktop in Rust",
         width,
         height,
         WindowOptions::default(),
-    ).map_err(|e| {
-        Error::RdpError(RdpError::new(RdpErrorKind::Unknown, &format!("Unable to create window [{}]", e)))
+    )
+    .map_err(|e| {
+        Error::RdpError(RdpError::new(
+            RdpErrorKind::Unknown,
+            &format!("Unable to create window [{}]", e),
+        ))
     })?;
 
     Ok(window)
@@ -319,24 +380,23 @@ fn launch_rdp_thread<S: 'static + Read + Write + Send>(
     handle: usize,
     rdp_client: Arc<Mutex<RdpClient<S>>>,
     sync: Arc<AtomicBool>,
-    bitmap_channel: Sender<BitmapEvent>) -> RdpResult<JoinHandle<()>> {
+    bitmap_channel: Sender<BitmapEvent>,
+) -> RdpResult<JoinHandle<()>> {
     // Create the rdp thread
     Ok(thread::spawn(move || {
         while wait_for_fd(handle as usize) && sync.load(Ordering::Relaxed) {
             let mut guard = rdp_client.lock().unwrap();
-            if let Err(Error::RdpError(e)) = guard.read(|event| {
-                match event {
-                    RdpEvent::Bitmap(bitmap) => {
-                        bitmap_channel.send(bitmap).unwrap();
-                    },
-                    _ => println!("{}: ignore event", APPLICATION_NAME)
+            if let Err(Error::RdpError(e)) = guard.read(|event| match event {
+                RdpEvent::Bitmap(bitmap) => {
+                    bitmap_channel.send(bitmap).unwrap();
                 }
+                _ => println!("{}: ignore event", APPLICATION_NAME),
             }) {
                 match e.kind() {
                     RdpErrorKind::Disconnect => {
                         println!("{}: Server ask for disconnect", APPLICATION_NAME);
-                    },
-                    _ => println!("{}: {:?}", APPLICATION_NAME, e)
+                    }
+                    _ => println!("{}: {:?}", APPLICATION_NAME, e),
                 }
                 break;
             }
@@ -351,8 +411,8 @@ fn main_gui_loop<S: Read + Write>(
     mut window: Window,
     rdp_client: Arc<Mutex<RdpClient<S>>>,
     sync: Arc<AtomicBool>,
-    bitmap_receiver: Receiver<BitmapEvent>) -> RdpResult<()> {
-
+    bitmap_receiver: Receiver<BitmapEvent>,
+) -> RdpResult<()> {
     let (width, height) = window.get_size();
     // Now we continue with the graphical main thread
     // Limit to max ~60 fps update rate
@@ -378,7 +438,7 @@ fn main_gui_loop<S: Read + Write>(
                 Err(mpsc::TryRecvError::Empty) => break,
                 Err(mpsc::TryRecvError::Disconnected) => {
                     sync.store(false, Ordering::Relaxed);
-                    break
+                    break;
                 }
             };
         }
@@ -386,19 +446,24 @@ fn main_gui_loop<S: Read + Write>(
         // Mouse position input
         if let Some((x, y)) = window.get_mouse_pos(MouseMode::Clamp) {
             let mut rdp_client_guard = rdp_client.lock().map_err(|e| {
-                Error::RdpError(RdpError::new(RdpErrorKind::Unknown, &format!("Thread error during access to mutex [{}]", e)))
+                Error::RdpError(RdpError::new(
+                    RdpErrorKind::Unknown,
+                    &format!("Thread error during access to mutex [{}]", e),
+                ))
             })?;
 
             // Button is down if not 0
             let current_button = get_rdp_pointer_down(&window);
-            rdp_client_guard.try_write(RdpEvent::Pointer(
-                PointerEvent{
-                    x: x as u16,
-                    y: y as u16,
-                    button: if last_button == current_button { PointerButton::None } else { PointerButton::try_from(last_button as u8 | current_button as u8).unwrap() },
-                    down: (last_button != current_button) && last_button == PointerButton::None
-                })
-            )?;
+            rdp_client_guard.try_write(RdpEvent::Pointer(PointerEvent {
+                x: x as u16,
+                y: y as u16,
+                button: if last_button == current_button {
+                    PointerButton::None
+                } else {
+                    PointerButton::try_from(last_button as u8 | current_button as u8).unwrap()
+                },
+                down: (last_button != current_button) && last_button == PointerButton::None,
+            }))?;
 
             last_button = current_button;
         }
@@ -409,23 +474,19 @@ fn main_gui_loop<S: Read + Write>(
 
             for key in last_keys.iter() {
                 if !keys.contains(key) {
-                    rdp_client_guard.try_write(RdpEvent::Key(
-                        KeyboardEvent {
-                            code: to_scancode(*key),
-                            down: false
-                        })
-                    )?
+                    rdp_client_guard.try_write(RdpEvent::Key(KeyboardEvent {
+                        code: to_scancode(*key),
+                        down: false,
+                    }))?
                 }
             }
 
             for key in keys.iter() {
-                if window.is_key_pressed(*key, KeyRepeat::Yes){
-                    rdp_client_guard.try_write(RdpEvent::Key(
-                        KeyboardEvent {
-                            code: to_scancode(*key),
-                            down: true
-                        })
-                    )?
+                if window.is_key_pressed(*key, KeyRepeat::Yes) {
+                    rdp_client_guard.try_write(RdpEvent::Key(KeyboardEvent {
+                        code: to_scancode(*key),
+                        down: true,
+                    }))?
                 }
             }
 
@@ -433,9 +494,14 @@ fn main_gui_loop<S: Read + Write>(
         }
 
         // We unwrap here as we want this code to exit if it fails. Real applications may want to handle this in a different way
-        window.update_with_buffer(&buffer, width, height).map_err(|e| {
-            Error::RdpError(RdpError::new(RdpErrorKind::Unknown, &format!("Unable to update screen buffer [{}]", e)))
-        })?;
+        window
+            .update_with_buffer(&buffer, width, height)
+            .map_err(|e| {
+                Error::RdpError(RdpError::new(
+                    RdpErrorKind::Unknown,
+                    &format!("Unable to update screen buffer [{}]", e),
+                ))
+            })?;
     }
 
     sync.store(false, Ordering::Relaxed);
@@ -449,68 +515,98 @@ fn main() {
         .version("0.1.0")
         .author("Sylvain Peyrefitte <citronneur@gmail.com>")
         .about("Secure Remote Desktop Client in RUST")
-        .arg(Arg::with_name("host")
-                 .long("host")
-                 .takes_value(true)
-                 .help("host IP of the target machine"))
-        .arg(Arg::with_name("port")
-                 .long("port")
-                 .takes_value(true)
-                 .default_value("3389")
-                 .help("Destination Port"))
-        .arg(Arg::with_name("width")
-                 .long("width")
-                 .takes_value(true)
-                 .default_value("800")
-                 .help("Screen width"))
-        .arg(Arg::with_name("height")
-                 .long("height")
-                 .takes_value(true)
-                 .default_value("600")
-                 .help("Screen height"))
-        .arg(Arg::with_name("domain")
-                 .long("domain")
-                 .takes_value(true)
-                 .default_value("")
-                 .help("Windows domain"))
-        .arg(Arg::with_name("username")
-                 .long("user")
-                 .takes_value(true)
-                 .default_value("")
-                 .help("Username"))
-        .arg(Arg::with_name("password")
-                 .long("password")
-                 .takes_value(true)
-                 .default_value("")
-                 .help("Password"))
-        .arg(Arg::with_name("hash")
-                 .long("hash")
-                 .takes_value(true)
-                 .help("NTLM Hash"))
-        .arg(Arg::with_name("admin")
-                 .long("admin")
-                 .help("Restricted admin mode"))
-        .arg(Arg::with_name("layout")
-                 .long("layout")
-                 .takes_value(true)
-                 .default_value("us")
-                 .help("Keyboard layout: us or fr"))
-        .arg(Arg::with_name("auto_logon")
-                 .long("auto")
-                 .help("AutoLogon mode in case of SSL nego"))
-        .arg(Arg::with_name("blank_creds")
-                 .long("blank")
-                 .help("Do not send credentials at the last CredSSP payload"))
-        .arg(Arg::with_name("check_certificate")
-                 .long("check")
-                 .help("Check the target SSL certificate"))
-        .arg(Arg::with_name("disable_nla")
-                 .long("ssl")
-                 .help("Disable Network Level Authentication and only use SSL"))
-        .arg(Arg::with_name("name")
-                 .long("name")
-                 .default_value("mstsc-rs")
-                 .help("Name of the client send to the server"))
+        .arg(
+            Arg::with_name("host")
+                .long("host")
+                .takes_value(true)
+                .help("host IP of the target machine"),
+        )
+        .arg(
+            Arg::with_name("port")
+                .long("port")
+                .takes_value(true)
+                .default_value("3389")
+                .help("Destination Port"),
+        )
+        .arg(
+            Arg::with_name("width")
+                .long("width")
+                .takes_value(true)
+                .default_value("800")
+                .help("Screen width"),
+        )
+        .arg(
+            Arg::with_name("height")
+                .long("height")
+                .takes_value(true)
+                .default_value("600")
+                .help("Screen height"),
+        )
+        .arg(
+            Arg::with_name("domain")
+                .long("domain")
+                .takes_value(true)
+                .default_value("")
+                .help("Windows domain"),
+        )
+        .arg(
+            Arg::with_name("username")
+                .long("user")
+                .takes_value(true)
+                .default_value("")
+                .help("Username"),
+        )
+        .arg(
+            Arg::with_name("password")
+                .long("password")
+                .takes_value(true)
+                .default_value("")
+                .help("Password"),
+        )
+        .arg(
+            Arg::with_name("hash")
+                .long("hash")
+                .takes_value(true)
+                .help("NTLM Hash"),
+        )
+        .arg(
+            Arg::with_name("admin")
+                .long("admin")
+                .help("Restricted admin mode"),
+        )
+        .arg(
+            Arg::with_name("layout")
+                .long("layout")
+                .takes_value(true)
+                .default_value("us")
+                .help("Keyboard layout: us or fr"),
+        )
+        .arg(
+            Arg::with_name("auto_logon")
+                .long("auto")
+                .help("AutoLogon mode in case of SSL nego"),
+        )
+        .arg(
+            Arg::with_name("blank_creds")
+                .long("blank")
+                .help("Do not send credentials at the last CredSSP payload"),
+        )
+        .arg(
+            Arg::with_name("check_certificate")
+                .long("check")
+                .help("Check the target SSL certificate"),
+        )
+        .arg(
+            Arg::with_name("disable_nla")
+                .long("ssl")
+                .help("Disable Network Level Authentication and only use SSL"),
+        )
+        .arg(
+            Arg::with_name("name")
+                .long("name")
+                .default_value("mstsc-rs")
+                .help("Name of the client send to the server"),
+        )
         .get_matches();
 
     // Create a tcp stream from args
@@ -543,16 +639,12 @@ fn main() {
         handle as usize,
         Arc::clone(&rdp_client_mutex),
         Arc::clone(&sync),
-        bitmap_sender
-    ).unwrap();
+        bitmap_sender,
+    )
+    .unwrap();
 
     // Launch the GUI
-    main_gui_loop(
-        window,
-        rdp_client_mutex,
-        sync,
-        bitmap_receiver
-    ).unwrap();
+    main_gui_loop(window, rdp_client_mutex, sync, bitmap_receiver).unwrap();
 
     rdp_thread.join().unwrap();
 }

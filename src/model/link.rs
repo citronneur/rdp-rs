@@ -1,9 +1,7 @@
-extern crate native_tls;
-
-use model::error::{RdpResult, Error, RdpError, RdpErrorKind};
+use crate::model::data::Message;
+use crate::model::error::{Error, RdpError, RdpErrorKind, RdpResult};
+use native_tls::{Certificate, TlsConnector, TlsStream};
 use std::io::{Cursor, Read, Write};
-use self::native_tls::{TlsConnector, TlsStream, Certificate};
-use model::data::{Message};
 
 /// This a wrapper to work equals
 /// for a stream and a TLS stream
@@ -11,7 +9,7 @@ pub enum Stream<S> {
     /// Raw stream that implement Read + Write
     Raw(S),
     /// TLS Stream
-    Ssl(TlsStream<S>)
+    Ssl(TlsStream<S>),
 }
 
 impl<S: Read + Write> Stream<S> {
@@ -26,10 +24,10 @@ impl<S: Read + Write> Stream<S> {
     /// s.read_exact(&mut result).unwrap();
     /// assert_eq!(result, [1, 2])
     /// ```
-    pub fn read_exact(&mut self, buf: &mut[u8]) -> RdpResult<()> {
+    pub fn read_exact(&mut self, buf: &mut [u8]) -> RdpResult<()> {
         match self {
             Stream::Raw(e) => e.read_exact(buf)?,
-            Stream::Ssl(e) => e.read_exact(buf)?
+            Stream::Ssl(e) => e.read_exact(buf)?,
         };
         Ok(())
     }
@@ -45,10 +43,10 @@ impl<S: Read + Write> Stream<S> {
     /// s.read(&mut result).unwrap();
     /// assert_eq!(result, [1, 2, 3, 0])
     /// ```
-    pub fn read(&mut self, buf: &mut[u8]) -> RdpResult<usize> {
+    pub fn read(&mut self, buf: &mut [u8]) -> RdpResult<usize> {
         match self {
             Stream::Raw(e) => Ok(e.read(buf)?),
-            Stream::Ssl(e) => Ok(e.read(buf)?)
+            Stream::Ssl(e) => Ok(e.read(buf)?),
         }
     }
 
@@ -71,7 +69,7 @@ impl<S: Read + Write> Stream<S> {
     pub fn write(&mut self, buffer: &[u8]) -> RdpResult<usize> {
         Ok(match self {
             Stream::Raw(e) => e.write(buffer)?,
-            Stream::Ssl(e) => e.write(buffer)?
+            Stream::Ssl(e) => e.write(buffer)?,
         })
     }
 
@@ -80,7 +78,7 @@ impl<S: Read + Write> Stream<S> {
     pub fn shutdown(&mut self) -> RdpResult<()> {
         Ok(match self {
             Stream::Ssl(e) => e.shutdown()?,
-            _ => ()
+            _ => (),
         })
     }
 }
@@ -88,7 +86,7 @@ impl<S: Read + Write> Stream<S> {
 /// Link layer is a wrapper around TCP or SSL stream
 /// It can swicth from TCP to SSL
 pub struct Link<S> {
-    stream: Stream<S>
+    stream: Stream<S>,
 }
 
 impl<S: Read + Write> Link<S> {
@@ -104,9 +102,7 @@ impl<S: Read + Write> Link<S> {
     /// let link_tcp = Link::new(Stream::Raw(TcpStream::connect(&addr).unwrap()));
     /// ```
     pub fn new(stream: Stream<S>) -> Self {
-        Link {
-            stream
-        }
+        Link { stream }
     }
 
     /// This method is designed to write a Message
@@ -155,8 +151,7 @@ impl<S: Read + Write> Link<S> {
             let size = self.stream.read(&mut buffer)?;
             buffer.resize(size, 0);
             Ok(buffer)
-        }
-        else {
+        } else {
             let mut buffer = vec![0; expected_size];
             self.stream.read_exact(&mut buffer)?;
             Ok(buffer)
@@ -181,9 +176,12 @@ impl<S: Read + Write> Link<S> {
         let connector = builder.build()?;
 
         if let Stream::Raw(stream) = self.stream {
-            return Ok(Link::new(Stream::Ssl(connector.connect("", stream)?)))
+            return Ok(Link::new(Stream::Ssl(connector.connect("", stream)?)));
         }
-        Err(Error::RdpError(RdpError::new(RdpErrorKind::NotImplemented, "start_ssl on ssl stream is forbidden")))
+        Err(Error::RdpError(RdpError::new(
+            RdpErrorKind::NotImplemented,
+            "start_ssl on ssl stream is forbidden",
+        )))
     }
 
     /// Retrive the peer certificate
@@ -201,9 +199,11 @@ impl<S: Read + Write> Link<S> {
     pub fn get_peer_certificate(&self) -> RdpResult<Option<Certificate>> {
         if let Stream::Ssl(stream) = &self.stream {
             Ok(stream.peer_certificate()?)
-        }
-        else {
-            Err(Error::RdpError(RdpError::new(RdpErrorKind::InvalidData, "get peer certificate on non ssl link is impossible")))
+        } else {
+            Err(Error::RdpError(RdpError::new(
+                RdpErrorKind::InvalidData,
+                "get peer certificate on non ssl link is impossible",
+            )))
         }
     }
 

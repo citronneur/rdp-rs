@@ -1,4 +1,4 @@
-use model::error::RdpResult;
+use crate::model::error::RdpResult;
 
 /// This is a trait use by authentication
 /// protocol to provide a context

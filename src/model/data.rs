@@ -1,9 +1,8 @@
-use std::io::{Write, Read, Cursor};
-use model::error::{RdpResult, RdpErrorKind, RdpError, Error};
-use byteorder::{WriteBytesExt, ReadBytesExt, LittleEndian, BigEndian};
+use crate::model::error::{Error, RdpError, RdpErrorKind, RdpResult};
+use byteorder::{BigEndian, LittleEndian, ReadBytesExt, WriteBytesExt};
 use indexmap::IndexMap;
-use std::collections::{HashSet, HashMap};
-
+use std::collections::{HashMap, HashSet};
+use std::io::{Cursor, Read, Write};
 
 /// All data type used
 ///
@@ -42,9 +41,8 @@ pub enum DataType<'a> {
     /// A slice is just a raw u8 of vector
     Slice(&'a [u8]),
     /// Optional value can be absent
-    None
+    None,
 }
-
 
 /// Retrieve leaf value into a type tree
 ///
@@ -67,10 +65,15 @@ pub enum DataType<'a> {
 /// ```
 #[macro_export]
 macro_rules! cast {
-    ($ident:path, $expr:expr) => (match $expr.visit() {
-        $ident(e) => Ok(e),
-        _ => Err(Error::RdpError(RdpError::new(RdpErrorKind::InvalidCast, "Invalid Cast")))
-    })
+    ($ident:path, $expr:expr) => {
+        match $expr.visit() {
+            $ident(e) => Ok(e),
+            _ => Err(Error::RdpError(RdpError::new(
+                RdpErrorKind::InvalidCast,
+                "Invalid Cast",
+            ))),
+        }
+    };
 }
 
 /// Allow to a son to inform parent of something special
@@ -87,14 +90,14 @@ pub enum MessageOption {
     /// for a particular field
     Size(String, usize),
     /// Non option
-    None
+    None,
 }
 
 /// All is a message
 ///
 /// A message can be Read or Write from a Stream
 ///
-pub trait Message : Send {
+pub trait Message: Send {
     /// Write node to the Stream
     ///
     /// Write current element into a writable stream
@@ -126,7 +129,6 @@ pub trait Message : Send {
 ///
 /// Implement Message trait for basic type u8
 impl Message for u8 {
-
     /// Write u8 value into stream
     /// # Example
     ///
@@ -141,7 +143,7 @@ impl Message for u8 {
     ///     assert_eq!(*s.get_ref(), vec![8 as u8]);
     /// # }
     /// ```
-    fn write(&self, writer: &mut dyn Write)  -> RdpResult<()> {
+    fn write(&self, writer: &mut dyn Write) -> RdpResult<()> {
         Ok(writer.write_u8(*self)?)
     }
 
@@ -267,9 +269,9 @@ impl Message for Trame {
     ///     assert_eq!(s.into_inner(), [0, 2, 0, 0, 0])
     /// # }
     /// ```
-    fn write(&self, writer: &mut dyn Write) -> RdpResult<()>{
+    fn write(&self, writer: &mut dyn Write) -> RdpResult<()> {
         for v in self {
-           v.write(writer)?;
+            v.write(writer)?;
         }
         Ok(())
     }
@@ -294,9 +296,9 @@ impl Message for Trame {
     ///     assert_eq!(cast!(DataType::U32, x[1]).unwrap(), 3);
     /// # }
     /// ```
-    fn read(&mut self, reader: &mut dyn Read) -> RdpResult<()>{
+    fn read(&mut self, reader: &mut dyn Read) -> RdpResult<()> {
         for v in self {
-           v.read(reader)?;
+            v.read(reader)?;
         }
         Ok(())
     }
@@ -317,7 +319,7 @@ impl Message for Trame {
     /// # }
     /// ```
     fn length(&self) -> u64 {
-        let mut sum : u64 = 0;
+        let mut sum: u64 = 0;
         for v in self {
             sum += v.length();
         }
@@ -385,7 +387,7 @@ impl Message for Component {
     ///     assert_eq!(s.into_inner(), [3, 6, 0, 0, 0])
     /// # }
     /// ```
-    fn write(&self, writer: &mut dyn Write) -> RdpResult<()>{
+    fn write(&self, writer: &mut dyn Write) -> RdpResult<()> {
         let mut filtering_key = HashSet::new();
         for (name, value) in self.iter() {
             // ignore filtering keys
@@ -420,7 +422,7 @@ impl Message for Component {
     ///     assert_eq!(cast!(DataType::U32, x["field2"]).unwrap(), 6)
     /// # }
     /// ```
-    fn read(&mut self, reader: &mut dyn Read) -> RdpResult<()>{
+    fn read(&mut self, reader: &mut dyn Read) -> RdpResult<()> {
         let mut filtering_key = HashSet::new();
         let mut dynamic_size = HashMap::new();
         for (name, value) in self.into_iter() {
@@ -430,20 +432,22 @@ impl Message for Component {
             }
 
             if dynamic_size.contains_key(name) {
-                let mut local =vec![0; dynamic_size[name]];
+                let mut local = vec![0; dynamic_size[name]];
                 reader.read_exact(&mut local)?;
                 value.read(&mut Cursor::new(local))?;
-            }
-            else {
+            } else {
                 value.read(reader)?;
             }
 
             match value.options() {
-                MessageOption::SkipField(field) => { filtering_key.insert(field); },
-                MessageOption::Size(field, size) => { dynamic_size.insert(field, size); },
-                MessageOption::None => ()
+                MessageOption::SkipField(field) => {
+                    filtering_key.insert(field);
+                }
+                MessageOption::Size(field, size) => {
+                    dynamic_size.insert(field, size);
+                }
+                MessageOption::None => (),
             }
-
         }
         Ok(())
     }
@@ -468,7 +472,7 @@ impl Message for Component {
     /// # }
     /// ```
     fn length(&self) -> u64 {
-        let mut sum : u64 = 0;
+        let mut sum: u64 = 0;
         let mut filtering_key = HashSet::new();
         for (name, value) in self.iter() {
             // ignore filtering keys
@@ -521,7 +525,7 @@ pub enum Value<Type> {
     /// Big Endianness
     BE(Type),
     /// Little Endianness
-    LE(Type)
+    LE(Type),
 }
 
 impl<Type: Copy + PartialEq> Value<Type> {
@@ -535,7 +539,7 @@ impl<Type: Copy + PartialEq> Value<Type> {
     /// ```
     pub fn inner(&self) -> Type {
         match self {
-            Value::<Type>::BE(e) | Value::<Type>::LE(e) => *e
+            Value::<Type>::BE(e) | Value::<Type>::LE(e) => *e,
         }
     }
 }
@@ -543,7 +547,7 @@ impl<Type: Copy + PartialEq> Value<Type> {
 impl<Type: Copy + PartialEq> PartialEq for Value<Type> {
     /// Equality between all type
     fn eq(&self, other: &Self) -> bool {
-        return self.inner() == other.inner()
+        return self.inner() == other.inner();
     }
 }
 
@@ -551,7 +555,6 @@ impl<Type: Copy + PartialEq> PartialEq for Value<Type> {
 pub type U16 = Value<u16>;
 
 impl Message for U16 {
-
     /// Write an unsigned 16 bits value
     ///
     /// # Example
@@ -565,10 +568,10 @@ impl Message for U16 {
     /// U16::BE(4).write(&mut s2).unwrap();
     /// assert_eq!(s2.into_inner(), [0, 4]);
     /// ```
-    fn write(&self, writer: &mut dyn Write) -> RdpResult<()>{
+    fn write(&self, writer: &mut dyn Write) -> RdpResult<()> {
         match self {
             U16::BE(value) => Ok(writer.write_u16::<BigEndian>(*value)?),
-            U16::LE(value) => Ok(writer.write_u16::<LittleEndian>(*value)?)
+            U16::LE(value) => Ok(writer.write_u16::<LittleEndian>(*value)?),
         }
     }
 
@@ -588,10 +591,10 @@ impl Message for U16 {
     /// v2.read(&mut s2).unwrap();
     /// assert_eq!(v2.inner(), 4);
     /// ```
-    fn read(&mut self, reader: &mut dyn Read) -> RdpResult<()>{
+    fn read(&mut self, reader: &mut dyn Read) -> RdpResult<()> {
         match self {
             U16::BE(value) => *value = reader.read_u16::<BigEndian>()?,
-            U16::LE(value) => *value = reader.read_u16::<LittleEndian>()?
+            U16::LE(value) => *value = reader.read_u16::<LittleEndian>()?,
         }
         Ok(())
     }
@@ -634,7 +637,6 @@ impl Message for U16 {
 pub type U32 = Value<u32>;
 
 impl Message for U32 {
-
     /// Write an unsigned 32 bits value
     ///
     /// # Example
@@ -651,7 +653,7 @@ impl Message for U32 {
     fn write(&self, writer: &mut dyn Write) -> RdpResult<()> {
         match self {
             U32::BE(value) => Ok(writer.write_u32::<BigEndian>(*value)?),
-            U32::LE(value) => Ok(writer.write_u32::<LittleEndian>(*value)?)
+            U32::LE(value) => Ok(writer.write_u32::<LittleEndian>(*value)?),
         }
     }
 
@@ -674,7 +676,7 @@ impl Message for U32 {
     fn read(&mut self, reader: &mut dyn Read) -> RdpResult<()> {
         match self {
             U32::BE(value) => *value = reader.read_u32::<BigEndian>()?,
-            U32::LE(value) => *value = reader.read_u32::<LittleEndian>()?
+            U32::LE(value) => *value = reader.read_u32::<LittleEndian>()?,
         }
         Ok(())
     }
@@ -716,7 +718,7 @@ impl Message for U32 {
 /// This is a wrapper around
 /// a copyable message to check constness
 pub struct Check<T> {
-    value: T
+    value: T,
 }
 
 impl<T> Check<T> {
@@ -733,15 +735,12 @@ impl<T> Check<T> {
     /// let mut s2 = Cursor::new(vec![5, 0]);
     /// assert!(x.read(&mut s2).is_err());
     /// ```
-    pub fn new(value: T) -> Self{
-        Check {
-            value
-        }
+    pub fn new(value: T) -> Self {
+        Check { value }
     }
 }
 
 impl<T: Message + Clone + PartialEq> Message for Check<T> {
-
     /// Check values doesn't happen during write steps
     fn write(&self, writer: &mut dyn Write) -> RdpResult<()> {
         self.value.write(writer)
@@ -764,7 +763,10 @@ impl<T: Message + Clone + PartialEq> Message for Check<T> {
         let old = self.value.clone();
         self.value.read(reader)?;
         if old != self.value {
-            return Err(Error::RdpError(RdpError::new(RdpErrorKind::InvalidConst, "Invalid constness of data")))
+            return Err(Error::RdpError(RdpError::new(
+                RdpErrorKind::InvalidConst,
+                "Invalid constness of data",
+            )));
         }
         Ok(())
     }
@@ -812,8 +814,7 @@ impl Message for Vec<u8> {
     fn read(&mut self, reader: &mut dyn Read) -> RdpResult<()> {
         if self.len() == 0 {
             reader.read_to_end(self)?;
-        }
-        else {
+        } else {
             reader.read_exact(self)?;
         }
         Ok(())
@@ -866,7 +867,7 @@ impl Message for Vec<u8> {
 pub type DynOptionFnSend<T> = dyn Fn(&T) -> MessageOption + Send;
 pub struct DynOption<T> {
     inner: T,
-    filter: Box<DynOptionFnSend<T>>
+    filter: Box<DynOptionFnSend<T>>,
 }
 
 /// The filter impl
@@ -920,10 +921,13 @@ impl<T> DynOption<T> {
     /// # }
     /// ```
     pub fn new<F: 'static>(current: T, filter: F) -> Self
-        where F: Fn(&T) -> MessageOption, F: Send {
+    where
+        F: Fn(&T) -> MessageOption,
+        F: Send,
+    {
         DynOption {
             inner: current,
-            filter : Box::new(filter)
+            filter: Box::new(filter),
         }
     }
 }
@@ -964,15 +968,15 @@ pub fn to_vec(message: &dyn Message) -> Vec<u8> {
     stream.into_inner()
 }
 
-
 #[macro_export]
 macro_rules! is_none {
-    ($expr:expr) => (match $expr.visit() {
-        DataType::None => true,
-        _ => false
-    })
+    ($expr:expr) => {
+        match $expr.visit() {
+            DataType::None => true,
+            _ => false,
+        }
+    };
 }
-
 
 /// This is an optional fields
 /// Actually always write but read if and only if the reader
@@ -1048,8 +1052,7 @@ impl<T: Message> Message for Option<T> {
     fn length(&self) -> u64 {
         if let Some(value) = self {
             value.length()
-        }
-        else {
+        } else {
             0
         }
     }
@@ -1069,8 +1072,7 @@ impl<T: Message> Message for Option<T> {
     fn visit(&self) -> DataType {
         if let Some(value) = self {
             value.visit()
-        }
-        else {
+        } else {
             DataType::None
         }
     }
@@ -1088,7 +1090,7 @@ pub struct Array<T> {
     /// This is the inner trame
     inner: Trame,
     /// function call to build each element of the array
-    factory: Box<ArrayFnSend<T>>
+    factory: Box<ArrayFnSend<T>>,
 }
 
 impl<T: Message> Array<T> {
@@ -1112,10 +1114,13 @@ impl<T: Message> Array<T> {
     /// # }
     /// ```
     pub fn new<F: 'static>(factory: F) -> Self
-    where F: Fn() -> T, F: Send {
+    where
+        F: Fn() -> T,
+        F: Send,
+    {
         Array {
             inner: trame![],
-            factory: Box::new(factory)
+            factory: Box::new(factory),
         }
     }
 
@@ -1125,7 +1130,7 @@ impl<T: Message> Array<T> {
     pub fn from_trame(inner: Trame) -> Self {
         Array {
             inner,
-            factory: Box::new(|| panic!("Try reading a non empty array"))
+            factory: Box::new(|| panic!("Try reading a non empty array")),
         }
     }
 

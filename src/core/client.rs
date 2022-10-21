@@ -1,15 +1,15 @@
-use core::x224;
-use core::gcc::KeyboardLayout;
-use core::mcs;
-use core::tpkt;
-use core::sec;
-use core::global;
+use crate::core::event::{PointerButton, RdpEvent};
+use crate::core::gcc::KeyboardLayout;
+use crate::core::global;
+use crate::core::global::{ts_keyboard_event, ts_pointer_event, KeyboardFlag, PointerFlag};
+use crate::core::mcs;
+use crate::core::sec;
+use crate::core::tpkt;
+use crate::core::x224;
+use crate::model::error::{Error, RdpError, RdpErrorKind, RdpResult};
+use crate::model::link::{Link, Stream};
+use crate::nla::ntlm::Ntlm;
 use std::io::{Read, Write};
-use model::error::{RdpResult, Error, RdpError, RdpErrorKind};
-use model::link::{Link, Stream};
-use core::event::{RdpEvent, PointerButton};
-use core::global::{ts_pointer_event, PointerFlag, ts_keyboard_event, KeyboardFlag};
-use nla::ntlm::Ntlm;
 
 impl From<&str> for KeyboardLayout {
     fn from(e: &str) -> Self {
@@ -26,7 +26,7 @@ pub struct RdpClient<S> {
     /// This is the main switch layer of the protocol
     mcs: mcs::Client<S>,
     /// Global channel that implement the basic layer
-    global: global::Client
+    global: global::Client,
 }
 
 impl<S: Read + Write> RdpClient<S> {
@@ -55,11 +55,16 @@ impl<S: Read + Write> RdpClient<S> {
     /// }).unwrap()
     /// ```
     pub fn read<T>(&mut self, callback: T) -> RdpResult<()>
-    where T: FnMut(RdpEvent) {
+    where
+        T: FnMut(RdpEvent),
+    {
         let (channel_name, message) = self.mcs.read()?;
         match channel_name.as_str() {
             "global" => self.global.read(message, &mut self.mcs, callback),
-            _ => Err(Error::RdpError(RdpError::new(RdpErrorKind::UnexpectedType, &format!("Invalid channel name {:?}", channel_name))))
+            _ => Err(Error::RdpError(RdpError::new(
+                RdpErrorKind::UnexpectedType,
+                &format!("Invalid channel name {:?}", channel_name),
+            ))),
         }
     }
 
@@ -106,17 +111,26 @@ impl<S: Read + Write> RdpClient<S> {
                     flags |= PointerFlag::PtrflagsDown as u16;
                 }
 
-                self.global.write_input_event(ts_pointer_event(Some(flags), Some(pointer.x), Some(pointer.y)), &mut self.mcs)
-            },
+                self.global.write_input_event(
+                    ts_pointer_event(Some(flags), Some(pointer.x), Some(pointer.y)),
+                    &mut self.mcs,
+                )
+            }
             // Raw keyboard input
             RdpEvent::Key(key) => {
                 let mut flags: u16 = 0;
                 if !key.down {
                     flags |= KeyboardFlag::KbdflagsRelease as u16;
                 }
-                self.global.write_input_event(ts_keyboard_event(Some(flags), Some(key.code)), &mut self.mcs)
+                self.global.write_input_event(
+                    ts_keyboard_event(Some(flags), Some(key.code)),
+                    &mut self.mcs,
+                )
             }
-            _ => Err(Error::RdpError(RdpError::new(RdpErrorKind::UnexpectedType, "RDPCLIENT: This event can't be sent")))
+            _ => Err(Error::RdpError(RdpError::new(
+                RdpErrorKind::UnexpectedType,
+                "RDPCLIENT: This event can't be sent",
+            ))),
         }
     }
 
@@ -129,9 +143,9 @@ impl<S: Read + Write> RdpClient<S> {
         match result {
             Err(Error::RdpError(e)) => match e.kind() {
                 RdpErrorKind::InvalidAutomata => Ok(()),
-                _ => Err(Error::RdpError(e))
+                _ => Err(Error::RdpError(e)),
             },
-            _ => result
+            _ => result,
         }
     }
 
@@ -171,7 +185,7 @@ pub struct Connector {
     name: String,
     /// Use network level authentication
     /// default TRUE
-    use_nla: bool
+    use_nla: bool,
 }
 
 impl Connector {
@@ -199,7 +213,7 @@ impl Connector {
             blank_creds: false,
             check_certificate: false,
             name: "rdp-rs".to_string(),
-            use_nla: true
+            use_nla: true,
         }
     }
 
@@ -219,16 +233,18 @@ impl Connector {
     /// let mut client = connector.connect(tcp).unwrap();
     /// ```
     pub fn connect<S: Read + Write>(&mut self, stream: S) -> RdpResult<RdpClient<S>> {
-
         // Create a wrapper around the stream
-        let tcp = Link::new( Stream::Raw(stream));
+        let tcp = Link::new(Stream::Raw(stream));
 
         // Compute authentication method
         let mut authentication = if let Some(hash) = &self.password_hash {
             Ntlm::from_hash(self.domain.clone(), self.username.clone(), hash)
-        }
-        else {
-            Ntlm::new(self.domain.clone(), self.username.clone(), self.password.clone())
+        } else {
+            Ntlm::new(
+                self.domain.clone(),
+                self.username.clone(),
+                self.password.clone(),
+            )
         };
         // Create the x224 layer
         // With all negotiated security stuff and credentials
@@ -243,7 +259,7 @@ impl Connector {
             self.check_certificate,
             Some(&mut authentication),
             self.restricted_admin_mode,
-            self.blank_creds
+            self.blank_creds,
         )?;
 
         // Create MCS layer and connect it
@@ -256,7 +272,7 @@ impl Connector {
                 &"".to_string(),
                 &"".to_string(),
                 &"".to_string(),
-                self.auto_logon
+                self.auto_logon,
             )?;
         } else {
             sec::connect(
@@ -264,7 +280,7 @@ impl Connector {
                 &self.domain,
                 &self.username,
                 &self.password,
-                self.auto_logon
+                self.auto_logon,
             )?;
         }
 
@@ -275,13 +291,10 @@ impl Connector {
             self.width,
             self.height,
             self.layout,
-            &self.name
+            &self.name,
         );
 
-        Ok(RdpClient {
-            mcs,
-            global
-        })
+        Ok(RdpClient { mcs, global })
     }
 
     /// Configure the screen size of the session

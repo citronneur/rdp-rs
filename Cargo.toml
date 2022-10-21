@@ -9,6 +9,7 @@ keywords = ["rdp", "security", "network", "windows"]
 categories = ["network"]
 license = "MIT"
 documentation = "https://docs.rs/rdp-rs"
+edition = "2021"
 
 [lib]
 name = "rdp"

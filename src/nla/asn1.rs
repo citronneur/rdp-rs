@@ -1,6 +1,6 @@
-use yasna::{Tag, DERWriter, BERReader};
-use model::error::{RdpResult, Error};
+use crate::model::error::{Error, RdpResult};
 use indexmap::map::IndexMap;
+use yasna::{BERReader, DERWriter, Tag};
 
 /// Enum all possible value
 /// In an ASN 1 tree
@@ -16,7 +16,7 @@ pub enum ASN1Type<'a> {
     /// Boolean
     Bool(bool),
     /// Enumerate
-    Enumerate(i64)
+    Enumerate(i64),
 }
 
 /// This trait is a wrapper around
@@ -38,7 +38,7 @@ pub struct SequenceOf {
     /// The inner vector of ASN1 node
     pub inner: Vec<Box<dyn ASN1>>,
     /// Callback use as Factory
-    factory: Option<Box<dyn Fn() -> Box<dyn ASN1>>>
+    factory: Option<Box<dyn Fn() -> Box<dyn ASN1>>>,
 }
 
 impl SequenceOf {
@@ -49,10 +49,10 @@ impl SequenceOf {
     /// use rdp::nla::asn1::SequenceOf;
     /// let so = SequenceOf::new();
     /// ```
-    pub fn new() -> Self{
+    pub fn new() -> Self {
         SequenceOf {
             inner: Vec::new(),
-            factory : None
+            factory: None,
         }
     }
 
@@ -65,10 +65,12 @@ impl SequenceOf {
     /// let so = SequenceOf::reader(|| Box::new(OctetString::new()));
     /// ```
     pub fn reader<F: 'static>(factory: F) -> Self
-    where F: Fn() -> Box<dyn ASN1> {
+    where
+        F: Fn() -> Box<dyn ASN1>,
+    {
         SequenceOf {
             inner: Vec::new(),
-            factory : Some(Box::new(factory))
+            factory: Some(Box::new(factory)),
         }
     }
 }
@@ -121,7 +123,7 @@ impl ASN1 for SequenceOf {
             if let Some(callback) = &self.factory {
                 let mut element = (callback)();
                 if let Err(Error::ASN1Error(e)) = element.read_asn1(sequence_reader) {
-                    return Err(e)
+                    return Err(e);
                 }
                 self.inner.push(element);
             }
@@ -227,7 +229,7 @@ pub struct ExplicitTag<T> {
     /// Associate explicit Tag
     tag: Tag,
     /// The inner object
-    inner: T
+    inner: T,
 }
 
 impl<T> ExplicitTag<T> {
@@ -241,10 +243,7 @@ impl<T> ExplicitTag<T> {
     /// let s = ExplicitTag::new(Tag::context(0), 2 as Integer);
     /// ```
     pub fn new(tag: Tag, inner: T) -> Self {
-        ExplicitTag {
-            tag,
-            inner
-        }
+        ExplicitTag { tag, inner }
     }
 
     /// return the inner object
@@ -296,8 +295,8 @@ impl<T: ASN1> ASN1 for ExplicitTag<T> {
     /// ```
     fn read_asn1(&mut self, reader: BERReader) -> RdpResult<()> {
         reader.read_tagged(self.tag, |tag_reader| {
-            if let Err(Error::ASN1Error(e)) =  self.inner.read_asn1(tag_reader) {
-                return Err(e)
+            if let Err(Error::ASN1Error(e)) = self.inner.read_asn1(tag_reader) {
+                return Err(e);
             }
             Ok(())
         })?;
@@ -330,7 +329,7 @@ pub struct ImplicitTag<T> {
     /// This implicit tag
     tag: Tag,
     /// The inner node
-    pub inner: T
+    pub inner: T,
 }
 
 impl<T> ImplicitTag<T> {
@@ -344,10 +343,7 @@ impl<T> ImplicitTag<T> {
     /// let s = ImplicitTag::new(Tag::context(0), 1 as Integer);
     /// ```
     pub fn new(tag: Tag, inner: T) -> Self {
-        ImplicitTag {
-            tag,
-            inner
-        }
+        ImplicitTag { tag, inner }
     }
 }
 
@@ -394,8 +390,8 @@ impl<T: ASN1> ASN1 for ImplicitTag<T> {
     /// ```
     fn read_asn1(&mut self, reader: BERReader) -> RdpResult<()> {
         reader.read_tagged_implicit(self.tag, |tag_reader| {
-            if let Err(Error::ASN1Error(e)) =  self.inner.read_asn1(tag_reader) {
-                return Err(e)
+            if let Err(Error::ASN1Error(e)) = self.inner.read_asn1(tag_reader) {
+                return Err(e);
             }
             Ok(())
         })?;
@@ -427,7 +423,6 @@ impl<T: ASN1> ASN1 for ImplicitTag<T> {
 pub type Integer = u32;
 
 impl ASN1 for Integer {
-
     /// Write an ASN1 Integer Node
     /// using a DERWriter
     ///
@@ -494,7 +489,6 @@ impl ASN1 for Integer {
 
 /// ASN1 for boolean
 impl ASN1 for bool {
-
     /// Write an ASN1 boolean Node
     /// using a DERWriter
     ///
@@ -564,7 +558,6 @@ impl ASN1 for bool {
 pub type Sequence = IndexMap<String, Box<dyn ASN1>>;
 
 impl ASN1 for Sequence {
-
     /// Write an ASN1 sequence Node
     /// using a DERWriter
     ///
@@ -588,7 +581,7 @@ impl ASN1 for Sequence {
         writer.write_sequence(|sequence| {
             for (_name, child) in self.iter() {
                 child.write_asn1(sequence.next()).unwrap();
-            };
+            }
         });
         Ok(())
     }
@@ -618,9 +611,9 @@ impl ASN1 for Sequence {
         reader.read_sequence(|sequence_reader| {
             for (_name, child) in self.into_iter() {
                 if let Err(Error::ASN1Error(e)) = child.read_asn1(sequence_reader.next()) {
-                    return Err(e)
+                    return Err(e);
                 }
-            };
+            }
             Ok(())
         })?;
         Ok(())
@@ -655,7 +648,6 @@ impl ASN1 for Sequence {
 pub type Enumerate = i64;
 
 impl ASN1 for Enumerate {
-
     /// Write an ASN1 Enumerate Node
     /// using a DERWriter
     ///
@@ -729,20 +721,20 @@ pub fn to_der(message: &dyn ASN1) -> Vec<u8> {
 }
 
 /// Deserialize an ASN1 message from a stream
-pub fn from_der(message: &mut dyn ASN1, stream: &[u8]) ->RdpResult<()> {
+pub fn from_der(message: &mut dyn ASN1, stream: &[u8]) -> RdpResult<()> {
     Ok(yasna::parse_der(stream, |reader| {
         if let Err(Error::ASN1Error(e)) = message.read_asn1(reader) {
-            return Err(e)
+            return Err(e);
         }
         Ok(())
     })?)
 }
 
 /// Deserialize an ASN1 message from a stream using BER
-pub fn from_ber(message: &mut dyn ASN1, stream: &[u8]) ->RdpResult<()> {
+pub fn from_ber(message: &mut dyn ASN1, stream: &[u8]) -> RdpResult<()> {
     Ok(yasna::parse_ber(stream, |reader| {
         if let Err(Error::ASN1Error(e)) = message.read_asn1(reader) {
-            return Err(e)
+            return Err(e);
         }
         Ok(())
     })?)

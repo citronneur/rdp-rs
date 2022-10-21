@@ -1,10 +1,10 @@
-use core::mcs;
-use core::license;
-use core::tpkt;
-use model::error::{RdpResult, Error, RdpError, RdpErrorKind};
-use model::data::{Message, Component, U16, U32, DynOption, MessageOption, Trame, DataType};
-use std::io::{Write, Read};
-use model::unicode::Unicode;
+use crate::core::license;
+use crate::core::mcs;
+use crate::core::tpkt;
+use crate::model::data::{Component, DataType, DynOption, Message, MessageOption, Trame, U16, U32};
+use crate::model::error::{Error, RdpError, RdpErrorKind, RdpResult};
+use crate::model::unicode::Unicode;
+use std::io::{Read, Write};
 
 /// Security flag send as header flage in core ptotocol
 /// https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-rdpbcgr/e13405c5-668b-4716-94b2-1c2654ca1ad4?redirectedfrom=MSDN
@@ -25,7 +25,7 @@ enum SecurityFlag {
     SecAutodetectReq = 0x1000,
     SecAutodetectRsp = 0x2000,
     SecHeartbeat = 0x4000,
-    SecFlagshiValid = 0x8000
+    SecFlagshiValid = 0x8000,
 }
 
 /// RDP option someone links to capabilities
@@ -50,13 +50,13 @@ enum InfoFlag {
     InfoUsingSavedCreds = 0x00100000,
     InfoAudiocapture = 0x00200000,
     InfoVideoDisable = 0x00400000,
-    InfoCompressionTypeMask = 0x00001E00
+    InfoCompressionTypeMask = 0x00001E00,
 }
 
 #[allow(dead_code)]
 enum AfInet {
     AfInet = 0x00002,
-    AfInet6 = 0x0017
+    AfInet6 = 0x0017,
 }
 
 /// On RDP version > 5
@@ -77,7 +77,13 @@ fn rdp_extended_infos() -> Component {
 /// When CSSP is not used
 /// interactive logon used credentials
 /// present in this payload
-fn rdp_infos(is_extended_info: bool, domain: &String, username: &String, password: &String, auto_logon: bool) -> Component {
+fn rdp_infos(
+    is_extended_info: bool,
+    domain: &String,
+    username: &String,
+    password: &String,
+    auto_logon: bool,
+) -> Component {
     let mut domain_format = domain.to_unicode();
     domain_format.push(0);
     domain_format.push(0);
@@ -123,7 +129,6 @@ fn security_header() -> Component {
     ]
 }
 
-
 /// Security layer need mcs layer and send all message through
 /// the global channel
 ///
@@ -136,7 +141,13 @@ fn security_header() -> Component {
 /// let mut mcs = mcs::Client(...).unwrap();
 /// sec::connect(&mut mcs).unwrap();
 /// ```
-pub fn connect<T: Read + Write>(mcs: &mut mcs::Client<T>, domain: &String, username: &String, password: &String, auto_logon: bool) -> RdpResult<()> {
+pub fn connect<T: Read + Write>(
+    mcs: &mut mcs::Client<T>,
+    domain: &String,
+    username: &String,
+    password: &String,
+    auto_logon: bool,
+) -> RdpResult<()> {
     mcs.write(
         &"global".to_string(),
         trame![
@@ -149,7 +160,7 @@ pub fn connect<T: Read + Write>(mcs: &mut mcs::Client<T>, domain: &String, usern
                 password,
                 auto_logon
             )
-        ]
+        ],
     )?;
 
     let (_channel_name, payload) = mcs.read()?;
@@ -157,11 +168,12 @@ pub fn connect<T: Read + Write>(mcs: &mut mcs::Client<T>, domain: &String, usern
     let mut header = security_header();
     header.read(&mut stream)?;
     if cast!(DataType::U16, header["securityFlag"])? & SecurityFlag::SecLicensePkt as u16 == 0 {
-        return Err(Error::RdpError(RdpError::new(RdpErrorKind::InvalidData, "SEC: Invalid Licence packet")));
+        return Err(Error::RdpError(RdpError::new(
+            RdpErrorKind::InvalidData,
+            "SEC: Invalid Licence packet",
+        )));
     }
 
     license::client_connect(&mut stream)?;
     Ok(())
 }
-
-
