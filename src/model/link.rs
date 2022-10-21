@@ -4,6 +4,13 @@ use crate::model::error::{Error, RdpError, RdpErrorKind, RdpResult};
 use native_tls::{TlsConnector, TlsStream};
 use std::io::{Cursor, Read, Write};
 
+#[cfg(not(feature = "openssl"))]
+pub trait SecureBio<S>: Read + Write {
+    fn start_ssl(&self, check_certificate: bool) -> RdpResult<Link<S>>;
+    fn get_peer_certificate_der(&self) -> RdpResult<Option<Vec<u8>>>;
+    fn shutdown(&mut self) -> std::io::Result<()>;
+}
+
 /// This a wrapper to work equals
 /// for a stream and a TLS stream
 pub enum Stream<S> {
@@ -12,6 +19,8 @@ pub enum Stream<S> {
     /// TLS Stream
     #[cfg(feature = "openssl")]
     Ssl(TlsStream<S>),
+    #[cfg(not(feature = "openssl"))]
+    Bio(Box<dyn SecureBio<S>>),
 }
 
 impl<S: Read + Write> Stream<S> {
@@ -31,6 +40,8 @@ impl<S: Read + Write> Stream<S> {
             Stream::Raw(e) => e.read_exact(buf)?,
             #[cfg(feature = "openssl")]
             Stream::Ssl(e) => e.read_exact(buf)?,
+            #[cfg(not(feature = "openssl"))]
+            Stream::Bio(bio) => bio.read_exact(buf)?,
         };
         Ok(())
     }
@@ -51,6 +62,8 @@ impl<S: Read + Write> Stream<S> {
             Stream::Raw(e) => Ok(e.read(buf)?),
             #[cfg(feature = "openssl")]
             Stream::Ssl(e) => Ok(e.read(buf)?),
+            #[cfg(not(feature = "openssl"))]
+            Stream::Bio(e) => Ok(e.read(buf)?),
         }
     }
 
@@ -75,6 +88,8 @@ impl<S: Read + Write> Stream<S> {
             Stream::Raw(e) => e.write(buffer)?,
             #[cfg(feature = "openssl")]
             Stream::Ssl(e) => e.write(buffer)?,
+            #[cfg(not(feature = "openssl"))]
+            Stream::Bio(e) => e.write(buffer)?,
         })
     }
 
@@ -84,6 +99,8 @@ impl<S: Read + Write> Stream<S> {
         Ok(match self {
             #[cfg(feature = "openssl")]
             Stream::Ssl(e) => e.shutdown()?,
+            #[cfg(not(feature = "openssl"))]
+            Stream::Bio(e) => e.shutdown()?,
             _ => (),
         })
     }
@@ -191,6 +208,17 @@ impl<S: Read + Write> Link<S> {
         )))
     }
 
+    #[cfg(not(feature = "openssl"))]
+    pub fn start_ssl(self, check_certificate: bool) -> RdpResult<Link<S>> {
+        if let Stream::Bio(ref stream) = self.stream {
+            stream.start_ssl(check_certificate)?;
+            return Ok(self);
+        }
+        Err(Error::RdpError(RdpError::new(
+            RdpErrorKind::NotImplemented,
+            "start_ssl on ssl stream is forbidden",
+        )))
+    }
     /// Retrive the peer certificate
     /// Use by the NLA authentication protocol
     /// to avoid MITM attack

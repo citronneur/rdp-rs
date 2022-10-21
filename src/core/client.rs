@@ -7,6 +7,8 @@ use crate::core::sec;
 use crate::core::tpkt;
 use crate::core::x224;
 use crate::model::error::{Error, RdpError, RdpErrorKind, RdpResult};
+#[cfg(not(feature = "openssl"))]
+use crate::model::link::SecureBio;
 use crate::model::link::{Link, Stream};
 use crate::nla::ntlm::Ntlm;
 use std::io::{Read, Write};
@@ -232,10 +234,23 @@ impl Connector {
     ///     .credentials("domain".to_string(), "username".to_string(), "password".to_string());
     /// let mut client = connector.connect(tcp).unwrap();
     /// ```
+    #[cfg(feature = "openssl")]
     pub fn connect<S: Read + Write>(&mut self, stream: S) -> RdpResult<RdpClient<S>> {
         // Create a wrapper around the stream
         let tcp = Link::new(Stream::Raw(stream));
+        self.connect_further(tcp)
+    }
+    #[cfg(not(feature = "openssl"))]
+    pub fn connect<S: Read + Write, B: SecureBio<S> + 'static>(
+        &mut self,
+        stream: Box<B>,
+    ) -> RdpResult<RdpClient<S>> {
+        // Create a wrapper around the stream
+        let tcp = Link::new(Stream::Bio(stream));
+        self.connect_further(tcp)
+    }
 
+    fn connect_further<S: Read + Write>(&self, tcp: Link<S>) -> RdpResult<RdpClient<S>> {
         // Compute authentication method
         let mut authentication = if let Some(hash) = &self.password_hash {
             Ntlm::from_hash(self.domain.clone(), self.username.clone(), hash)
