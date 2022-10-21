@@ -25,7 +25,7 @@ default = ["openssl"]
 # The reason we do this is because doctests don't get cfg(test)
 # See: https://github.com/rust-lang/cargo/issues/4669
 integration = []
-mstsc-rs = ["hex", "winapi", "minifb", "clap", "libc"]
+mstsc-rs = ["hex", "winapi", "minifb", "clap", "libc", "openssl", "futures"]
 openssl = ["async-native-tls"]
 
 [dependencies]
@@ -49,3 +49,4 @@ winapi = { version = "^0.3", features = ["winsock2"], optional = true }
 minifb = { version = "^0.15", optional = true }
 clap = { version = "^2.33", optional = true}
 libc = { version = "^0.2", optional = true}
+futures = { version = "0.3", optional = true }

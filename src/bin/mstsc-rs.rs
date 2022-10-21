@@ -7,10 +7,9 @@ use rdp::core::event::{BitmapEvent, KeyboardEvent, PointerButton, PointerEvent, 
 use rdp::core::gcc::KeyboardLayout;
 use rdp::model::error::{Error, RdpError, RdpErrorKind, RdpResult};
 use std::convert::TryFrom;
-use std::io::{Read, Write};
 use std::mem;
 use std::mem::{forget, size_of};
-use std::net::{SocketAddr, TcpStream};
+use std::net::SocketAddr;
 #[cfg(any(target_os = "linux", target_os = "macos"))]
 use std::os::unix::io::AsRawFd;
 #[cfg(target_os = "windows")]
@@ -19,10 +18,13 @@ use std::ptr;
 use std::ptr::copy_nonoverlapping;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{Receiver, Sender};
-use std::sync::{mpsc, Arc, Mutex};
-use std::thread;
-use std::thread::JoinHandle;
+use std::sync::{mpsc, Arc};
 use std::time::Instant;
+use tokio::{
+    io::{AsyncRead, AsyncWrite},
+    net::TcpStream,
+    sync::Mutex,
+};
 #[cfg(target_os = "windows")]
 use winapi::um::winsock2::{fd_set, select};
 
@@ -106,8 +108,8 @@ fn fast_bitmap_transfer(buffer: &mut Vec<u32>, width: usize, bitmap: BitmapEvent
                 )));
             }
             copy_nonoverlapping(
-                data_aligned.as_ptr().offset((src_i) as isize),
-                buffer.as_mut_ptr().offset(dest_i as isize),
+                data_aligned.as_ptr().add(src_i),
+                buffer.as_mut_ptr().add(dest_i),
                 count,
             )
         }
@@ -243,7 +245,7 @@ fn to_scancode(key: Key) -> u16 {
 }
 
 /// Create a tcp stream from main args
-fn tcp_from_args(args: &ArgMatches) -> RdpResult<TcpStream> {
+async fn tcp_from_args(args: &ArgMatches<'_>) -> RdpResult<TcpStream> {
     let ip = args
         .value_of("host")
         .expect("You need to provide a target argument");
@@ -258,7 +260,7 @@ fn tcp_from_args(args: &ArgMatches) -> RdpResult<TcpStream> {
                 &format!("Cannot parse the IP PORT input [{}]", e),
             ))
         })?;
-    let tcp = TcpStream::connect(&addr).unwrap();
+    let tcp = TcpStream::connect(&addr).await.unwrap();
     tcp.set_nodelay(true).map_err(|e| {
         Error::RdpError(RdpError::new(
             RdpErrorKind::InvalidData,
@@ -270,7 +272,10 @@ fn tcp_from_args(args: &ArgMatches) -> RdpResult<TcpStream> {
 }
 
 /// Create rdp client from args
-fn rdp_from_args<S: Read + Write>(args: &ArgMatches, stream: S) -> RdpResult<RdpClient<S>> {
+async fn rdp_from_args<S: AsyncRead + AsyncWrite + Unpin>(
+    args: &ArgMatches<'_>,
+    stream: S,
+) -> RdpResult<RdpClient<S>> {
     let width = args
         .value_of("width")
         .unwrap_or_default()
@@ -327,7 +332,7 @@ fn rdp_from_args<S: Read + Write>(args: &ArgMatches, stream: S) -> RdpResult<Rdp
         })?)
     }
     // RDP connection
-    Ok(rdp_connector.connect(stream)?)
+    rdp_connector.connect(stream).await
 }
 
 /// This function is in charge of the
@@ -376,38 +381,43 @@ fn window_from_args(args: &ArgMatches) -> RdpResult<Window> {
 /// This will launch the thread in charge
 /// of receiving event (mostly bitmap event)
 /// And send back to the gui thread
-fn launch_rdp_thread<S: 'static + Read + Write + Send>(
+fn launch_rdp_thread<S: 'static + AsyncRead + AsyncWrite + Unpin + Send>(
     handle: usize,
     rdp_client: Arc<Mutex<RdpClient<S>>>,
     sync: Arc<AtomicBool>,
     bitmap_channel: Sender<BitmapEvent>,
-) -> RdpResult<JoinHandle<()>> {
+) -> RdpResult<std::thread::JoinHandle<()>> {
     // Create the rdp thread
-    Ok(thread::spawn(move || {
-        while wait_for_fd(handle as usize) && sync.load(Ordering::Relaxed) {
-            let mut guard = rdp_client.lock().unwrap();
-            if let Err(Error::RdpError(e)) = guard.read(|event| match event {
-                RdpEvent::Bitmap(bitmap) => {
-                    bitmap_channel.send(bitmap).unwrap();
-                }
-                _ => println!("{}: ignore event", APPLICATION_NAME),
-            }) {
-                match e.kind() {
-                    RdpErrorKind::Disconnect => {
-                        println!("{}: Server ask for disconnect", APPLICATION_NAME);
+    Ok(std::thread::spawn(move || {
+        futures::executor::block_on(async {
+            while wait_for_fd(handle as usize) && sync.load(Ordering::Relaxed) {
+                let mut guard = rdp_client.lock().await;
+                if let Err(Error::RdpError(e)) = guard
+                    .read(|event| match event {
+                        RdpEvent::Bitmap(bitmap) => {
+                            bitmap_channel.send(bitmap).unwrap();
+                        }
+                        _ => println!("{}: ignore event", APPLICATION_NAME),
+                    })
+                    .await
+                {
+                    match e.kind() {
+                        RdpErrorKind::Disconnect => {
+                            println!("{}: Server ask for disconnect", APPLICATION_NAME);
+                        }
+                        _ => println!("{}: {:?}", APPLICATION_NAME, e),
                     }
-                    _ => println!("{}: {:?}", APPLICATION_NAME, e),
+                    break;
                 }
-                break;
             }
-        }
+        })
     }))
 }
 
 /// This is the main loop
 /// Print Window and handle all input (mous + keyboard)
 /// to RDP
-fn main_gui_loop<S: Read + Write>(
+async fn main_gui_loop<S: AsyncRead + AsyncWrite + Unpin>(
     mut window: Window,
     rdp_client: Arc<Mutex<RdpClient<S>>>,
     sync: Arc<AtomicBool>,
@@ -445,48 +455,49 @@ fn main_gui_loop<S: Read + Write>(
 
         // Mouse position input
         if let Some((x, y)) = window.get_mouse_pos(MouseMode::Clamp) {
-            let mut rdp_client_guard = rdp_client.lock().map_err(|e| {
-                Error::RdpError(RdpError::new(
-                    RdpErrorKind::Unknown,
-                    &format!("Thread error during access to mutex [{}]", e),
-                ))
-            })?;
+            let mut rdp_client_guard = rdp_client.lock().await;
 
             // Button is down if not 0
             let current_button = get_rdp_pointer_down(&window);
-            rdp_client_guard.try_write(RdpEvent::Pointer(PointerEvent {
-                x: x as u16,
-                y: y as u16,
-                button: if last_button == current_button {
-                    PointerButton::None
-                } else {
-                    PointerButton::try_from(last_button as u8 | current_button as u8).unwrap()
-                },
-                down: (last_button != current_button) && last_button == PointerButton::None,
-            }))?;
+            rdp_client_guard
+                .try_write(RdpEvent::Pointer(PointerEvent {
+                    x: x as u16,
+                    y: y as u16,
+                    button: if last_button == current_button {
+                        PointerButton::None
+                    } else {
+                        PointerButton::try_from(last_button as u8 | current_button as u8).unwrap()
+                    },
+                    down: (last_button != current_button) && last_button == PointerButton::None,
+                }))
+                .await?;
 
             last_button = current_button;
         }
 
         // Keyboard inputs
         if let Some(keys) = window.get_keys() {
-            let mut rdp_client_guard = rdp_client.lock().unwrap();
+            let mut rdp_client_guard = rdp_client.lock().await;
 
             for key in last_keys.iter() {
                 if !keys.contains(key) {
-                    rdp_client_guard.try_write(RdpEvent::Key(KeyboardEvent {
-                        code: to_scancode(*key),
-                        down: false,
-                    }))?
+                    rdp_client_guard
+                        .try_write(RdpEvent::Key(KeyboardEvent {
+                            code: to_scancode(*key),
+                            down: false,
+                        }))
+                        .await?
                 }
             }
 
             for key in keys.iter() {
                 if window.is_key_pressed(*key, KeyRepeat::Yes) {
-                    rdp_client_guard.try_write(RdpEvent::Key(KeyboardEvent {
-                        code: to_scancode(*key),
-                        down: true,
-                    }))?
+                    rdp_client_guard
+                        .try_write(RdpEvent::Key(KeyboardEvent {
+                            code: to_scancode(*key),
+                            down: true,
+                        }))
+                        .await?
                 }
             }
 
@@ -505,11 +516,12 @@ fn main_gui_loop<S: Read + Write>(
     }
 
     sync.store(false, Ordering::Relaxed);
-    rdp_client.lock().unwrap().shutdown()?;
+    rdp_client.lock().await.shutdown().await?;
     Ok(())
 }
 
-fn main() {
+#[tokio::main]
+async fn main() {
     // Parsing argument
     let matches = App::new(APPLICATION_NAME)
         .version("0.1.0")
@@ -610,7 +622,7 @@ fn main() {
         .get_matches();
 
     // Create a tcp stream from args
-    let tcp = tcp_from_args(&matches).unwrap();
+    let tcp = tcp_from_args(&matches).await.unwrap();
 
     // Keep trace of the handle
     #[cfg(target_os = "windows")]
@@ -620,7 +632,7 @@ fn main() {
     let handle = tcp.as_raw_fd();
 
     // Create rdp client
-    let rdp_client = rdp_from_args(&matches, tcp).unwrap();
+    let rdp_client = rdp_from_args(&matches, tcp).await.unwrap();
 
     let window = window_from_args(&matches).unwrap();
 
@@ -644,7 +656,9 @@ fn main() {
     .unwrap();
 
     // Launch the GUI
-    main_gui_loop(window, rdp_client_mutex, sync, bitmap_receiver).unwrap();
+    main_gui_loop(window, rdp_client_mutex, sync, bitmap_receiver)
+        .await
+        .unwrap();
 
     rdp_thread.join().unwrap();
 }
