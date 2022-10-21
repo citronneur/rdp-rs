@@ -204,7 +204,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin> Link<S> {
                 TlsConnector::new()
                     .danger_accept_invalid_certs(!check_certificate)
                     .use_sni(false)
-                    .connect("", stream)
+                    .connect("not_in_use.com", stream)
                     .await?,
             )));
         }
