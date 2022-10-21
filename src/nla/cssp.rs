@@ -185,10 +185,9 @@ pub fn cssp_connect<S: Read + Write>(
 
     // Get the peer public certificate
     let certificate_der = try_option!(
-        link.get_peer_certificate()?,
+        link.get_peer_certificate_der()?,
         "No public certificate available"
-    )?
-    .to_der()?;
+    )?;
     let certificate = read_public_certificate(&certificate_der)?;
 
     // Now we can send back our challenge payload wit the public key encoded

@@ -1,6 +1,7 @@
 use crate::model::data::Message;
 use crate::model::error::{Error, RdpError, RdpErrorKind, RdpResult};
-use native_tls::{Certificate, TlsConnector, TlsStream};
+#[cfg(feature = "openssl")]
+use native_tls::{TlsConnector, TlsStream};
 use std::io::{Cursor, Read, Write};
 
 /// This a wrapper to work equals
@@ -9,6 +10,7 @@ pub enum Stream<S> {
     /// Raw stream that implement Read + Write
     Raw(S),
     /// TLS Stream
+    #[cfg(feature = "openssl")]
     Ssl(TlsStream<S>),
 }
 
@@ -27,6 +29,7 @@ impl<S: Read + Write> Stream<S> {
     pub fn read_exact(&mut self, buf: &mut [u8]) -> RdpResult<()> {
         match self {
             Stream::Raw(e) => e.read_exact(buf)?,
+            #[cfg(feature = "openssl")]
             Stream::Ssl(e) => e.read_exact(buf)?,
         };
         Ok(())
@@ -46,6 +49,7 @@ impl<S: Read + Write> Stream<S> {
     pub fn read(&mut self, buf: &mut [u8]) -> RdpResult<usize> {
         match self {
             Stream::Raw(e) => Ok(e.read(buf)?),
+            #[cfg(feature = "openssl")]
             Stream::Ssl(e) => Ok(e.read(buf)?),
         }
     }
@@ -69,6 +73,7 @@ impl<S: Read + Write> Stream<S> {
     pub fn write(&mut self, buffer: &[u8]) -> RdpResult<usize> {
         Ok(match self {
             Stream::Raw(e) => e.write(buffer)?,
+            #[cfg(feature = "openssl")]
             Stream::Ssl(e) => e.write(buffer)?,
         })
     }
@@ -77,6 +82,7 @@ impl<S: Read + Write> Stream<S> {
     /// Only works when stream is a SSL stream
     pub fn shutdown(&mut self) -> RdpResult<()> {
         Ok(match self {
+            #[cfg(feature = "openssl")]
             Stream::Ssl(e) => e.shutdown()?,
             _ => (),
         })
@@ -168,6 +174,7 @@ impl<S: Read + Write> Link<S> {
     /// let link_tcp = Link::new(Stream::Raw(TcpStream::connect(&addr).unwrap()));
     /// let link_ssl = link_tcp.start_ssl(false).unwrap();
     /// ```
+    #[cfg(feature = "openssl")]
     pub fn start_ssl(self, check_certificate: bool) -> RdpResult<Link<S>> {
         let mut builder = TlsConnector::builder();
         builder.danger_accept_invalid_certs(!check_certificate);
@@ -196,14 +203,17 @@ impl<S: Read + Write> Link<S> {
     /// let link_ssl = link_tcp.start_ssl(false).unwrap();
     /// let certificate = link_ssl.get_peer_certificate().unwrap().unwrap();
     /// ```
-    pub fn get_peer_certificate(&self) -> RdpResult<Option<Certificate>> {
-        if let Stream::Ssl(stream) = &self.stream {
-            Ok(stream.peer_certificate()?)
-        } else {
-            Err(Error::RdpError(RdpError::new(
+    pub fn get_peer_certificate_der(&self) -> RdpResult<Option<Vec<u8>>> {
+        match &self.stream {
+            #[cfg(feature = "openssl")]
+            Stream::Ssl(stream) => Ok(match stream.peer_certificate()? {
+                Some(cert) => Some(cert.to_der()?),
+                None => None,
+            }),
+            _ => Err(Error::RdpError(RdpError::new(
                 RdpErrorKind::InvalidData,
                 "get peer certificate on non ssl link is impossible",
-            )))
+            ))),
         }
     }
 

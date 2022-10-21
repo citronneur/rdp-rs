@@ -21,13 +21,15 @@ path = "src/bin/mstsc-rs.rs"
 required-features = ["mstsc-rs"]
 
 [features]
+default = ["openssl"]
 # The reason we do this is because doctests don't get cfg(test)
 # See: https://github.com/rust-lang/cargo/issues/4669
 integration = []
 mstsc-rs = ["hex", "winapi", "minifb", "clap", "libc"]
+openssl = ["native-tls"]
 
 [dependencies]
-native-tls = "^0.2"
+native-tls = { version = "^0.2", optional = true }
 byteorder = "^1.3"
 bufstream = "0.1"
 indexmap = "^1.3"

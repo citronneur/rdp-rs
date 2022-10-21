@@ -1,7 +1,10 @@
+#[cfg(feature = "openssl")]
 use native_tls::Error as SslError;
+#[cfg(feature = "openssl")]
 use native_tls::HandshakeError;
 use num_enum::{TryFromPrimitive, TryFromPrimitiveError};
 use std::io::Error as IoError;
+#[cfg(feature = "openssl")]
 use std::io::{Read, Write};
 use std::string::String;
 use yasna::ASN1Error;
@@ -94,6 +97,7 @@ pub enum Error {
     /// SSL handshake error
     SslHandshakeError,
     /// SSL error
+    #[cfg(feature = "openssl")]
     SslError(SslError),
     /// ASN1 parser error
     ASN1Error(ASN1Error),
@@ -108,12 +112,14 @@ impl From<IoError> for Error {
     }
 }
 
+#[cfg(feature = "openssl")]
 impl<S: Read + Write> From<HandshakeError<S>> for Error {
     fn from(_: HandshakeError<S>) -> Error {
         Error::SslHandshakeError
     }
 }
 
+#[cfg(feature = "openssl")]
 impl From<SslError> for Error {
     fn from(e: SslError) -> Error {
         Error::SslError(e)
