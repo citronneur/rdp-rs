@@ -201,7 +201,7 @@ pub fn read_integer(s: &mut dyn Read) -> RdpResult<u32> {
         4 => {
             let mut result = U32::BE(0);
             result.read(s)?;
-            Ok(result.inner() as u32)
+            Ok(result.inner())
         }
         _ => Err(Error::RdpError(RdpError::new(
             RdpErrorKind::InvalidSize,

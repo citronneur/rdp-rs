@@ -225,7 +225,7 @@ pub fn rle_16_decompress(
 
         match opcode {
             0 => {
-                if lastopcode == opcode && !(x == width && prevline == None) {
+                if lastopcode == opcode && !(x == width && prevline.is_none()) {
                     insertmix = true;
                 }
             }
@@ -390,10 +390,10 @@ pub fn rle_16_decompress(
 }
 
 pub fn rgb565torgb32(input: &[u16], width: usize, height: usize) -> Vec<u8> {
-    let mut result_32_bpp = vec![0_u8; width as usize * height as usize * 4];
+    let mut result_32_bpp = vec![0_u8; width * height * 4];
     for i in 0..height {
         for j in 0..width {
-            let index = (i * width + j) as usize;
+            let index = i * width + j;
             let v = input[index];
             result_32_bpp[index * 4 + 3] = 0xff;
             result_32_bpp[index * 4 + 2] = (((((v >> 11) & 0x1f) * 527) + 23) >> 6) as u8;
