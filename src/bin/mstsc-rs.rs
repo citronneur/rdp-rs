@@ -69,6 +69,7 @@ fn wait_for_fd(fd: usize) -> bool {
 
 /// Transmute is use to convert Vec<u8> -> Vec<u32>
 /// To accelerate data convert
+#[allow(clippy::missing_safety_doc)]
 pub unsafe fn transmute_vec<S, T>(mut vec: Vec<S>) -> Vec<T> {
     let ptr = vec.as_mut_ptr();
     let capacity = vec.capacity() * size_of::<S>() / size_of::<T>();

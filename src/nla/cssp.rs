@@ -6,7 +6,7 @@ use crate::nla::asn1::{
 use crate::nla::sspi::AuthenticationProtocol;
 use num_bigint::BigUint;
 use tokio::io::*;
-use x509_parser::{parse_x509_der, X509Certificate};
+use x509_parser::prelude::*;
 use yasna::Tag;
 
 /// Create a ts request as expected by the specification
@@ -102,7 +102,7 @@ pub fn create_ts_authenticate(nego: Vec<u8>, pub_key_auth: Vec<u8>) -> Vec<u8> {
 }
 
 pub fn read_public_certificate(stream: &[u8]) -> RdpResult<X509Certificate> {
-    let res = parse_x509_der(stream).unwrap();
+    let res = X509Certificate::from_der(stream).unwrap();
     Ok(res.1)
 }
 
