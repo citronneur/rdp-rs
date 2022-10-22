@@ -6,13 +6,17 @@ use std::io::Cursor;
 use tokio::io::*;
 
 #[cfg(not(feature = "openssl"))]
-pub trait SecureBio<S>
+use async_trait::async_trait;
+
+#[cfg(not(feature = "openssl"))]
+#[async_trait]
+pub trait AsyncSecureBio<S>
 where
-    S: AsyncRead + AsyncWrite,
+    S: AsyncRead + AsyncWrite + Unpin,
 {
-    fn start_ssl(&mut self, check_certificate: bool) -> RdpResult<()>;
+    async fn start_ssl(&mut self, check_certificate: bool) -> RdpResult<()>;
     fn get_peer_certificate_der(&self) -> RdpResult<Option<Vec<u8>>>;
-    fn shutdown(&mut self) -> std::io::Result<()>;
+    async fn shutdown(&mut self) -> std::io::Result<()>;
     fn get_io(&mut self) -> &mut S;
 }
 
@@ -25,7 +29,7 @@ pub enum Stream<S> {
     #[cfg(feature = "openssl")]
     Ssl(TlsStream<S>),
     #[cfg(not(feature = "openssl"))]
-    Bio(Box<dyn SecureBio<S>>),
+    Bio(Box<dyn AsyncSecureBio<S>>),
 }
 
 impl<S: AsyncRead + AsyncWrite + Unpin> Stream<S> {
@@ -46,7 +50,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin> Stream<S> {
             #[cfg(feature = "openssl")]
             Stream::Ssl(e) => e.read_exact(buf).await?,
             #[cfg(not(feature = "openssl"))]
-            Stream::Bio(bio) => bio.get_io().read_exact(buf)?,
+            Stream::Bio(bio) => bio.get_io().read_exact(buf).await?,
         };
         Ok(())
     }
@@ -68,7 +72,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin> Stream<S> {
             #[cfg(feature = "openssl")]
             Stream::Ssl(e) => Ok(e.read(buf).await?),
             #[cfg(not(feature = "openssl"))]
-            Stream::Bio(e) => Ok(e.get_io().read(buf)?),
+            Stream::Bio(e) => Ok(e.get_io().read(buf).await?),
         }
     }
 
@@ -94,20 +98,21 @@ impl<S: AsyncRead + AsyncWrite + Unpin> Stream<S> {
             #[cfg(feature = "openssl")]
             Stream::Ssl(e) => e.write(buffer).await?,
             #[cfg(not(feature = "openssl"))]
-            Stream::Bio(e) => e.get_io().write(buffer)?,
+            Stream::Bio(e) => e.get_io().write(buffer).await?,
         })
     }
 
     /// Shutdown the stream
     /// Only works when stream is a SSL stream
     pub async fn shutdown(&mut self) -> RdpResult<()> {
-        match self {
-            #[cfg(feature = "openssl")]
-            Stream::Ssl(e) => e.shutdown().await?,
-            #[cfg(not(feature = "openssl"))]
-            Stream::Bio(e) => e.shutdown()?,
-            _ => (),
-        };
+        #[cfg(feature = "openssl")]
+        if let Stream::Ssl(e) = self {
+            e.shutdown().await?
+        }
+        #[cfg(not(feature = "openssl"))]
+        if let Stream::Bio(e) = self {
+            e.shutdown().await?;
+        }
         Ok(())
     }
 }
@@ -215,15 +220,16 @@ impl<S: AsyncRead + AsyncWrite + Unpin> Link<S> {
     }
 
     #[cfg(not(feature = "openssl"))]
-    pub fn start_ssl(self, check_certificate: bool) -> RdpResult<Link<S>> {
+    pub async fn start_ssl(self, check_certificate: bool) -> RdpResult<Link<S>> {
         if let Stream::Bio(mut stream) = self.stream {
-            stream.start_ssl(check_certificate)?;
-            return Ok(Link::new(Stream::Bio(stream)));
+            stream.start_ssl(check_certificate).await?;
+            Ok(Link::new(Stream::Bio(stream)))
+        } else {
+            Err(Error::RdpError(RdpError::new(
+                RdpErrorKind::NotImplemented,
+                "start_ssl on ssl stream is forbidden",
+            )))
         }
-        Err(Error::RdpError(RdpError::new(
-            RdpErrorKind::NotImplemented,
-            "start_ssl on ssl stream is forbidden",
-        )))
     }
     /// Retrive the peer certificate
     /// Use by the NLA authentication protocol
@@ -244,6 +250,8 @@ impl<S: AsyncRead + AsyncWrite + Unpin> Link<S> {
                 Some(cert) => Some(cert.to_der()?),
                 None => None,
             }),
+            #[cfg(not(feature = "openssl"))]
+            Stream::Bio(stream) => stream.get_peer_certificate_der(),
             _ => Err(Error::RdpError(RdpError::new(
                 RdpErrorKind::InvalidData,
                 "get peer certificate on non ssl link is impossible",

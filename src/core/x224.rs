@@ -79,7 +79,7 @@ fn rdp_neg_req(
 /// X224 request header
 fn x224_crq(len: u8, code: MessageType) -> Component {
     component! [
-        "len" => (len + 6) as u8,
+        "len" => len + 6,
         "code" => code as u8,
         "padding" => trame! [U16::LE(0), U16::LE(0), 0_u8]
     ]

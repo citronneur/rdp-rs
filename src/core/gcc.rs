@@ -303,7 +303,7 @@ pub fn server_network_data() -> Component {
 pub fn block_header(data_type: Option<MessageType>, length: Option<u16>) -> Component {
     component![
         "type" => U16::LE(data_type.unwrap_or(MessageType::CsCore) as u16),
-        "length" => U16::LE(length.unwrap_or(0) as u16 + 4)
+        "length" => U16::LE(length.unwrap_or(0) + 4)
     ]
 }
 

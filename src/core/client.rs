@@ -8,7 +8,7 @@ use crate::core::tpkt;
 use crate::core::x224;
 use crate::model::error::{Error, RdpError, RdpErrorKind, RdpResult};
 #[cfg(not(feature = "openssl"))]
-use crate::model::link::SecureBio;
+use crate::model::link::AsyncSecureBio;
 use crate::model::link::{Link, Stream};
 use crate::nla::ntlm::Ntlm;
 use tokio::io::*;
@@ -249,13 +249,13 @@ impl Connector {
         self.connect_further(tcp).await
     }
     #[cfg(not(feature = "openssl"))]
-    pub fn connect<S: AsyncRead + AsyncWrite + Unpin, B: SecureBio<S> + 'static>(
+    pub async fn connect<S: AsyncRead + AsyncWrite + Unpin, B: AsyncSecureBio<S> + 'static>(
         &mut self,
         stream: Box<B>,
     ) -> RdpResult<RdpClient<S>> {
         // Create a wrapper around the stream
         let tcp = Link::new(Stream::Bio(stream));
-        self.connect_further(tcp)
+        self.connect_further(tcp).await
     }
 
     async fn connect_further<S: AsyncRead + AsyncWrite + Unpin>(
