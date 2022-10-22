@@ -5,10 +5,14 @@ use native_tls::{TlsConnector, TlsStream};
 use std::io::{Cursor, Read, Write};
 
 #[cfg(not(feature = "openssl"))]
-pub trait SecureBio<S>: Read + Write {
-    fn start_ssl(&self, check_certificate: bool) -> RdpResult<Link<S>>;
+pub trait SecureBio<S>
+where
+    S: Read + Write,
+{
+    fn start_ssl(&mut self, check_certificate: bool) -> RdpResult<()>;
     fn get_peer_certificate_der(&self) -> RdpResult<Option<Vec<u8>>>;
     fn shutdown(&mut self) -> std::io::Result<()>;
+    fn get_io(&mut self) -> &mut S;
 }
 
 /// This a wrapper to work equals
@@ -41,7 +45,7 @@ impl<S: Read + Write> Stream<S> {
             #[cfg(feature = "openssl")]
             Stream::Ssl(e) => e.read_exact(buf)?,
             #[cfg(not(feature = "openssl"))]
-            Stream::Bio(bio) => bio.read_exact(buf)?,
+            Stream::Bio(bio) => bio.get_io().read_exact(buf)?,
         };
         Ok(())
     }
@@ -63,7 +67,7 @@ impl<S: Read + Write> Stream<S> {
             #[cfg(feature = "openssl")]
             Stream::Ssl(e) => Ok(e.read(buf)?),
             #[cfg(not(feature = "openssl"))]
-            Stream::Bio(e) => Ok(e.read(buf)?),
+            Stream::Bio(e) => Ok(e.get_io().read(buf)?),
         }
     }
 
@@ -89,7 +93,7 @@ impl<S: Read + Write> Stream<S> {
             #[cfg(feature = "openssl")]
             Stream::Ssl(e) => e.write(buffer)?,
             #[cfg(not(feature = "openssl"))]
-            Stream::Bio(e) => e.write(buffer)?,
+            Stream::Bio(e) => e.get_io().write(buffer)?,
         })
     }
 
@@ -210,9 +214,9 @@ impl<S: Read + Write> Link<S> {
 
     #[cfg(not(feature = "openssl"))]
     pub fn start_ssl(self, check_certificate: bool) -> RdpResult<Link<S>> {
-        if let Stream::Bio(ref stream) = self.stream {
+        if let Stream::Bio(mut stream) = self.stream {
             stream.start_ssl(check_certificate)?;
-            return Ok(self);
+            return Ok(Link::new(Stream::Bio(stream)));
         }
         Err(Error::RdpError(RdpError::new(
             RdpErrorKind::NotImplemented,
