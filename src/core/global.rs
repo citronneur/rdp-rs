@@ -12,6 +12,7 @@ use num_enum::TryFromPrimitive;
 use std::convert::TryFrom;
 use std::io::{Cursor, Read};
 use tokio::io::*;
+use tracing::{event, Level};
 
 /// Raw PDU type use by the protocol
 #[repr(u16)]
@@ -644,7 +645,7 @@ impl Client {
             for capability_set in cast!(DataType::Trame, pdu.message["capabilitySets"])?.iter() {
                 match Capability::from_capability_set(cast!(DataType::Component, capability_set)?) {
                     Ok(capability) => self.server_capabilities.push(capability),
-                    Err(e) => println!("GLOBAL: {:?}", e),
+                    Err(e) => event!(Level::WARN, "GLOBAL: {:?}", e),
                 }
             }
             self.share_id = Some(cast!(DataType::U32, pdu.message["shareId"])?);
@@ -719,24 +720,29 @@ impl Client {
 
             // Ask for a new handshake
             if pdu.pdu_type == PduType::Deactivateallpdu {
-                println!("GLOBAL: deactive/reactive sequence initiated");
+                event!(Level::WARN, "GLOBAL: deactive/reactive sequence initiated");
                 self.state = ClientState::DemandActivePDU;
                 continue;
             }
             if pdu.pdu_type != PduType::Datapdu {
-                println!("GLOBAL: Ignore PDU {:?}", pdu.pdu_type);
+                event!(Level::WARN, "GLOBAL: Ignore PDU {:?}", pdu.pdu_type);
                 continue;
             }
 
             match DataPDU::from_pdu(&pdu) {
                 Ok(data_pdu) => match data_pdu.pdu_type {
-                    PDUType2::Pdutype2SetErrorInfoPdu => println!(
+                    PDUType2::Pdutype2SetErrorInfoPdu => event!(
+                        Level::WARN,
                         "GLOBAL: Receive error PDU from server {:?}",
                         cast!(DataType::U32, data_pdu.message["errorInfo"])?
                     ),
-                    _ => println!("GLOBAL: Data PDU not handle {:?}", data_pdu.pdu_type),
+                    _ => event!(
+                        Level::WARN,
+                        "GLOBAL: Data PDU not handle {:?}",
+                        data_pdu.pdu_type
+                    ),
                 },
-                Err(e) => println!("GLOBAL: Parsing data PDU error {:?}", e),
+                Err(e) => event!(Level::WARN, "GLOBAL: Parsing data PDU error {:?}", e),
             };
         }
         Ok(())
@@ -780,10 +786,14 @@ impl Client {
                         FastPathUpdateType::FastpathUpdatetypeColor
                         | FastPathUpdateType::FastpathUpdatetypePtrNull
                         | FastPathUpdateType::FastpathUpdatetypeSynchronize => (),
-                        _ => println!("GLOBAL: Fast Path order not handled {:?}", order.fp_type),
+                        _ => event!(
+                            Level::WARN,
+                            "GLOBAL: Fast Path order not handled {:?}",
+                            order.fp_type
+                        ),
                     }
                 }
-                Err(e) => println!("GLOBAL: Unknown Fast Path order {:?}", e),
+                Err(e) => event!(Level::WARN, "GLOBAL: Unknown Fast Path order {:?}", e),
             };
         }
 

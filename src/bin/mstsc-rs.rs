@@ -25,6 +25,7 @@ use tokio::{
     net::TcpStream,
     sync::Mutex,
 };
+use tracing::{event, Level};
 #[cfg(target_os = "windows")]
 use winapi::um::winsock2::{fd_set, select};
 
@@ -398,15 +399,19 @@ fn launch_rdp_thread<S: 'static + AsyncRead + AsyncWrite + Unpin + Send>(
                         RdpEvent::Bitmap(bitmap) => {
                             bitmap_channel.send(bitmap).unwrap();
                         }
-                        _ => println!("{}: ignore event", APPLICATION_NAME),
+                        _ => event!(Level::WARN, "{}: ignore event", APPLICATION_NAME),
                     })
                     .await
                 {
                     match e.kind() {
                         RdpErrorKind::Disconnect => {
-                            println!("{}: Server ask for disconnect", APPLICATION_NAME);
+                            event!(
+                                Level::WARN,
+                                "{}: Server ask for disconnect",
+                                APPLICATION_NAME
+                            );
                         }
-                        _ => println!("{}: {:?}", APPLICATION_NAME, e),
+                        _ => event!(Level::WARN, "{}: {:?}", APPLICATION_NAME, e),
                     }
                     break;
                 }
@@ -621,6 +626,15 @@ async fn main() {
                 .help("Name of the client send to the server"),
         )
         .get_matches();
+
+    // Create tracing subscriber
+    let subscriber = tracing_subscriber::FmtSubscriber::builder()
+        // all spans/events with a level higher than TRACE (e.g, debug, info, warn, etc.)
+        // will be written to stdout.
+        .with_max_level(Level::INFO)
+        // completes the builder.
+        .finish();
+    tracing::subscriber::set_global_default(subscriber).expect("setting default subscriber failed");
 
     // Create a tcp stream from args
     let tcp = tcp_from_args(&matches).await.unwrap();

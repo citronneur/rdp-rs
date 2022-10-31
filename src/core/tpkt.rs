@@ -138,7 +138,11 @@ impl<S: AsyncRead + AsyncWrite + Unpin> Client<S> {
             if size.inner() < 4 {
                 Err(Error::RdpError(RdpError::new(
                     RdpErrorKind::InvalidSize,
-                    "Invalid minimal size for TPKT",
+                    &format!(
+                        "Invalid minimal size for TPKT #1 ({}, {})",
+                        action,
+                        size.inner()
+                    ),
                 )))
             } else {
                 // now wait for body
@@ -159,7 +163,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin> Client<S> {
                 if length < 3 {
                     Err(Error::RdpError(RdpError::new(
                         RdpErrorKind::InvalidSize,
-                        "Invalid minimal size for TPKT",
+                        &format!("Invalid minimal size for TPKT #2 ({}, {})", action, length),
                     )))
                 } else {
                     Ok(Payload::FastPath(
@@ -170,7 +174,10 @@ impl<S: AsyncRead + AsyncWrite + Unpin> Client<S> {
             } else if short_length < 2 {
                 Err(Error::RdpError(RdpError::new(
                     RdpErrorKind::InvalidSize,
-                    "Invalid minimal size for TPKT",
+                    &format!(
+                        "Invalid minimal size for TPKT #3 ({}, {})",
+                        action, short_length
+                    ),
                 )))
             } else {
                 Ok(Payload::FastPath(

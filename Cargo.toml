@@ -25,7 +25,15 @@ default = ["openssl"]
 # The reason we do this is because doctests don't get cfg(test)
 # See: https://github.com/rust-lang/cargo/issues/4669
 integration = []
-mstsc-rs = ["hex", "winapi", "minifb", "clap", "libc", "openssl", "futures"]
+mstsc-rs = ["hex",
+            "winapi",
+            "minifb",
+            "clap",
+            "libc",
+            "openssl",
+            "futures",
+            "tracing-subscriber"
+        ]
 openssl = ["async-native-tls"]
 
 [dependencies]
@@ -42,6 +50,7 @@ rand = "^0.8"
 num-bigint = "^0.4"
 x509-parser = "^0.12"
 num_enum = "^0.5"
+tracing = { version = "^0.1", features = ["log"] }
 
 # for mtsc-rs
 hex = { version = "^0.4", optional = true }
@@ -50,6 +59,7 @@ minifb = { version = "^0.15", optional = true }
 clap = { version = "^2.33", optional = true}
 libc = { version = "^0.2", optional = true}
 futures = { version = "0.3", optional = true }
+tracing-subscriber = { version = "^0.3", optional = true }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 tokio = { version = "^1", features = ["full"] }

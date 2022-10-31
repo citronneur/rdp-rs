@@ -6,6 +6,7 @@ use crate::model::error::{Error, RdpError, RdpErrorKind, RdpResult};
 use crate::model::unicode::Unicode;
 use std::collections::HashMap;
 use std::io::{Cursor, Read};
+use tracing::{event, Level};
 
 const T124_02_98_OID: [u8; 6] = [0, 0, 20, 124, 0, 1];
 const H221_CS_KEY: [u8; 4] = *b"Duca";
@@ -371,7 +372,8 @@ pub fn read_conference_create_response(cc_response: &mut dyn Read) -> RdpResult<
                 server_net.read(&mut Cursor::new(buffer))?;
                 result.insert(MessageType::ScNet, server_net);
             }
-            _ => println!(
+            _ => event!(
+                Level::WARN,
                 "GCC: Unknown server block {:?}",
                 cast!(DataType::U16, header["type"])?
             ),

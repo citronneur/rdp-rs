@@ -14,6 +14,7 @@ use crate::nla::asn1::{
 use std::collections::HashMap;
 use std::io::{BufRead, Cursor, Read};
 use tokio::io::*;
+use tracing::{event, Level};
 use yasna::Tag;
 
 #[allow(dead_code)]
@@ -327,7 +328,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin> Client<S> {
                 *channel_id,
                 &mut try_let!(tpkt::Payload::Raw, self.x224.read().await?)?,
             )? {
-                println!("Server reject channel id {:?}", channel_id);
+                event!(Level::WARN, "Server reject channel id {:?}", channel_id);
             }
         }
 
