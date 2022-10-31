@@ -1,6 +1,6 @@
 [package]
 name = "rdp-rs"
-version = "0.1.0"
+version = "0.2.0"
 authors = ["Sylvain Peyrefitte <citronneur@gmail.com>"]
 description = "A Pure RUST imlementation of Remote Desktop Protocol"
 repository = "https://github.com/citronneur/rdp-rs"
