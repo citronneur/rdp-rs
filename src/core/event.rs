@@ -1,6 +1,6 @@
-use model::error::{RdpResult, Error, RdpError, RdpErrorKind};
+use crate::codec::rle::{rgb565torgb32, rle_16_decompress, rle_32_decompress};
+use crate::model::error::{Error, RdpError, RdpErrorKind, RdpResult};
 use num_enum::TryFromPrimitive;
-use codec::rle::{rle_32_decompress, rle_16_decompress, rgb565torgb32};
 
 /// A bitmap event is used
 /// to notify client that it received
@@ -28,7 +28,7 @@ pub struct BitmapEvent {
     /// true if bitmap buffer is compressed using RLE
     pub is_compress: bool,
     /// Bitmap data
-    pub data: Vec<u8>
+    pub data: Vec<u8>,
 }
 
 impl BitmapEvent {
@@ -60,41 +60,59 @@ impl BitmapEvent {
     /// }).unwrap()
     /// ```
     pub fn decompress(self) -> RdpResult<Vec<u8>> {
-
         // actually only handle 32 bpp
         match self.bpp {
             32 => {
                 // 32 bpp is straight forward
-                Ok(
-                    if self.is_compress {
-                        let mut result = vec![0 as u8; self.width as usize * self.height as usize * 4];
-                        rle_32_decompress(&self.data, self.width as u32, self.height as u32, &mut result)?;
-                        result
-                    } else {
-                        self.data
-                    }
-                )
-            },
+                Ok(if self.is_compress {
+                    let mut result = vec![0_u8; self.width as usize * self.height as usize * 4];
+                    rle_32_decompress(
+                        &self.data,
+                        self.width as u32,
+                        self.height as u32,
+                        &mut result,
+                    )?;
+                    result
+                } else {
+                    self.data
+                })
+            }
             16 => {
                 // 16 bpp is more consumer
                 let result_16bpp = if self.is_compress {
-                    let mut result = vec![0 as u16; self.width as usize * self.height as usize * 2];
-                    rle_16_decompress(&self.data, self.width as usize, self.height as usize, &mut result)?;
+                    let mut result = vec![0_u16; self.width as usize * self.height as usize * 2];
+                    rle_16_decompress(
+                        &self.data,
+                        self.width as usize,
+                        self.height as usize,
+                        &mut result,
+                    )?;
                     result
                 } else {
-                    let mut result = vec![0 as u16; self.width as usize * self.height as usize];
+                    let mut result = vec![0_u16; self.width as usize * self.height as usize];
                     for i in 0..self.height {
                         for j in 0..self.width {
                             let src = (((self.height - i - 1) * self.width + j) * 2) as usize;
-                            result[(i * self.width + j) as usize] = (self.data[src + 1] as u16) << 8 | self.data[src] as u16;
+                            result[(i * self.width + j) as usize] =
+                                (self.data[src + 1] as u16) << 8 | self.data[src] as u16;
                         }
                     }
                     result
                 };
 
-                Ok(rgb565torgb32(&result_16bpp, self.width as usize, self.height as usize))
-            },
-            _ => Err(Error::RdpError(RdpError::new(RdpErrorKind::NotImplemented, &format!("Decompression Algorithm not implemented for bpp {}", self.bpp))))
+                Ok(rgb565torgb32(
+                    &result_16bpp,
+                    self.width as usize,
+                    self.height as usize,
+                ))
+            }
+            _ => Err(Error::RdpError(RdpError::new(
+                RdpErrorKind::NotImplemented,
+                &format!(
+                    "Decompression Algorithm not implemented for bpp {}",
+                    self.bpp
+                ),
+            ))),
         }
     }
 }
@@ -109,7 +127,7 @@ pub enum PointerButton {
     /// Right mouse button
     Right = 2,
     /// Wheel mouse button
-    Middle = 3
+    Middle = 3,
 }
 
 /// A mouse pointer event
@@ -121,7 +139,7 @@ pub struct PointerEvent {
     /// Which button is pressed
     pub button: PointerButton,
     /// true if it's a down press action
-    pub down: bool
+    pub down: bool,
 }
 
 /// Keyboard event
@@ -131,7 +149,7 @@ pub struct KeyboardEvent {
     /// Scancode of the key
     pub code: u16,
     /// State of the key
-    pub down: bool
+    pub down: bool,
 }
 
 /// All event handle by RDP protocol implemented by rdp-rs
@@ -141,5 +159,5 @@ pub enum RdpEvent {
     /// Mouse event
     Pointer(PointerEvent),
     /// Keyboard event
-    Key(KeyboardEvent)
+    Key(KeyboardEvent),
 }

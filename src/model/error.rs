@@ -1,12 +1,10 @@
-extern crate native_tls;
-
-use std::io::{Read, Write};
-use std::io::Error as IoError;
-use std::string::String;
-use self::native_tls::HandshakeError;
-use self::native_tls::Error as SslError;
-use yasna::ASN1Error;
+#[cfg(feature = "openssl")]
+use async_native_tls::Error as SslError;
 use num_enum::{TryFromPrimitive, TryFromPrimitiveError};
+use std::io::Error as IoError;
+#[cfg(feature = "openssl")]
+use std::string::String;
+use yasna::ASN1Error;
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub enum RdpErrorKind {
@@ -48,15 +46,16 @@ pub enum RdpErrorKind {
     Disconnect,
     /// Indicate an unknown field
     Unknown,
-    UnexpectedType
+    UnexpectedType,
 }
 
 #[derive(Debug)]
+#[allow(dead_code)]
 pub struct RdpError {
     /// Kind of error
     kind: RdpErrorKind,
     /// Associated message of the context
-    message: String
+    message: String,
 }
 
 impl RdpError {
@@ -66,10 +65,10 @@ impl RdpError {
     /// use rdp::model::error::{RdpError, RdpErrorKind};
     /// let error = RdpError::new(RdpErrorKind::Disconnect, "disconnected");
     /// ```
-    pub fn new (kind: RdpErrorKind, message: &str) -> Self {
+    pub fn new(kind: RdpErrorKind, message: &str) -> Self {
         RdpError {
             kind,
-            message: String::from(message)
+            message: String::from(message),
         }
     }
 
@@ -92,14 +91,13 @@ pub enum Error {
     RdpError(RdpError),
     /// All kind of IO error
     Io(IoError),
-    /// SSL handshake error
-    SslHandshakeError,
     /// SSL error
+    #[cfg(feature = "openssl")]
     SslError(SslError),
     /// ASN1 parser error
     ASN1Error(ASN1Error),
     /// try error
-    TryError(String)
+    TryError(String),
 }
 
 /// From IO Error
@@ -109,12 +107,7 @@ impl From<IoError> for Error {
     }
 }
 
-impl<S: Read + Write> From<HandshakeError<S>> for Error {
-    fn from(_: HandshakeError<S>) -> Error {
-        Error::SslHandshakeError
-    }
-}
-
+#[cfg(feature = "openssl")]
 impl From<SslError> for Error {
     fn from(e: SslError) -> Error {
         Error::SslError(e)
@@ -129,7 +122,10 @@ impl From<ASN1Error> for Error {
 
 impl<T: TryFromPrimitive> From<TryFromPrimitiveError<T>> for Error {
     fn from(_: TryFromPrimitiveError<T>) -> Self {
-        Error::RdpError(RdpError::new(RdpErrorKind::InvalidCast, "Invalid enum conversion"))
+        Error::RdpError(RdpError::new(
+            RdpErrorKind::InvalidCast,
+            "Invalid enum conversion",
+        ))
     }
 }
 
@@ -139,22 +135,27 @@ pub type RdpResult<T> = Result<T, Error>;
 #[macro_export]
 macro_rules! try_option {
     ($val: expr, $expr: expr) => {
-         if let Some(x) = $val {
+        if let Some(x) = $val {
             Ok(x)
-         } else {
-            Err(Error::RdpError(RdpError::new(RdpErrorKind::InvalidOptionalField, $expr)))
-         }
-    }
+        } else {
+            Err(Error::RdpError(RdpError::new(
+                RdpErrorKind::InvalidOptionalField,
+                $expr,
+            )))
+        }
+    };
 }
 
 #[macro_export]
 macro_rules! try_let {
     ($ident: path, $val: expr) => {
-         if let $ident(x) = $val {
+        if let $ident(x) = $val {
             Ok(x)
-         } else {
-            Err(Error::RdpError(RdpError::new(RdpErrorKind::InvalidCast, "Invalid Cast")))
-         }
-    }
+        } else {
+            Err(Error::RdpError(RdpError::new(
+                RdpErrorKind::InvalidCast,
+                "Invalid Cast",
+            )))
+        }
+    };
 }
-

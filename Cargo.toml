@@ -1,6 +1,6 @@
 [package]
 name = "rdp-rs"
-version = "0.1.0"
+version = "0.2.0"
 authors = ["Sylvain Peyrefitte <citronneur@gmail.com>"]
 description = "A Pure RUST imlementation of Remote Desktop Protocol"
 repository = "https://github.com/citronneur/rdp-rs"
@@ -9,6 +9,7 @@ keywords = ["rdp", "security", "network", "windows"]
 categories = ["network"]
 license = "MIT"
 documentation = "https://docs.rs/rdp-rs"
+edition = "2021"
 
 [lib]
 name = "rdp"
@@ -20,24 +21,36 @@ path = "src/bin/mstsc-rs.rs"
 required-features = ["mstsc-rs"]
 
 [features]
+default = ["openssl"]
 # The reason we do this is because doctests don't get cfg(test)
 # See: https://github.com/rust-lang/cargo/issues/4669
 integration = []
-mstsc-rs = ["hex", "winapi", "minifb", "clap", "libc"]
+mstsc-rs = ["hex",
+            "winapi",
+            "minifb",
+            "clap",
+            "libc",
+            "openssl",
+            "futures",
+            "tracing-subscriber"
+        ]
+openssl = ["async-native-tls"]
 
 [dependencies]
-native-tls = "^0.2"
+async-native-tls = { version = "^0.4", optional = true, default-features = false, features = ["runtime-tokio"] }
+async-trait = { version = "^0.1" }
 byteorder = "^1.3"
 bufstream = "0.1"
 indexmap = "^1.3"
-yasna = { version = "^0.3" }
-md4 = "^0.8"
-hmac = "^0.7"
-md-5 = "^0.8"
-rand = "^0.7"
-num-bigint = "^0.2"
-x509-parser = "0.6.5"
-num_enum = "0.4.3"
+yasna = { version = "^0.4" }
+md4 = "^0.9"
+hmac = "^0.11"
+md-5 = "^0.9"
+rand = "^0.8"
+num-bigint = "^0.4"
+x509-parser = "^0.12"
+num_enum = "^0.5"
+tracing = { version = "^0.1", features = ["log"] }
 
 # for mtsc-rs
 hex = { version = "^0.4", optional = true }
@@ -45,3 +58,19 @@ winapi = { version = "^0.3", features = ["winsock2"], optional = true }
 minifb = { version = "^0.15", optional = true }
 clap = { version = "^2.33", optional = true}
 libc = { version = "^0.2", optional = true}
+futures = { version = "0.3", optional = true }
+tracing-subscriber = { version = "^0.3", optional = true }
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+tokio = { version = "^1", features = ["full"] }
+
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+getrandom = { version = "0.2", features = ["js"] }
+tokio = { version = "^1", features = [ 
+    "sync",
+    "macros",
+    "io-util",
+    "rt",
+    "time"
+    ]}
