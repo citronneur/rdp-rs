@@ -30,7 +30,7 @@ native-tls = "^0.2"
 byteorder = "^1.3"
 bufstream = "0.1"
 indexmap = "^2.1"
-yasna = { version = "^0.3" }
+yasna = { version = "^0.5" }
 md4 = "^0.8"
 hmac = "^0.7"
 md-5 = "^0.8"
