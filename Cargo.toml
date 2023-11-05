@@ -37,7 +37,7 @@ md-5 = "^0.10"
 rand = "^0.8"
 num-bigint = "^0.4"
 x509-parser = "0.15.1"
-num_enum = "0.4.3"
+num_enum = "0.7.1"
 
 # for mtsc-rs
 hex = { version = "^0.4", optional = true }
