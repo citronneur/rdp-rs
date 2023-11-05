@@ -10,6 +10,7 @@ use model::rnd::{random};
 use nla::rc4::{Rc4};
 use num_enum::TryFromPrimitive;
 use std::convert::TryFrom;
+use md4::digest::FixedOutput as _;
 
 #[repr(u32)]
 #[allow(dead_code)]
@@ -264,8 +265,8 @@ fn z(m: usize) -> Vec<u8> {
 /// ```
 fn md4(data: &[u8]) -> Vec<u8> {
     let mut hasher = Md4::new();
-    hasher.input(data);
-    hasher.result().to_vec()
+    hasher.update(data);
+    hasher.finalize_fixed().to_vec()
 }
 
 /// Compute the MD5 Hash of input vector
@@ -279,8 +280,8 @@ fn md4(data: &[u8]) -> Vec<u8> {
 /// ```
 fn md5(data: &[u8]) -> Vec<u8> {
     let mut hasher = Md5::new();
-    hasher.input(data);
-    hasher.result().to_vec()
+    hasher.update(data);
+    hasher.finalize_fixed().to_vec()
 }
 
 /// Encode a string into utf-16le
@@ -310,9 +311,9 @@ fn unicode(data: &String) -> Vec<u8> {
 /// let signature = hmac_md5(b"foo", b"bar");
 /// ```
 fn hmac_md5(key: &[u8], data: &[u8]) -> Vec<u8> {
-    let mut stream = Hmac::<Md5>::new_varkey(key).unwrap();
-    stream.input(data);
-    stream.result().code().to_vec()
+    let mut stream = Hmac::<Md5>::new_from_slice(key).unwrap();
+    stream.update(data);
+    stream.finalize_fixed().to_vec()
 }
 
 /// This function is used to compute init key of another hmac_md5
@@ -567,7 +568,7 @@ impl AuthenticationProtocol  for Ntlm {
         self.exported_session_key = Some(random(16));
 
         let encrypted_random_session_key = rc4k(&key_exchange_key, self.exported_session_key.as_ref().unwrap());
-        
+
         self.is_unicode = cast!(DataType::U32, result["NegotiateFlags"])? & Negotiate::NtlmsspNegociateUnicode as u32 == 1;
 
         let domain = self.get_domain_name();
