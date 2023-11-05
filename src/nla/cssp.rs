@@ -2,7 +2,7 @@ use nla::asn1::{ASN1, Sequence, ExplicitTag, SequenceOf, ASN1Type, OctetString, 
 use model::error::{RdpError, RdpErrorKind, Error, RdpResult};
 use num_bigint::{BigUint};
 use yasna::Tag;
-use x509_parser::{parse_x509_der, X509Certificate};
+use x509_parser::{parse_x509_certificate, certificate::X509Certificate};
 use nla::sspi::AuthenticationProtocol;
 use model::link::Link;
 use std::io::{Read, Write};
@@ -39,7 +39,7 @@ pub fn create_ts_request(nego: Vec<u8>) -> Vec<u8> {
 ///
 /// https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-cssp/6aac4dea-08ef-47a6-8747-22ea7f6d8685?redirectedfrom=MSDN
 /// https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-cssp/9664994d-0784-4659-b85b-83b8d54c2336
-/// 
+///
 /// # Example
 /// ```
 /// use rdp::nla::cssp::read_ts_server_challenge;
@@ -100,7 +100,7 @@ pub fn create_ts_authenticate(nego: Vec<u8>, pub_key_auth: Vec<u8>) -> Vec<u8> {
 }
 
 pub fn read_public_certificate(stream: &[u8]) -> RdpResult<X509Certificate> {
-    let res = parse_x509_der(stream).unwrap();
+    let res = parse_x509_certificate(stream).unwrap();
     Ok(res.1)
 }
 
@@ -182,14 +182,14 @@ pub fn cssp_connect<S: Read + Write>(link: &mut Link<S>, authentication_protocol
     let certificate = read_public_certificate(&certificate_der)?;
 
     // Now we can send back our challenge payload wit the public key encoded
-    let challenge = create_ts_authenticate(client_challenge, security_interface.gss_wrapex(certificate.tbs_certificate.subject_pki.subject_public_key.data)?);
+    let challenge = create_ts_authenticate(client_challenge, security_interface.gss_wrapex(certificate.tbs_certificate.subject_pki.subject_public_key.data.as_ref())?);
     link.write(&challenge)?;
 
     // now server respond normally with the original public key incremented by one
     let inc_pub_key = security_interface.gss_unwrapex(&(read_ts_validate(&(link.read(0)?))?))?;
 
     // Check possible man in the middle using cssp
-    if BigUint::from_bytes_le(&inc_pub_key) != BigUint::from_bytes_le(certificate.tbs_certificate.subject_pki.subject_public_key.data) + BigUint::new(vec![1]) {
+    if BigUint::from_bytes_le(&inc_pub_key) != BigUint::from_bytes_le(certificate.tbs_certificate.subject_pki.subject_public_key.data.as_ref()) + BigUint::new(vec![1]) {
         return Err(Error::RdpError(RdpError::new(RdpErrorKind::PossibleMITM, "Man in the middle detected")))
     }
 
