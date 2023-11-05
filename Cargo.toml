@@ -35,7 +35,7 @@ md4 = "^0.10"
 hmac = "^0.12"
 md-5 = "^0.10"
 rand = "^0.8"
-num-bigint = "^0.2"
+num-bigint = "^0.4"
 x509-parser = "0.6.5"
 num_enum = "0.4.3"
 
