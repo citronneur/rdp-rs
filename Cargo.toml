@@ -43,5 +43,5 @@ num_enum = "0.7.1"
 hex = { version = "^0.4", optional = true }
 winapi = { version = "^0.3", features = ["winsock2"], optional = true }
 minifb = { version = "^0.25", optional = true }
-clap = { version = "^2.33", optional = true}
+clap = { version = "^3.2", optional = true}
 libc = { version = "^0.2", optional = true}
