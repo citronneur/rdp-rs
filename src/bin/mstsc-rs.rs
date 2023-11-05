@@ -57,7 +57,7 @@ fn wait_for_fd(fd: usize) -> bool {
         let mut raw_fds: fd_set = mem::zeroed();
 
         FD_SET(fd as i32, &mut raw_fds);
-        
+
         let result = select(fd as i32 + 1, &mut raw_fds, ptr::null_mut(), ptr::null_mut(), ptr::null_mut());
         result == 1
     }
@@ -404,32 +404,35 @@ fn main_gui_loop<S: Read + Write>(
         }
 
         // Keyboard inputs
-        if let Some(keys) = window.get_keys() {
-            let mut rdp_client_guard = rdp_client.lock().unwrap();
+        {
+            let keys = window.get_keys();
+            if !keys.is_empty() {
+                let mut rdp_client_guard = rdp_client.lock().unwrap();
 
-            for key in last_keys.iter() {
-                if !keys.contains(key) {
-                    rdp_client_guard.try_write(RdpEvent::Key(
-                        KeyboardEvent {
-                            code: to_scancode(*key),
-                            down: false
-                        })
-                    )?
+                for key in last_keys.iter() {
+                    if !keys.contains(key) {
+                        rdp_client_guard.try_write(RdpEvent::Key(
+                            KeyboardEvent {
+                                code: to_scancode(*key),
+                                down: false
+                            })
+                        )?
+                    }
                 }
-            }
 
-            for key in keys.iter() {
-                if window.is_key_pressed(*key, KeyRepeat::Yes){
-                    rdp_client_guard.try_write(RdpEvent::Key(
-                        KeyboardEvent {
-                            code: to_scancode(*key),
-                            down: true
-                        })
-                    )?
+                for key in keys.iter() {
+                    if window.is_key_pressed(*key, KeyRepeat::Yes){
+                        rdp_client_guard.try_write(RdpEvent::Key(
+                            KeyboardEvent {
+                                code: to_scancode(*key),
+                                down: true
+                            })
+                        )?
+                    }
                 }
-            }
 
-            last_keys = keys;
+                last_keys = keys;
+            }
         }
 
         // We unwrap here as we want this code to exit if it fails. Real applications may want to handle this in a different way
