@@ -32,7 +32,7 @@ use std::sync::{mpsc, Arc, Mutex};
 use std::thread::{JoinHandle};
 use std::sync::atomic::{AtomicBool, Ordering};
 use rdp::model::error::{Error, RdpErrorKind, RdpError, RdpResult};
-use clap::{Arg, App, ArgMatches};
+use clap::{Arg, Command, ArgMatches};
 use rdp::core::gcc::KeyboardLayout;
 use std::sync::mpsc::{Receiver, Sender};
 
@@ -231,8 +231,8 @@ fn to_scancode(key: Key) -> u16 {
 
 /// Create a tcp stream from main args
 fn tcp_from_args(args: &ArgMatches) -> RdpResult<TcpStream> {
-    let ip = args.value_of("host").expect("You need to provide a target argument");
-    let port = args.value_of("port").unwrap_or_default();
+    let ip = args.get_one::<String>("host").expect("You need to provide a target argument");
+    let port = args.get_one::<String>("port").map(String::as_str).unwrap_or_default();
 
     // TCP connection
     let addr = format!("{}:{}", ip, port).parse::<SocketAddr>().map_err( |e| {
@@ -249,23 +249,23 @@ fn tcp_from_args(args: &ArgMatches) -> RdpResult<TcpStream> {
 /// Create rdp client from args
 fn rdp_from_args<S: Read + Write>(args: &ArgMatches, stream: S) -> RdpResult<RdpClient<S>> {
 
-    let width = args.value_of("width").unwrap_or_default().parse().map_err(|e| {
+    let width = args.get_one::<String>("width").map(String::as_str).unwrap_or_default().parse().map_err(|e| {
         Error::RdpError(RdpError::new(RdpErrorKind::UnexpectedType, &format!("Cannot parse the input width argument [{}]", e)))
     })?;
-    let height = args.value_of("height").unwrap_or_default().parse().map_err(|e| {
+    let height = args.get_one::<String>("height").map(String::as_str).unwrap_or_default().parse().map_err(|e| {
         Error::RdpError(RdpError::new(RdpErrorKind::UnexpectedType, &format!("Cannot parse the input height argument [{}]", e)))
     })?;
-    let domain = args.value_of("domain").unwrap_or_default();
-    let username = args.value_of("username").unwrap_or_default();
-    let password = args.value_of("password").unwrap_or_default();
-    let name = args.value_of("name").unwrap_or_default();
-    let ntlm_hash = args.value_of("hash");
-    let restricted_admin_mode = args.is_present("admin");
-    let layout = KeyboardLayout::from(args.value_of("layout").unwrap_or_default());
-    let auto_logon = args.is_present("auto_logon");
-    let blank_creds = args.is_present("blank_creds");
-    let check_certificate = args.is_present("check_certificate");
-    let use_nla = !args.is_present("disable_nla");
+    let domain = args.get_one::<String>("domain").map(String::as_str).unwrap_or_default();
+    let username = args.get_one::<String>("username").map(String::as_str).unwrap_or_default();
+    let password = args.get_one::<String>("password").map(String::as_str).unwrap_or_default();
+    let name = args.get_one::<String>("name").map(String::as_str).unwrap_or_default();
+    let ntlm_hash = args.get_one::<String>("hash").map(String::as_str);
+    let restricted_admin_mode = args.contains_id("admin");
+    let layout = KeyboardLayout::from(args.get_one::<String>("layout").map(String::as_str).unwrap_or_default());
+    let auto_logon = args.contains_id("auto_logon");
+    let blank_creds = args.contains_id("blank_creds");
+    let check_certificate = args.contains_id("check_certificate");
+    let use_nla = !args.contains_id("disable_nla");
 
     let mut rdp_connector =  Connector::new()
         .screen(width, height)
@@ -293,10 +293,10 @@ fn rdp_from_args<S: Read + Write>(args: &ArgMatches, stream: S) -> RdpResult<Rdp
 /// like keyboard and mouse to the
 /// RDP protocol
 fn window_from_args(args: &ArgMatches) -> RdpResult<Window> {
-    let width = args.value_of("width").unwrap_or_default().parse().map_err(|e| {
+    let width = args.get_one::<String>("width").map(String::as_str).unwrap_or_default().parse().map_err(|e| {
         Error::RdpError(RdpError::new(RdpErrorKind::UnexpectedType, &format!("Cannot parse the input width argument [{}]", e)))
     })?;
-    let height = args.value_of("height").unwrap_or_default().parse().map_err(|e| {
+    let height = args.get_one::<String>("height").map(String::as_str).unwrap_or_default().parse().map_err(|e| {
         Error::RdpError(RdpError::new(RdpErrorKind::UnexpectedType, &format!("Cannot parse the input height argument [{}]", e)))
     })?;
 
@@ -448,69 +448,70 @@ fn main_gui_loop<S: Read + Write>(
 
 fn main() {
     // Parsing argument
-    let matches = App::new(APPLICATION_NAME)
+    let matches = Command::new(APPLICATION_NAME)
         .version("0.1.0")
         .author("Sylvain Peyrefitte <citronneur@gmail.com>")
         .about("Secure Remote Desktop Client in RUST")
-        .arg(Arg::with_name("host")
+        .arg(Arg::new("host")
+                 .required(true)
                  .long("host")
-                 .takes_value(true)
+                 .num_args(1)
                  .help("host IP of the target machine"))
-        .arg(Arg::with_name("port")
+        .arg(Arg::new("port")
                  .long("port")
-                 .takes_value(true)
+                 .num_args(1)
                  .default_value("3389")
                  .help("Destination Port"))
-        .arg(Arg::with_name("width")
+        .arg(Arg::new("width")
                  .long("width")
-                 .takes_value(true)
+                 .num_args(1)
                  .default_value("800")
                  .help("Screen width"))
-        .arg(Arg::with_name("height")
+        .arg(Arg::new("height")
                  .long("height")
-                 .takes_value(true)
+                 .num_args(1)
                  .default_value("600")
                  .help("Screen height"))
-        .arg(Arg::with_name("domain")
+        .arg(Arg::new("domain")
                  .long("domain")
-                 .takes_value(true)
+                 .num_args(1)
                  .default_value("")
                  .help("Windows domain"))
-        .arg(Arg::with_name("username")
+        .arg(Arg::new("username")
                  .long("user")
-                 .takes_value(true)
+                 .num_args(1)
                  .default_value("")
                  .help("Username"))
-        .arg(Arg::with_name("password")
+        .arg(Arg::new("password")
                  .long("password")
-                 .takes_value(true)
+                 .num_args(1)
                  .default_value("")
                  .help("Password"))
-        .arg(Arg::with_name("hash")
+        .arg(Arg::new("hash")
                  .long("hash")
-                 .takes_value(true)
+                 .num_args(1)
                  .help("NTLM Hash"))
-        .arg(Arg::with_name("admin")
+        .arg(Arg::new("admin")
                  .long("admin")
                  .help("Restricted admin mode"))
-        .arg(Arg::with_name("layout")
+        .arg(Arg::new("layout")
                  .long("layout")
-                 .takes_value(true)
+                 .num_args(1)
                  .default_value("us")
                  .help("Keyboard layout: us or fr"))
-        .arg(Arg::with_name("auto_logon")
+        .arg(Arg::new("auto_logon")
                  .long("auto")
                  .help("AutoLogon mode in case of SSL nego"))
-        .arg(Arg::with_name("blank_creds")
+        .arg(Arg::new("blank_creds")
                  .long("blank")
                  .help("Do not send credentials at the last CredSSP payload"))
-        .arg(Arg::with_name("check_certificate")
+        .arg(Arg::new("check_certificate")
                  .long("check")
                  .help("Check the target SSL certificate"))
-        .arg(Arg::with_name("disable_nla")
+        .arg(Arg::new("disable_nla")
                  .long("ssl")
                  .help("Disable Network Level Authentication and only use SSL"))
-        .arg(Arg::with_name("name")
+        .arg(Arg::new("name")
                  .long("name")
                  .default_value("mstsc-rs")
                  .help("Name of the client send to the server"))
