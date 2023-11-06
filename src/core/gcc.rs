@@ -50,7 +50,7 @@ enum Sequence {
 /// Keyboard layout
 /// https://docs.microsoft.com/en-us/previous-versions/windows/it-pro/windows-vista/cc766503(v=ws.10)?redirectedfrom=MSDN
 #[repr(u32)]
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug)]
 pub enum KeyboardLayout {
     Arabic = 0x0000_0401,
     Bulgarian = 0x0000_0402,

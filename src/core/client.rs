@@ -15,7 +15,7 @@ impl From<&str> for KeyboardLayout {
     fn from(e: &str) -> Self {
         match e {
             "fr" => KeyboardLayout::French,
-            "us" | _ => KeyboardLayout::US,
+            _ => KeyboardLayout::US,
         }
     }
 }

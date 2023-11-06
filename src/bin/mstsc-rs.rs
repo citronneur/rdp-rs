@@ -22,7 +22,7 @@ use std::sync::{mpsc, Arc, Mutex};
 use std::thread::{JoinHandle};
 use std::sync::atomic::{AtomicBool, Ordering};
 use rdp::model::error::{Error, RdpErrorKind, RdpError, RdpResult};
-use clap::{Arg, Command, ArgMatches};
+use clap::Parser;
 use rdp::core::gcc::KeyboardLayout;
 use std::sync::mpsc::{Receiver, Sender};
 
@@ -220,55 +220,32 @@ fn to_scancode(key: Key) -> u16 {
 }
 
 /// Create a tcp stream from main args
-fn tcp_from_args(args: &ArgMatches) -> RdpResult<TcpStream> {
-    let ip = args.get_one::<String>("host").expect("You need to provide a target argument");
-    let port = args.get_one::<String>("port").map(String::as_str).unwrap_or_default();
-
+fn tcp_from_args(cli: &Cli) -> RdpResult<TcpStream> {
     // TCP connection
-    let addr = format!("{}:{}", ip, port).parse::<SocketAddr>().map_err( |e| {
-        Error::RdpError(RdpError::new(RdpErrorKind::InvalidData, &format!("Cannot parse the IP PORT input [{}]", e)))
-    })?;
+    let addr = SocketAddr::new(cli.host, cli.port);
     let tcp = TcpStream::connect(&addr).unwrap();
     tcp.set_nodelay(true).map_err(|e| {
         Error::RdpError(RdpError::new(RdpErrorKind::InvalidData, &format!("Unable to set no delay option [{}]", e)))
     })?;
-
     Ok(tcp)
 }
 
 /// Create rdp client from args
-fn rdp_from_args<S: Read + Write>(args: &ArgMatches, stream: S) -> RdpResult<RdpClient<S>> {
+fn rdp_from_args<S: Read + Write>(cli: &Cli, stream: S) -> RdpResult<RdpClient<S>> {
 
-    let width = args.get_one::<String>("width").map(String::as_str).unwrap_or_default().parse().map_err(|e| {
-        Error::RdpError(RdpError::new(RdpErrorKind::UnexpectedType, &format!("Cannot parse the input width argument [{}]", e)))
-    })?;
-    let height = args.get_one::<String>("height").map(String::as_str).unwrap_or_default().parse().map_err(|e| {
-        Error::RdpError(RdpError::new(RdpErrorKind::UnexpectedType, &format!("Cannot parse the input height argument [{}]", e)))
-    })?;
-    let domain = args.get_one::<String>("domain").map(String::as_str).unwrap_or_default();
-    let username = args.get_one::<String>("username").map(String::as_str).unwrap_or_default();
-    let password = args.get_one::<String>("password").map(String::as_str).unwrap_or_default();
-    let name = args.get_one::<String>("name").map(String::as_str).unwrap_or_default();
-    let ntlm_hash = args.get_one::<String>("hash").map(String::as_str);
-    let restricted_admin_mode = args.contains_id("admin");
-    let layout = KeyboardLayout::from(args.get_one::<String>("layout").map(String::as_str).unwrap_or_default());
-    let auto_logon = args.contains_id("auto_logon");
-    let blank_creds = args.contains_id("blank_creds");
-    let check_certificate = args.contains_id("check_certificate");
-    let use_nla = !args.contains_id("disable_nla");
-
+    let use_nla = !cli.disable_nla;
     let mut rdp_connector =  Connector::new()
-        .screen(width, height)
-        .credentials(domain.to_string(), username.to_string(), password.to_string())
-        .set_restricted_admin_mode(restricted_admin_mode)
-        .auto_logon(auto_logon)
-        .blank_creds(blank_creds)
-        .layout(layout)
-        .check_certificate(check_certificate)
-        .name(name.to_string())
+        .screen(cli.width, cli.height)
+        .credentials(cli.windows_domain.to_string(), cli.username.to_string(), cli.password.to_string())
+        .set_restricted_admin_mode(cli.admin)
+        .auto_logon(cli.auto_logon)
+        .blank_creds(cli.blank_creds)
+        .layout(cli.layout)
+        .check_certificate(cli.check_certificate)
+        .name(cli.name.to_string())
         .use_nla(use_nla);
 
-    if let Some(hash) = ntlm_hash {
+    if let Some(hash) = cli.hash.as_ref() {
         rdp_connector = rdp_connector.set_password_hash(hex::decode(hash).map_err(|e| {
             Error::RdpError(RdpError::new(RdpErrorKind::InvalidData, &format!("Cannot parse the input hash [{}]", e)))
         })?)
@@ -282,18 +259,11 @@ fn rdp_from_args<S: Read + Write>(args: &ArgMatches, stream: S) -> RdpResult<Rdp
 /// It's also in charge to send input
 /// like keyboard and mouse to the
 /// RDP protocol
-fn window_from_args(args: &ArgMatches) -> RdpResult<Window> {
-    let width = args.get_one::<String>("width").map(String::as_str).unwrap_or_default().parse().map_err(|e| {
-        Error::RdpError(RdpError::new(RdpErrorKind::UnexpectedType, &format!("Cannot parse the input width argument [{}]", e)))
-    })?;
-    let height = args.get_one::<String>("height").map(String::as_str).unwrap_or_default().parse().map_err(|e| {
-        Error::RdpError(RdpError::new(RdpErrorKind::UnexpectedType, &format!("Cannot parse the input height argument [{}]", e)))
-    })?;
-
+fn window_from_args(cli: &Cli) -> RdpResult<Window> {
     let window = Window::new(
         "mstsc-rs Remote Desktop in Rust",
-        width,
-        height,
+        usize::from(cli.width),
+        usize::from(cli.height),
         WindowOptions::default(),
     ).map_err(|e| {
         Error::RdpError(RdpError::new(RdpErrorKind::Unknown, &format!("Unable to create window [{}]", e)))
@@ -436,79 +406,76 @@ fn main_gui_loop<S: Read + Write>(
     Ok(())
 }
 
+#[derive(Debug, Parser)]
+#[clap(author="Sylvain Peyrefitte <citronneur@gmail.com>", version="0.1.0", about="Secure Remote Desktop Client in Rust", name=APPLICATION_NAME)]
+struct Cli {
+    #[clap(long, required=true)]
+    /// Host IP of the target machine
+    host: std::net::IpAddr,
+
+    #[clap(long, default_value_t=3389)]
+    /// Destination port
+    port: u16,
+
+    #[clap(long, default_value_t=800)]
+    /// Screen width
+    width: u16,
+
+    #[clap(long, default_value_t=600)]
+    /// Screen height
+    height: u16,
+
+    #[clap(long, default_value_t=String::new())]
+    /// Windows domain
+    windows_domain: String,
+
+    #[clap(long="user", default_value_t=String::new())]
+    /// Username
+    username: String,
+
+    #[clap(long, default_value_t=String::new())]
+    /// Username
+    password: String,
+
+    #[clap(long)]
+    /// NTLM Hash
+    hash: Option<String>,
+
+    #[clap(long, default_value_t=false, action)]
+    /// Restricted admin mode
+    admin: bool,
+
+    #[clap(long, default_value="us")]
+    /// Keyboard layout: "us" or "fr"
+    layout: KeyboardLayout,
+
+    #[clap(long="auto", default_value_t=false, action)]
+    /// AutoLogon mode in case of SSL nego
+    auto_logon: bool,
+
+    #[clap(long="blank", default_value_t=false, action)]
+    /// Do not send credentials at the last CredSSP payload
+    blank_creds: bool,
+
+    #[clap(long="check", default_value_t=false, action)]
+    /// Check the target SSL certificate
+    check_certificate: bool,
+
+    #[clap(long="ssl", default_value_t=false, action)]
+    /// Disable Network Level Authentication and only use SSL
+    disable_nla: bool,
+
+    #[clap(long, default_value_t=String::from("mstsc-rs"))]
+    /// Name of the client send to the server
+    name: String,
+}
+
 fn main() {
-    // Parsing argument
-    let matches = Command::new(APPLICATION_NAME)
-        .version("0.1.0")
-        .author("Sylvain Peyrefitte <citronneur@gmail.com>")
-        .about("Secure Remote Desktop Client in RUST")
-        .arg(Arg::new("host")
-                 .required(true)
-                 .long("host")
-                 .num_args(1)
-                 .help("host IP of the target machine"))
-        .arg(Arg::new("port")
-                 .long("port")
-                 .num_args(1)
-                 .default_value("3389")
-                 .help("Destination Port"))
-        .arg(Arg::new("width")
-                 .long("width")
-                 .num_args(1)
-                 .default_value("800")
-                 .help("Screen width"))
-        .arg(Arg::new("height")
-                 .long("height")
-                 .num_args(1)
-                 .default_value("600")
-                 .help("Screen height"))
-        .arg(Arg::new("domain")
-                 .long("domain")
-                 .num_args(1)
-                 .default_value("")
-                 .help("Windows domain"))
-        .arg(Arg::new("username")
-                 .long("user")
-                 .num_args(1)
-                 .default_value("")
-                 .help("Username"))
-        .arg(Arg::new("password")
-                 .long("password")
-                 .num_args(1)
-                 .default_value("")
-                 .help("Password"))
-        .arg(Arg::new("hash")
-                 .long("hash")
-                 .num_args(1)
-                 .help("NTLM Hash"))
-        .arg(Arg::new("admin")
-                 .long("admin")
-                 .help("Restricted admin mode"))
-        .arg(Arg::new("layout")
-                 .long("layout")
-                 .num_args(1)
-                 .default_value("us")
-                 .help("Keyboard layout: us or fr"))
-        .arg(Arg::new("auto_logon")
-                 .long("auto")
-                 .help("AutoLogon mode in case of SSL nego"))
-        .arg(Arg::new("blank_creds")
-                 .long("blank")
-                 .help("Do not send credentials at the last CredSSP payload"))
-        .arg(Arg::new("check_certificate")
-                 .long("check")
-                 .help("Check the target SSL certificate"))
-        .arg(Arg::new("disable_nla")
-                 .long("ssl")
-                 .help("Disable Network Level Authentication and only use SSL"))
-        .arg(Arg::new("name")
-                 .long("name")
-                 .default_value("mstsc-rs")
-                 .help("Name of the client send to the server"))
-        .get_matches();
+    // Parse arguments
+    let cli = Cli::parse();
 
     // Create a tcp stream from args
-    let tcp = tcp_from_args(&matches).unwrap();
+    let tcp = tcp_from_args(&cli).unwrap();
 
     // Keep trace of the handle
     #[cfg(target_os = "windows")]
@@ -518,9 +485,9 @@ fn main() {
     let handle = tcp.as_raw_fd();
 
     // Create rdp client
-    let rdp_client = rdp_from_args(&matches, tcp).unwrap();
+    let rdp_client = rdp_from_args(&cli, tcp).unwrap();
 
-    let window = window_from_args(&matches).unwrap();
+    let window = window_from_args(&cli).unwrap();
 
     // All relative to sync
     // channel use by the back channel to send bitmap to main GUI thread
