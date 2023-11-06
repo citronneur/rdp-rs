@@ -15,16 +15,16 @@ const H221_SC_KEY: [u8; 4] = *b"McDn";
 #[allow(dead_code)]
 #[derive(Copy, Clone, Eq, PartialEq)]
 pub enum Version {
-    RdpVersion = 0x00080001,
-    RdpVersion5plus = 0x00080004,
+    RdpVersion = 0x0008_0001,
+    RdpVersion5plus = 0x0008_0004,
     Unknown
 }
 
 impl From<u32> for Version {
     fn from(e: u32) -> Self {
         match e {
-            0x00080001 => Version::RdpVersion5plus,
-            0x00080004 => Version::RdpVersion,
+            0x0008_0001 => Version::RdpVersion5plus,
+            0x0008_0004 => Version::RdpVersion,
             _ => Version::Unknown
         }
     }
@@ -52,39 +52,39 @@ enum Sequence {
 #[repr(u32)]
 #[derive(Copy, Clone)]
 pub enum KeyboardLayout {
-    Arabic = 0x00000401,
-    Bulgarian = 0x00000402,
-    ChineseUsKeyboard = 0x00000404,
-    Czech = 0x00000405,
-    Danish = 0x00000406,
-    German = 0x00000407,
-    Greek = 0x00000408,
-    US = 0x00000409,
-    Spanish = 0x0000040a,
-    Finnish = 0x0000040b,
-    French = 0x0000040c,
-    Hebrew = 0x0000040d,
-    Hungarian = 0x0000040e,
-    Icelandic = 0x0000040f,
-    Italian = 0x00000410,
-    Japanese = 0x00000411,
-    Korean = 0x00000412,
-    Dutch = 0x00000413,
-    Norwegian = 0x00000414
+    Arabic = 0x0000_0401,
+    Bulgarian = 0x0000_0402,
+    ChineseUsKeyboard = 0x0000_0404,
+    Czech = 0x0000_0405,
+    Danish = 0x0000_0406,
+    German = 0x0000_0407,
+    Greek = 0x0000_0408,
+    US = 0x0000_0409,
+    Spanish = 0x0000_040a,
+    Finnish = 0x0000_040b,
+    French = 0x0000_040c,
+    Hebrew = 0x0000_040d,
+    Hungarian = 0x0000_040e,
+    Icelandic = 0x0000_040f,
+    Italian = 0x0000_0410,
+    Japanese = 0x0000_0411,
+    Korean = 0x0000_0412,
+    Dutch = 0x0000_0413,
+    Norwegian = 0x0000_0414
 }
 
 /// Keyboard type
-/// Ibm101102Keys is the most common keyboard type
+/// `Ibm101102Keys` is the most common keyboard type
 #[repr(u32)]
 #[allow(dead_code)]
 pub enum KeyboardType {
-    IbmPcXt83Key  = 0x00000001,
-    Olivetti  = 0x00000002,
-    IbmPcAt84Key  = 0x00000003,
-    Ibm101102Keys  = 0x00000004,
-    Nokia1050  = 0x00000005,
-    Nokia9140  = 0x00000006,
-    Japanese  = 0x00000007
+    IbmPcXt83Key  = 0x0000_0001,
+    Olivetti  = 0x0000_0002,
+    IbmPcAt84Key  = 0x0000_0003,
+    Ibm101102Keys  = 0x0000_0004,
+    Nokia1050  = 0x0000_0005,
+    Nokia9140  = 0x0000_0006,
+    Japanese  = 0x0000_0007
 }
 
 #[repr(u16)]
@@ -133,21 +133,21 @@ enum CapabilityFlag {
 #[repr(u32)]
 #[allow(dead_code)]
 enum EncryptionMethod {
-    EncryptionFlag40bit = 0x00000001,
-    EncryptionFlag128bit = 0x00000002,
-    EncryptionFlag56bit = 0x00000008,
-    FipsEncryptionFlag = 0x00000010
+    EncryptionFlag40bit = 0x0000_0001,
+    EncryptionFlag128bit = 0x0000_0002,
+    EncryptionFlag56bit = 0x0000_0008,
+    FipsEncryptionFlag = 0x0000_0010
 }
 
 /// Encryption level
 /// https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-rdpbcgr/3e86b68d-3e2e-4433-b486-878875778f4b?redirectedfrom=MSDN
 #[allow(dead_code)]
 enum EncryptionLevel {
-    None = 0x00000000,
-    Low = 0x00000001,
-    ClientCompatible = 0x00000002,
-    High = 0x00000003,
-    Fips = 0x00000004
+    None = 0x0000_0000,
+    Low = 0x0000_0001,
+    ClientCompatible = 0x0000_0002,
+    High = 0x0000_0003,
+    Fips = 0x0000_0004
 }
 
 #[repr(u16)]
@@ -207,7 +207,7 @@ pub fn client_core_data(parameter: Option<ClientData>) -> Component {
             layout: KeyboardLayout::French,
             server_selected_protocol: 0,
             rdp_version: Version::RdpVersion5plus,
-            name: "".to_string()
+            name: String::new()
         });
 
     let client_name = if client_parameter.name.len() >= 16 {
@@ -344,7 +344,7 @@ pub fn read_conference_create_response(cc_response: &mut dyn Read) -> RdpResult<
 
     let length = per::read_length(cc_response)?;
     let mut result = HashMap::new();
-    let mut sub = cc_response.take(length as u64);
+    let mut sub = cc_response.take(u64::from(length));
     loop {
 
         let mut header = block_header(None, None);

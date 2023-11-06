@@ -23,7 +23,7 @@ pub enum ASN1Type<'a> {
 /// the yasna library to better declare
 /// ASN1 type
 pub trait ASN1 {
-    /// write type into a DERWriter stream
+    /// write type into a `DERWriter` stream
     fn write_asn1(&self, writer: DERWriter) -> RdpResult<()>;
     /// Read the type from an ASN1 BER reader
     fn read_asn1(&mut self, reader: BERReader) -> RdpResult<()>;
@@ -43,7 +43,7 @@ pub struct SequenceOf {
 }
 
 impl SequenceOf {
-    /// Build a sequence_of from a reader perspective
+    /// Build a `SequenceOf` from a reader perspective
     ///
     /// # Example
     /// ```
@@ -62,7 +62,7 @@ impl SequenceOf {
 
 impl ASN1 for SequenceOf {
     /// Write an ASN1 sequenceof model
-    /// using a DERWriter
+    /// using a `DERWriter`
     ///
     /// # Example
     /// ```
@@ -88,7 +88,7 @@ impl ASN1 for SequenceOf {
     }
 
     /// Read an ASN1 sequenceof model
-    /// using a BerReader
+    /// using a `BERReader`
     ///
     /// # Example
     /// ```
@@ -117,7 +117,7 @@ impl ASN1 for SequenceOf {
         Ok(())
     }
 
-    /// Use to cast an ASN1 node into SequenceOf
+    /// Use to cast an ASN1 node into `SequenceOf`
     ///
     /// # Example
     ///
@@ -149,8 +149,8 @@ macro_rules! sequence_of {
 pub type OctetString = Vec<u8>;
 
 impl ASN1 for OctetString {
-    /// Write an ASN1 OctetString model
-    /// using a DERWriter
+    /// Write an ASN1 `OctetString` model
+    /// using a `DERWriter`
     ///
     /// # Example
     /// ```
@@ -168,8 +168,8 @@ impl ASN1 for OctetString {
         Ok(())
     }
 
-    /// Read an ASN1 OctetString model
-    /// using a BerReader
+    /// Read an ASN1 `OctetString` model
+    /// using a `BERReader`
     ///
     /// # Example
     /// ```
@@ -188,7 +188,7 @@ impl ASN1 for OctetString {
         Ok(())
     }
 
-    /// Use to cast an ASN1 node into SequenceOf
+    /// Use to cast an ASN1 node into `SequenceOf`
     ///
     /// # Example
     ///
@@ -242,7 +242,7 @@ impl<T> ExplicitTag<T> {
 
 impl<T: ASN1> ASN1 for ExplicitTag<T> {
     /// Write an ASN1 Node with an explicit tag
-    /// using a DERWriter
+    /// using a `DERWriter`
     ///
     /// # Example
     /// ```
@@ -265,7 +265,7 @@ impl<T: ASN1> ASN1 for ExplicitTag<T> {
     }
 
     /// Read an ASN1 Explicit tag
-    /// using a BerReader
+    /// using a `BERReader`
     ///
     /// # Example
     /// ```
@@ -340,7 +340,7 @@ impl<T> ImplicitTag<T> {
 
 impl<T: ASN1> ASN1 for ImplicitTag<T> {
     /// Write an ASN1 Node with an implicit tag
-    /// using a DERWriter
+    /// using a `DERWriter`
     ///
     /// # Example
     /// ```
@@ -363,7 +363,7 @@ impl<T: ASN1> ASN1 for ImplicitTag<T> {
     }
 
     /// Read an ASN1 Implicit tag for a node
-    /// using a BerReader
+    /// using a `BERReader`
     ///
     /// # Example
     /// ```
@@ -416,7 +416,7 @@ pub type Integer = u32;
 impl ASN1 for Integer {
 
     /// Write an ASN1 Integer Node
-    /// using a DERWriter
+    /// using a `DERWriter`
     ///
     /// # Example
     /// ```
@@ -437,7 +437,7 @@ impl ASN1 for Integer {
     }
 
     /// Read an ASN1 Integer
-    /// using a BerReader
+    /// using a `BERReader`
     ///
     /// # Example
     /// ```
@@ -483,7 +483,7 @@ impl ASN1 for Integer {
 impl ASN1 for bool {
 
     /// Write an ASN1 boolean Node
-    /// using a DERWriter
+    /// using a `DERWriter`
     ///
     /// # Example
     /// ```
@@ -504,7 +504,7 @@ impl ASN1 for bool {
     }
 
     /// Read an ASN1 Boolean
-    /// using a BerReader
+    /// using a `BERReader`
     ///
     /// # Example
     /// ```
@@ -553,7 +553,7 @@ pub type Sequence = IndexMap<String, Box<dyn ASN1>>;
 impl ASN1 for Sequence {
 
     /// Write an ASN1 sequence Node
-    /// using a DERWriter
+    /// using a `DERWriter`
     ///
     /// # Example
     /// ```
@@ -573,7 +573,7 @@ impl ASN1 for Sequence {
     /// ```
     fn write_asn1(&self, writer: DERWriter) -> RdpResult<()> {
         writer.write_sequence(|sequence| {
-            for (_name, child) in self.iter() {
+            for (_name, child) in self {
                 child.write_asn1(sequence.next()).unwrap();
             };
         });
@@ -581,7 +581,7 @@ impl ASN1 for Sequence {
     }
 
     /// Read an ASN1 sequence of node
-    /// using a BerReader
+    /// using a `BERReader`
     ///
     /// # Example
     /// ```
@@ -603,7 +603,7 @@ impl ASN1 for Sequence {
     /// ```
     fn read_asn1(&mut self, reader: BERReader) -> RdpResult<()> {
         reader.read_sequence(|sequence_reader| {
-            for (_name, child) in self.into_iter() {
+            for (_name, child) in &mut *self {
                 if let Err(Error::ASN1Error(e)) = child.read_asn1(sequence_reader.next()) {
                     return Err(e)
                 }
@@ -644,7 +644,7 @@ pub type Enumerate = i64;
 impl ASN1 for Enumerate {
 
     /// Write an ASN1 Enumerate Node
-    /// using a DERWriter
+    /// using a `DERWriter`
     ///
     /// # Example
     /// ```
@@ -665,7 +665,7 @@ impl ASN1 for Enumerate {
     }
 
     /// Read an ASN1 Enumerate
-    /// using a BerReader
+    /// using a `BERReader`
     ///
     /// # Example
     /// ```
@@ -687,7 +687,7 @@ impl ASN1 for Enumerate {
     }
 
     /// Allow to cast an ASN1 node into enumerate
-    /// using a BerReader
+    /// using a `BERReader`
     ///
     /// # Example
     /// ```
@@ -726,7 +726,7 @@ pub fn from_der(message: &mut dyn ASN1, stream: &[u8]) ->RdpResult<()> {
 }
 
 /// Deserialize an ASN1 message from a stream using BER
-pub fn from_ber(message: &mut dyn ASN1, stream: &[u8]) ->RdpResult<()> {
+pub fn from_ber(message: &mut dyn ASN1, stream: &[u8]) -> RdpResult<()> {
     Ok(yasna::parse_ber(stream, |reader| {
         if let Err(Error::ASN1Error(e)) = message.read_asn1(reader) {
             return Err(e)

@@ -69,7 +69,7 @@ pub fn read_ts_server_challenge(stream: &[u8]) -> RdpResult<Vec<u8>> {
     let nego_tokens = cast!(ASN1Type::SequenceOf, ts_request["negoTokens"]).unwrap();
     let first_nego_tokens = cast!(ASN1Type::Sequence, nego_tokens.inner[0]).unwrap();
     let nego_token = cast!(ASN1Type::OctetString, first_nego_tokens["negoToken"]).unwrap();
-    Ok(nego_token.to_vec())
+    Ok(nego_token.clone())
 }
 
 /// This the third step in CSSP Handshake
@@ -129,7 +129,7 @@ pub fn read_ts_validate(request: &[u8]) -> RdpResult<Vec<u8>> {
         Ok(())
     })?;
     let pubkey = cast!(ASN1Type::OctetString, ts_challenge["pubKeyAuth"])?;
-    Ok(pubkey.to_vec())
+    Ok(pubkey.clone())
 }
 
 fn create_ts_credentials(domain: Vec<u8>, user: Vec<u8>, password: Vec<u8>) -> Vec<u8> {
@@ -219,6 +219,6 @@ mod test {
 
     #[test]
     fn test_create_ts_authinfo() {
-        assert_eq!(create_ts_authinfo(b"foo".to_vec()), [48, 12, 160, 3, 2, 1, 2, 162, 5, 4, 3, 102, 111, 111])
+        assert_eq!(create_ts_authinfo(b"foo".to_vec()), [48, 12, 160, 3, 2, 1, 2, 162, 5, 4, 3, 102, 111, 111]);
     }
 }

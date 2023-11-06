@@ -14,9 +14,8 @@ use std::io::{Read, Write};
 impl From<&str> for KeyboardLayout {
     fn from(e: &str) -> Self {
         match e {
-            "us" => KeyboardLayout::US,
             "fr" => KeyboardLayout::French,
-            _ => KeyboardLayout::US,
+            "us" | _ => KeyboardLayout::US,
         }
     }
 }
@@ -31,7 +30,7 @@ pub struct RdpClient<S> {
 
 impl<S: Read + Write> RdpClient<S> {
     /// Read a payload from the server
-    /// RDpClient use a callback pattern that can be called more than once
+    /// `RdpClient` use a callback pattern that can be called more than once
     /// during a read call
     ///
     /// # Example
@@ -186,15 +185,15 @@ impl Connector {
     ///     .credentials("domain".to_string(), "username".to_string(), "password".to_string());
     /// ```
     #[allow(clippy::new_without_default)]
-    pub fn new() -> Self {
+    #[must_use] pub fn new() -> Self {
         Connector {
             width: 800,
             height: 600,
             layout: KeyboardLayout::US,
             restricted_admin_mode: false,
-            domain: "".to_string(),
-            username: "".to_string(),
-            password: "".to_string(),
+            domain: String::new(),
+            username: String::new(),
+            password: String::new(),
             password_hash: None,
             auto_logon: false,
             blank_creds: false,
@@ -205,7 +204,7 @@ impl Connector {
     }
 
     /// Connect to a target server
-    /// This function will produce a RdpClient object
+    /// This function will produce a `RdpClient` object
     /// use to interact with server
     ///
     /// # Example
@@ -235,7 +234,7 @@ impl Connector {
         // With all negotiated security stuff and credentials
         let mut protocols = x224::Protocols::ProtocolSSL as u32;
         if self.use_nla {
-            protocols |= x224::Protocols::ProtocolHybrid as u32
+            protocols |= x224::Protocols::ProtocolHybrid as u32;
         }
 
         let x224 = x224::Client::connect(
@@ -254,9 +253,9 @@ impl Connector {
         if self.restricted_admin_mode {
             sec::connect(
                 &mut mcs,
-                &"".to_string(),
-                &"".to_string(),
-                &"".to_string(),
+                &String::new(),
+                &String::new(),
+                &String::new(),
                 self.auto_logon
             )?;
         } else {

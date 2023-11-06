@@ -68,7 +68,7 @@ impl BitmapEvent {
                 Ok(
                     if self.is_compress {
                         let mut result = vec![0_u8; self.width as usize * self.height as usize * 4];
-                        rle_32_decompress(&self.data, self.width as u32, self.height as u32, &mut result)?;
+                        rle_32_decompress(&self.data, u32::from(self.width), u32::from(self.height), &mut result)?;
                         result
                     } else {
                         self.data
@@ -86,7 +86,7 @@ impl BitmapEvent {
                     for i in 0..self.height {
                         for j in 0..self.width {
                             let src = (((self.height - i - 1) * self.width + j) * 2) as usize;
-                            result[(i * self.width + j) as usize] = (self.data[src + 1] as u16) << 8 | self.data[src] as u16;
+                            result[(i * self.width + j) as usize] = u16::from(self.data[src + 1]) << 8 | u16::from(self.data[src]);
                         }
                     }
                     result

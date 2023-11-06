@@ -348,48 +348,48 @@ impl<S: Read + Write> Client<S> {
 mod test {
     use super::*;
 
-    /// Test of read read_attach_user_confirm
+    /// Test of read `read_attach_user_confirm`
     #[test]
     fn test_read_attach_user_confirm() {
-        assert_eq!(read_attach_user_confirm(&mut Cursor::new(vec![46, 0, 0, 3])).unwrap(), 1004)
+        assert_eq!(read_attach_user_confirm(&mut Cursor::new(vec![46, 0, 0, 3])).unwrap(), 1004);
     }
 
     /// Attach user request payload
     #[test]
     fn test_attach_user_request() {
-        assert_eq!(attach_user_request(), 40)
+        assert_eq!(attach_user_request(), 40);
     }
 
     /// Test of the new domain request
     #[test]
     fn test_erect_domain_request() {
-        assert_eq!(to_vec(&erect_domain_request().unwrap()), [4, 1, 0, 1, 0])
+        assert_eq!(to_vec(&erect_domain_request().unwrap()), [4, 1, 0, 1, 0]);
     }
 
     /// Test format of the channel join request
     #[test]
     fn test_channel_join_request() {
-         assert_eq!(to_vec(&channel_join_request(None, None).unwrap()), [56, 0, 0, 0, 0])
+         assert_eq!(to_vec(&channel_join_request(None, None).unwrap()), [56, 0, 0, 0, 0]);
     }
 
     /// Test domain parameters format
     #[test]
     fn test_domain_parameters() {
         let result = to_der(&domain_parameters(1,2,3,4, 5, 6, 7, 8));
-        assert_eq!(result, vec![48, 24, 2, 1, 1, 2, 1, 2, 2, 1, 3, 2, 1, 4, 2, 1, 5, 2, 1, 6, 2, 1, 7, 2, 1, 8])
+        assert_eq!(result, vec![48, 24, 2, 1, 1, 2, 1, 2, 2, 1, 3, 2, 1, 4, 2, 1, 5, 2, 1, 6, 2, 1, 7, 2, 1, 8]);
     }
 
     /// Test connect initial
     #[test]
     fn test_connect_initial() {
         let result = to_der(&connect_initial(Some(vec![1, 2, 3])));
-        assert_eq!(result, vec![127, 101, 103, 4, 1, 1, 4, 1, 1, 1, 1, 255, 48, 26, 2, 1, 34, 2, 1, 2, 2, 1, 0, 2, 1, 1, 2, 1, 0, 2, 1, 1, 2, 3, 0, 255, 255, 2, 1, 2, 48, 25, 2, 1, 1, 2, 1, 1, 2, 1, 1, 2, 1, 1, 2, 1, 0, 2, 1, 1, 2, 2, 4, 32, 2, 1, 2, 48, 32, 2, 3, 0, 255, 255, 2, 3, 0, 252, 23, 2, 3, 0, 255, 255, 2, 1, 1, 2, 1, 0, 2, 1, 1, 2, 3, 0, 255, 255, 2, 1, 2, 4, 3, 1, 2, 3])
+        assert_eq!(result, vec![127, 101, 103, 4, 1, 1, 4, 1, 1, 1, 1, 255, 48, 26, 2, 1, 34, 2, 1, 2, 2, 1, 0, 2, 1, 1, 2, 1, 0, 2, 1, 1, 2, 3, 0, 255, 255, 2, 1, 2, 48, 25, 2, 1, 1, 2, 1, 1, 2, 1, 1, 2, 1, 1, 2, 1, 0, 2, 1, 1, 2, 2, 4, 32, 2, 1, 2, 48, 32, 2, 3, 0, 255, 255, 2, 3, 0, 252, 23, 2, 3, 0, 255, 255, 2, 1, 1, 2, 1, 0, 2, 1, 1, 2, 3, 0, 255, 255, 2, 1, 2, 4, 3, 1, 2, 3]);
     }
 
     /// Test connect response
     #[test]
     fn test_connect_response() {
         let result = to_der(&connect_response(Some(vec![1, 2, 3])));
-        assert_eq!(result, vec![127, 102, 39, 10, 1, 0, 2, 1, 0, 48, 26, 2, 1, 22, 2, 1, 3, 2, 1, 0, 2, 1, 1, 2, 1, 0, 2, 1, 1, 2, 3, 0, 255, 248, 2, 1, 2, 4, 3, 1, 2, 3])
+        assert_eq!(result, vec![127, 102, 39, 10, 1, 0, 2, 1, 0, 48, 26, 2, 1, 22, 2, 1, 3, 2, 1, 0, 2, 1, 1, 2, 1, 0, 2, 1, 1, 2, 3, 0, 255, 248, 2, 1, 2, 4, 3, 1, 2, 3]);
     }
 }

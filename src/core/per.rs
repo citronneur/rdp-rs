@@ -19,13 +19,13 @@ pub fn read_length(s: &mut dyn Read) -> RdpResult<u16> {
     byte.read(s)?;
     if byte & 0x80 != 0 {
         byte &= !0x80;
-        let mut size = (byte as u16) << 8 ;
+        let mut size = u16::from(byte) << 8 ;
         byte.read(s)?;
-        size += byte as u16;
+        size += u16::from(byte);
         Ok(size)
     }
     else {
-        Ok(byte as u16)
+        Ok(u16::from(byte))
     }
 }
 
@@ -194,12 +194,12 @@ pub fn read_integer(s: &mut dyn Read) -> RdpResult<u32> {
         1 => {
             let mut result: u8 = 0;
             result.read(s)?;
-            Ok(result as u32)
+            Ok(u32::from(result))
         },
         2 => {
             let mut result = U16::BE(0);
             result.read(s)?;
-            Ok(result.inner() as u32)
+            Ok(u32::from(result.inner()))
         },
         4 => {
             let mut result = U32::BE(0);

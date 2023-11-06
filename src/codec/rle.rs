@@ -66,21 +66,21 @@ fn process_plane(input: &mut dyn Read, width: u32, height: u32, output: &mut [u8
 					if x & 1 != 0{
 						x >>= 1;
 						x += 1;
-						color = -(x as i32) as i8;
+						color = -i32::from(x) as i8;
 					}
 					else
 					{
 						x >>= 1;
 						color = x as i8;
 					}
-					x = (output[(last_line + (indexw * 4)) as usize] as i32 + color as i32) as u8;
+					x = (i32::from(output[(last_line + (indexw * 4)) as usize]) + i32::from(color)) as u8;
 					output[out as usize] = x;
 					out += 4;
 					indexw += 1;
 					collen -= 1;
 				}
 				while replen > 0 {
-					x = (output[(last_line + (indexw * 4)) as usize] as i32 + color as i32) as u8;
+					x = (i32::from(output[(last_line + (indexw * 4)) as usize]) + i32::from(color)) as u8;
 					output[out as usize] = x;
 					out += 4;
 					indexw += 1;
@@ -159,23 +159,23 @@ pub fn rle_16_decompress(input: &[u8], width: usize, mut height: usize, output: 
 		match opcode {
 			0xC..=0xE => {
 				opcode -= 6;
-				count = (code & 0xf) as u16;
+				count = u16::from(code & 0xf);
 				offset = 16;
 			}
 			0xF => {
 				opcode = code & 0xf;
 				if opcode < 9 {
-					count = input_cursor.read_u16::<LittleEndian>()?
+					count = input_cursor.read_u16::<LittleEndian>()?;
 				} else if opcode < 0xb {
-					count = 8
+					count = 8;
 				} else {
-					count = 1
+					count = 1;
 				}
 				offset = 0;
 			}
 			_ => {
 				opcode >>= 1;
-				count = (code & 0x1f) as u16;
+				count = u16::from(code & 0x1f);
 				offset = 32;
 			}
 		}
@@ -184,9 +184,9 @@ pub fn rle_16_decompress(input: &[u8], width: usize, mut height: usize, output: 
 			isfillormix = (opcode == 2) || (opcode == 7);
 			if count == 0 {
 				if isfillormix {
-					count = input_cursor.read_u8()? as u16 + 1;
+					count = u16::from(input_cursor.read_u8()?) + 1;
 				} else {
-					count = input_cursor.read_u8()? as u16 + offset;
+					count = u16::from(input_cursor.read_u8()?) + offset;
 				}
 			} else if isfillormix {
 				count <<= 3;

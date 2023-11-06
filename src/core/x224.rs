@@ -265,7 +265,7 @@ mod test {
     fn test_rdp_neg_req() {
         let mut s = Cursor::new(vec![]);
         rdp_neg_req(Some(NegotiationType::TypeRDPNegRsp), Some(1),  Some(0)).write(&mut s).unwrap();
-        assert_eq!(s.into_inner(), vec![2, 0, 8, 0, 1, 0, 0, 0])
+        assert_eq!(s.into_inner(), vec![2, 0, 8, 0, 1, 0, 0, 0]);
     }
 
     /// test of the x224 header format
@@ -273,7 +273,7 @@ mod test {
     fn test_x224_crq() {
         let mut s = Cursor::new(vec![]);
         x224_crq(20, MessageType::X224TPDUData).write(&mut s).unwrap();
-        assert_eq!(s.into_inner(), vec![26, 240, 0, 0, 0, 0, 0])
+        assert_eq!(s.into_inner(), vec![26, 240, 0, 0, 0, 0, 0]);
     }
 
     /// test of X224 data header
@@ -281,7 +281,7 @@ mod test {
     fn test_x224_header() {
         let mut s = Cursor::new(vec![]);
         x224_header().write(&mut s).unwrap();
-        assert_eq!(s.into_inner(), vec![2, 240, 128])
+        assert_eq!(s.into_inner(), vec![2, 240, 128]);
     }
 
     /// test of X224 client connection payload
@@ -289,6 +289,6 @@ mod test {
     fn test_x224_connection_pdu() {
         let mut s = Cursor::new(vec![]);
         x224_connection_pdu(Some(NegotiationType::TypeRDPNegReq), Some(0), Some(3)).write(&mut s).unwrap();
-        assert_eq!(s.into_inner(), vec![14, 224, 0, 0, 0, 0, 0, 1, 0, 8, 0, 3, 0, 0, 0])
+        assert_eq!(s.into_inner(), vec![14, 224, 0, 0, 0, 0, 0, 1, 0, 8, 0, 3, 0, 0, 0]);
     }
 }

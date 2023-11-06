@@ -22,12 +22,12 @@ impl Rc4 {
         self.i = self.i.wrapping_add(1);
         self.j = self.j.wrapping_add(self.state[self.i as usize]);
         self.state.swap(self.i as usize, self.j as usize);
-        
+
         self.state[(self.state[self.i as usize].wrapping_add(self.state[self.j as usize])) as usize]
     }
 
     pub fn process(&mut self, input: &[u8], output: &mut [u8]) {
-        assert!(input.len() == output.len());
+        assert_eq!(input.len(), output.len());
         for (x, y) in input.iter().zip(output.iter_mut()) {
             *y = *x ^ self.next();
         }

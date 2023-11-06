@@ -555,7 +555,7 @@ pub struct Client {
 
 impl Client {
     /// Ctor for a new global channel client
-    /// user_id and channel_id must come from mcs channel once connected
+    /// `user_id` and `channel_id` must come from mcs channel once connected
     /// Width and height are screen size
     ///
     /// # Example
@@ -593,7 +593,7 @@ impl Client {
     fn read_demand_active_pdu(&mut self, stream: &mut dyn Read) -> RdpResult<bool> {
         let pdu = Pdu::from_stream(stream)?;
         if pdu.pdu_type == PduType::Demandactivepdu {
-            for capability_set in cast!(DataType::Trame, pdu.message["capabilitySets"])?.iter() {
+            for capability_set in cast!(DataType::Trame, pdu.message["capabilitySets"])? {
                 match Capability::from_capability_set(cast!(DataType::Component, capability_set)?) {
                     Ok(capability) => self.server_capabilities.push(capability),
                     Err(e) => println!("GLOBAL: {:?}", e)
@@ -699,7 +699,7 @@ impl Client {
         let mut fp_messages = Array::new(ts_fp_update);
         fp_messages.read(stream)?;
 
-        for fp_message in fp_messages.inner().iter() {
+        for fp_message in fp_messages.inner() {
             match FastPathUpdate::from_fp(cast!(DataType::Component, fp_message)?) {
                 Ok(order) => {
                     match order.fp_type {
@@ -880,7 +880,7 @@ mod test {
         let mut stream = Cursor::new(vec![234, 3, 1, 0, 4, 0, 179, 1, 82, 68, 80, 0, 17, 0, 0, 0, 9, 0, 8, 0, 234, 3, 0, 0, 1, 0, 24, 0, 1, 0, 3, 0, 0, 2, 0, 0, 0, 0, 29, 4, 0, 0, 0, 0, 0, 0, 1, 1, 20, 0, 12, 0, 2, 0, 0, 0, 64, 6, 0, 0, 10, 0, 8, 0, 6, 0, 0, 0, 8, 0, 10, 0, 1, 0, 25, 0, 25, 0, 27, 0, 6, 0, 3, 0, 14, 0, 8, 0, 1, 0, 0, 0, 2, 0, 28, 0, 32, 0, 1, 0, 1, 0, 1, 0, 32, 3, 88, 2, 0, 0, 1, 0, 1, 0, 0, 30, 1, 0, 0, 0, 29, 0, 96, 0, 4, 185, 27, 141, 202, 15, 0, 79, 21, 88, 159, 174, 45, 26, 135, 226, 214, 0, 3, 0, 1, 1, 3, 18, 47, 119, 118, 114, 189, 99, 68, 175, 179, 183, 60, 156, 111, 120, 134, 0, 4, 0, 0, 0, 0, 0, 166, 81, 67, 156, 53, 53, 174, 66, 145, 12, 205, 252, 229, 118, 11, 88, 0, 4, 0, 0, 0, 0, 0, 212, 204, 68, 39, 138, 157, 116, 78, 128, 60, 14, 203, 238, 161, 156, 84, 0, 4, 0, 0, 0, 0, 0, 3, 0, 88, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 64, 66, 15, 0, 1, 0, 20, 0, 0, 0, 1, 0, 0, 0, 170, 0, 1, 1, 1, 1, 1, 0, 0, 0, 1, 0, 0, 1, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 0, 0, 0, 0, 161, 6, 6, 0, 64, 66, 15, 0, 64, 66, 15, 0, 1, 0, 0, 0, 0, 0, 0, 0, 18, 0, 8, 0, 1, 0, 0, 0, 13, 0, 88, 0, 117, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 23, 0, 8, 0, 255, 0, 0, 0, 24, 0, 11, 0, 2, 0, 0, 0, 3, 12, 0, 26, 0, 8, 0, 43, 72, 9, 0, 28, 0, 12, 0, 82, 0, 0, 0, 0, 0, 0, 0, 30, 0, 8, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
         let mut pdu = ts_demand_active_pdu();
         pdu.message.read(&mut stream).unwrap();
-        assert_eq!(cast!(DataType::U16, pdu.message["numberCapabilities"]).unwrap(), 17)
+        assert_eq!(cast!(DataType::U16, pdu.message["numberCapabilities"]).unwrap(), 17);
     }
 
     /// Test confirm active PDU format
@@ -896,34 +896,34 @@ mod test {
         let mut stream = Cursor::new(vec![]);
         share_control_header(Some(PduType::Confirmactivepdu), Some(12), Some(to_vec(&ts_confirm_active_pdu(Some(4), Some(b"rdp-rs".to_vec()), Some(Array::from_trame(trame![capability_set(Some(capability::ts_brush_capability_set()))]))).message))).write(&mut stream).unwrap();
 
-        assert_eq!(stream.into_inner(), vec![34, 0, 19, 0, 12, 0, 4, 0, 0, 0, 234, 3, 6, 0, 12, 0, 114, 100, 112, 45, 114, 115, 1, 0, 0, 0, 15, 0, 8, 0, 0, 0, 0, 0])
+        assert_eq!(stream.into_inner(), vec![34, 0, 19, 0, 12, 0, 4, 0, 0, 0, 234, 3, 6, 0, 12, 0, 114, 100, 112, 45, 114, 115, 1, 0, 0, 0, 15, 0, 8, 0, 0, 0, 0, 0]);
     }
 
     #[test]
     fn test_read_synchronize_pdu() {
         let mut stream = Cursor::new(vec![22, 0, 23, 0, 234, 3, 234, 3, 1, 0, 0, 2, 22, 0, 31, 0, 0, 0, 1, 0, 0, 0]);
         let mut global = Client::new(0,0, 800, 600, KeyboardLayout::US, "foo");
-        assert!(global.read_synchronize_pdu(&mut stream).unwrap())
+        assert!(global.read_synchronize_pdu(&mut stream).unwrap());
     }
 
     #[test]
     fn test_read_control_cooperate_pdu() {
         let mut stream = Cursor::new(vec![26, 0, 23, 0, 234, 3, 234, 3, 1, 0, 0, 2, 26, 0, 20, 0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0]);
         let mut global = Client::new(0,0, 800, 600, KeyboardLayout::US, "foo");
-        assert!(global.read_control_pdu(&mut stream, Action::Cooperate).unwrap())
+        assert!(global.read_control_pdu(&mut stream, Action::Cooperate).unwrap());
     }
 
     #[test]
     fn test_read_control_granted_pdu() {
         let mut stream = Cursor::new(vec![26, 0, 23, 0, 234, 3, 234, 3, 1, 0, 0, 2, 26, 0, 20, 0, 0, 0, 2, 0, 236, 3, 234, 3, 0, 0]);
         let mut global = Client::new(0,0, 800, 600, KeyboardLayout::US, "foo");
-        assert!(global.read_control_pdu(&mut stream, Action::GrantedControl).unwrap())
+        assert!(global.read_control_pdu(&mut stream, Action::GrantedControl).unwrap());
     }
 
     #[test]
     fn test_read_font_map_pdu() {
         let mut stream = Cursor::new(vec![26, 0, 23, 0, 234, 3, 234, 3, 1, 0, 0, 2, 26, 0, 40, 0, 0, 0, 0, 0, 0, 0, 3, 0, 4, 0]);
         let mut global = Client::new(0,0, 800, 600, KeyboardLayout::US, "foo");
-        assert!(global.read_font_map_pdu(&mut stream).unwrap())
+        assert!(global.read_font_map_pdu(&mut stream).unwrap());
     }
 }

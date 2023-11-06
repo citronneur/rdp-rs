@@ -32,25 +32,25 @@ enum SecurityFlag {
 /// https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-rdpbcgr/732394f5-e2b5-4ac5-8a0a-35345386b0d1?redirectedfrom=MSDN
 #[allow(dead_code)]
 enum InfoFlag {
-    Mouse = 0x00000001,
-    Disablectrlaltdel = 0x00000002,
-    Autologon = 0x00000008,
-    Unicode = 0x00000010,
-    Maximizeshell = 0x00000020,
-    Logonnotify = 0x00000040,
-    Compression = 0x00000080,
-    Enablewindowskey = 0x00000100,
-    Remoteconsoleaudio = 0x00002000,
-    ForceEncryptedCsPdu = 0x00004000,
-    Rail = 0x00008000,
-    Logonerrors = 0x00010000,
-    MouseHasWheel = 0x00020000,
-    PasswordIsScPin = 0x00040000,
-    Noaudioplayback = 0x00080000,
-    UsingSavedCreds = 0x00100000,
-    Audiocapture = 0x00200000,
-    VideoDisable = 0x00400000,
-    CompressionTypeMask = 0x00001E00
+    Mouse = 0x0000_0001,
+    Disablectrlaltdel = 0x0000_0002,
+    Autologon = 0x0000_0008,
+    Unicode = 0x0000_0010,
+    Maximizeshell = 0x0000_0020,
+    Logonnotify = 0x0000_0040,
+    Compression = 0x0000_0080,
+    Enablewindowskey = 0x0000_0100,
+    Remoteconsoleaudio = 0x0000_2000,
+    ForceEncryptedCsPdu = 0x0000_4000,
+    Rail = 0x0000_8000,
+    Logonerrors = 0x0001_0000,
+    MouseHasWheel = 0x0002_0000,
+    PasswordIsScPin = 0x0004_0000,
+    Noaudioplayback = 0x0008_0000,
+    UsingSavedCreds = 0x0010_0000,
+    Audiocapture = 0x0020_0000,
+    VideoDisable = 0x0040_0000,
+    CompressionTypeMask = 0x0000_1E00
 }
 
 #[allow(dead_code)]

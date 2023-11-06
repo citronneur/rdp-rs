@@ -153,8 +153,8 @@ impl<S: Read + Write> Client<S> {
             if short_length & 0x80 != 0 {
                 let mut hi_length: u8 = 0;
                 hi_length.read(&mut Cursor::new(self.transport.read(1)?))?;
-                let length: u16 = ((short_length & !0x80) as u16) << 8;
-                let length = length | hi_length as u16;
+                let length: u16 = u16::from(short_length & !0x80) << 8;
+                let length = length | u16::from(hi_length);
                 if length < 3 {
                     Err(Error::RdpError(RdpError::new(RdpErrorKind::InvalidSize, "Invalid minimal size for TPKT")))
                 } else {

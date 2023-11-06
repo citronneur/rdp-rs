@@ -1,7 +1,7 @@
 use crate::model::data::{Message, U16};
 use std::io::Cursor;
 
-/// Use to to_unicode function for String
+/// Use to `to_unicode` function for String
 pub trait Unicode {
     fn to_unicode(&self) -> Vec<u8>;
 }

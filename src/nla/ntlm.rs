@@ -15,27 +15,27 @@ use std::io::{Cursor};
 #[repr(u32)]
 #[allow(dead_code)]
 enum Negotiate {
-    NtlmsspNegociate56 = 0x80000000,
-    NtlmsspNegociateKeyExch = 0x40000000,
-    NtlmsspNegociate128 = 0x20000000,
-    NtlmsspNegociateVersion = 0x02000000,
-    NtlmsspNegociateTargetInfo = 0x00800000,
-    NtlmsspRequestNonNTSessionKey = 0x00400000,
-    NtlmsspNegociateIdentify = 0x00100000,
-    NtlmsspNegociateExtendedSessionSecurity = 0x00080000,
-    NtlmsspTargetTypeServer = 0x00020000,
-    NtlmsspTargetTypeDomain = 0x00010000,
-    NtlmsspNegociateAlwaysSign = 0x00008000,
-    NtlmsspNegociateOEMWorkstationSupplied = 0x00002000,
-    NtlmsspNegociateOEMDomainSupplied = 0x00001000,
-    NtlmsspNegociateNTLM = 0x00000200,
-    NtlmsspNegociateLMKey = 0x00000080,
-    NtlmsspNegociateDatagram = 0x00000040,
-    NtlmsspNegociateSeal = 0x00000020,
-    NtlmsspNegociateSign = 0x00000010,
-    NtlmsspRequestTarget = 0x00000004,
-    NtlmNegotiateOEM = 0x00000002,
-    NtlmsspNegociateUnicode = 0x00000001
+    NtlmsspNegociate56 = 0x8000_0000,
+    NtlmsspNegociateKeyExch = 0x4000_0000,
+    NtlmsspNegociate128 = 0x2000_0000,
+    NtlmsspNegociateVersion = 0x0200_0000,
+    NtlmsspNegociateTargetInfo = 0x0080_0000,
+    NtlmsspRequestNonNTSessionKey = 0x0040_0000,
+    NtlmsspNegociateIdentify = 0x0010_0000,
+    NtlmsspNegociateExtendedSessionSecurity = 0x0008_0000,
+    NtlmsspTargetTypeServer = 0x0002_0000,
+    NtlmsspTargetTypeDomain = 0x0001_0000,
+    NtlmsspNegociateAlwaysSign = 0x0000_8000,
+    NtlmsspNegociateOEMWorkstationSupplied = 0x0000_2000,
+    NtlmsspNegociateOEMDomainSupplied = 0x0000_1000,
+    NtlmsspNegociateNTLM = 0x0000_0200,
+    NtlmsspNegociateLMKey = 0x0000_0080,
+    NtlmsspNegociateDatagram = 0x0000_0040,
+    NtlmsspNegociateSeal = 0x0000_0020,
+    NtlmsspNegociateSign = 0x0000_0010,
+    NtlmsspRequestTarget = 0x0000_0004,
+    NtlmNegotiateOEM = 0x0000_0002,
+    NtlmsspNegociateUnicode = 0x0000_0001
 }
 
 #[repr(u8)]
@@ -74,7 +74,7 @@ fn version() -> Component {
 fn negotiate_message(flags: u32) -> Component {
     component!(
         "Signature" => b"NTLMSSP\x00".to_vec(),
-        "MessageType" => U32::LE(0x00000001),
+        "MessageType" => U32::LE(0x0000_0001),
         "NegotiateFlags" => DynOption::new(U32::LE(flags), |node| {
             if node.inner() & (Negotiate::NtlmsspNegociateVersion as u32) == 0 {
                 return MessageOption::SkipField("Version".to_string())
@@ -498,7 +498,7 @@ impl Ntlm {
             response_key_lm: ntowfv2_hash(password_hash, &user, &domain),
             domain,
             user,
-            password: "".to_string(),
+            password: String::new(),
             negotiate_message: None,
             exported_session_key: None,
             is_unicode: false
@@ -735,38 +735,38 @@ mod test {
     #[test]
     fn test_ntlmv2_negotiate_message() {
         let mut buffer = Cursor::new(Vec::new());
-        Ntlm::new("".to_string(), "".to_string(), "".to_string()).create_negotiate_message().unwrap().write(&mut buffer).unwrap();
+        Ntlm::new(String::new(), String::new(), String::new()).create_negotiate_message().unwrap().write(&mut buffer).unwrap();
         assert_eq!(buffer.get_ref().as_slice(), [78, 84, 76, 77, 83, 83, 80, 0, 1, 0, 0, 0, 53, 130, 8, 96, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
     }
 
     /// Test of md4 hash function
     #[test]
     fn test_md4() {
-        assert_eq!(md4(b"foo"), [0x0a, 0xc6, 0x70, 0x0c, 0x49, 0x1d, 0x70, 0xfb, 0x86, 0x50, 0x94, 0x0b, 0x1c, 0xa1, 0xe4, 0xb2])
+        assert_eq!(md4(b"foo"), [0x0a, 0xc6, 0x70, 0x0c, 0x49, 0x1d, 0x70, 0xfb, 0x86, 0x50, 0x94, 0x0b, 0x1c, 0xa1, 0xe4, 0xb2]);
     }
 
     /// Test of the unicode function
     #[test]
     fn test_unicode() {
-        assert_eq!(unicode(&"foo".to_string()), [0x66, 0x00, 0x6f, 0x00, 0x6f, 0x00])
+        assert_eq!(unicode("foo"), [0x66, 0x00, 0x6f, 0x00, 0x6f, 0x00]);
     }
 
     /// Test HMAC_MD5 function
     #[test]
     fn test_hmacmd5() {
-        assert_eq!(hmac_md5(b"foo", b"bar"), [0x0c, 0x7a, 0x25, 0x02, 0x81, 0x31, 0x5a, 0xb8, 0x63, 0x54, 0x9f, 0x66, 0xcd, 0x8a, 0x3a, 0x53])
+        assert_eq!(hmac_md5(b"foo", b"bar"), [0x0c, 0x7a, 0x25, 0x02, 0x81, 0x31, 0x5a, 0xb8, 0x63, 0x54, 0x9f, 0x66, 0xcd, 0x8a, 0x3a, 0x53]);
     }
 
     /// Test NTOWFv2 function
     #[test]
     fn test_ntowfv2() {
-        assert_eq!(ntowfv2(&"foo".to_string(), &"user".to_string(), &"domain".to_string()), [0x6e, 0x53, 0xb9, 0x0, 0x97, 0x8c, 0x87, 0x1f, 0x91, 0xde, 0x6, 0x44, 0x9d, 0x8b, 0x8b, 0x81])
+        assert_eq!(ntowfv2("foo", "user", "domain"), [0x6e, 0x53, 0xb9, 0x0, 0x97, 0x8c, 0x87, 0x1f, 0x91, 0xde, 0x6, 0x44, 0x9d, 0x8b, 0x8b, 0x81]);
     }
 
     /// Test LMOWFv2 function
     #[test]
     fn test_lmowfv2() {
-        assert_eq!(lmowfv2(&"foo".to_string(), &"user".to_string(), &"domain".to_string()), ntowfv2(&"foo".to_string(), &"user".to_string(), &"domain".to_string()))
+        assert_eq!(lmowfv2("foo", "user", "domain"), ntowfv2("foo", "user", "domain"));
     }
 
     /// Test compute response v2 function
@@ -781,14 +781,14 @@ mod test {
     /// Test of rc4k function
     #[test]
     fn test_rc4k() {
-        assert_eq!(rc4k(b"foo", b"bar"), [201, 67, 159])
+        assert_eq!(rc4k(b"foo", b"bar"), [201, 67, 159]);
     }
 
     /// Test of sign_key function
     #[test]
     fn test_sign_key() {
         assert_eq!(sign_key(b"foo", true), [253, 238, 149, 155, 221, 78, 43, 179, 82, 61, 111, 132, 168, 68, 222, 15]);
-        assert_eq!(sign_key(b"foo", false), [90, 201, 12, 225, 140, 156, 151, 61, 156, 56, 31, 254, 10, 223, 252, 74])
+        assert_eq!(sign_key(b"foo", false), [90, 201, 12, 225, 140, 156, 151, 61, 156, 56, 31, 254, 10, 223, 252, 74]);
     }
 
     /// Test of seal_key function
@@ -801,7 +801,7 @@ mod test {
     /// Test signature function
     #[test]
     fn test_mac() {
-        assert_eq!(mac(&mut Rc4::new(b"foo"), b"bar", 0, b"data"), [1, 0, 0, 0, 77, 211, 144, 84, 51, 242, 202, 176, 0, 0, 0, 0])
+        assert_eq!(mac(&mut Rc4::new(b"foo"), b"bar", 0, b"data"), [1, 0, 0, 0, 77, 211, 144, 84, 51, 242, 202, 176, 0, 0, 0, 0]);
     }
 
     /// Test challenge message

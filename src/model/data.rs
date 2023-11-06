@@ -8,7 +8,7 @@ use std::io::{Write, Read, Cursor};
 /// All data type used
 ///
 /// Allow us to retrieve correct data
-/// Into the message tree via cast! or cast_optional! macro
+/// Into the message tree via `cast!` or `cast_optional!` macro
 ///
 /// # Examples
 /// ```
@@ -390,7 +390,7 @@ impl Message for Component {
     /// ```
     fn write(&self, writer: &mut dyn Write) -> RdpResult<()>{
         let mut filtering_key = HashSet::new();
-        for (name, value) in self.iter() {
+        for (name, value) in self {
             // ignore filtering keys
             if filtering_key.contains(name) {
                 continue;
@@ -426,7 +426,7 @@ impl Message for Component {
     fn read(&mut self, reader: &mut dyn Read) -> RdpResult<()>{
         let mut filtering_key = HashSet::new();
         let mut dynamic_size = HashMap::new();
-        for (name, value) in self.into_iter() {
+        for (name, value) in &mut *self {
             // ignore filtering keys
             if filtering_key.contains(name) {
                 continue;
@@ -473,7 +473,7 @@ impl Message for Component {
     fn length(&self) -> u64 {
         let mut sum : u64 = 0;
         let mut filtering_key = HashSet::new();
-        for (name, value) in self.iter() {
+        for (name, value) in self {
             // ignore filtering keys
             if filtering_key.contains(name) {
                 continue;
@@ -997,7 +997,7 @@ impl<T: Message> Message for Option<T> {
     /// ```
     fn write(&self, writer: &mut dyn Write) -> RdpResult<()> {
         if let Some(value) = self {
-            value.write(writer)?
+            value.write(writer)?;
         }
         Ok(())
     }
@@ -1036,7 +1036,7 @@ impl<T: Message> Message for Option<T> {
     fn read(&mut self, reader: &mut dyn Read) -> RdpResult<()> {
         if let Some(value) = self {
             if value.read(reader).is_err() {
-                *self = None
+                *self = None;
             }
         }
         Ok(())
@@ -1163,7 +1163,7 @@ impl<T: 'static + Message> Message for Array<T> {
             let mut element = Some((self.factory)());
             element.read(reader)?;
             if let Some(e) = element {
-                self.inner.push(Box::new(e))
+                self.inner.push(Box::new(e));
             } else {
                 break;
             }
@@ -1188,7 +1188,7 @@ impl<T: 'static + Message> Message for Array<T> {
 
     /// Visit the inner trame
     /// It's means always return a slice
-    /// Prefer using as_ref and visit
+    /// Prefer using `as_ref` and visit
     fn visit(&self) -> DataType {
         self.inner.visit()
     }
@@ -1216,6 +1216,6 @@ mod test {
         let mut stream = Cursor::new(Vec::<u8>::new());
         let x = 1_u8;
         x.write(&mut stream).unwrap();
-        assert_eq!(stream.get_ref().as_slice(), [1])
+        assert_eq!(stream.get_ref().as_slice(), [1]);
     }
 }

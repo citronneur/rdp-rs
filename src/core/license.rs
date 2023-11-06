@@ -40,15 +40,15 @@ pub enum MessageType {
 #[repr(u32)]
 #[derive(PartialEq, Eq, TryFromPrimitive)]
 pub enum ErrorCode {
-    ErrInvalidServerCertificate = 0x00000001,
-    ErrNoLicense = 0x00000002,
-    ErrInvalidScope = 0x00000004,
-    ErrNoLicenseServer = 0x00000006,
-    StatusValidClient = 0x00000007,
-    ErrInvalidClient = 0x00000008,
-    ErrInvalidProductid = 0x0000000B,
-    ErrInvalidMessageLen = 0x0000000C,
-    ErrInvalidMac = 0x00000003
+    ErrInvalidServerCertificate = 0x0000_0001,
+    ErrNoLicense = 0x0000_0002,
+    ErrInvalidScope = 0x0000_0004,
+    ErrNoLicenseServer = 0x0000_0006,
+    StatusValidClient = 0x0000_0007,
+    ErrInvalidClient = 0x0000_0008,
+    ErrInvalidProductid = 0x0000_000B,
+    ErrInvalidMessageLen = 0x0000_000C,
+    ErrInvalidMac = 0x0000_0003
 }
 
 /// All valid state transition available
@@ -57,10 +57,10 @@ pub enum ErrorCode {
 #[repr(u32)]
 #[derive(PartialEq, Eq, TryFromPrimitive)]
 pub enum StateTransition {
-    StTotalAbort = 0x00000001,
-    StNoTransition = 0x00000002,
-    StResetPhaseToStart = 0x00000003,
-    StResendLastMessage = 0x00000004
+    StTotalAbort = 0x0000_0001,
+    StNoTransition = 0x0000_0002,
+    StResetPhaseToStart = 0x0000_0003,
+    StResendLastMessage = 0x0000_0004
 }
 
 /// This a license preamble
@@ -96,7 +96,7 @@ fn licensing_error_message() -> Component {
 
 
 /// Parse a payload that follow an preamble
-/// Actualle we only accept payload with type NewLicense or ErrorAlert
+/// Actually we only accept payload with type `NewLicense` or `ErrorAlert`
 fn parse_payload(payload: &Component) -> RdpResult<LicenseMessage> {
     match MessageType::try_from(cast!(DataType::U8, payload["bMsgtype"])?)? {
         MessageType::NewLicense => Ok(LicenseMessage::NewLicense),
