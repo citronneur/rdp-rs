@@ -1,11 +1,11 @@
-use core::tpkt;
-use model::data::{Message, Check, U16, U32, Component, DataType, Trame};
-use model::error::{Error, RdpError, RdpResult, RdpErrorKind};
-use std::io::{Read, Write};
-use std::option::{Option};
-use nla::sspi::AuthenticationProtocol;
+use crate::core::tpkt;
+use crate::model::data::{Message, Check, U16, U32, Component, DataType, Trame};
+use crate::model::error::{Error, RdpError, RdpResult, RdpErrorKind};
+use crate::nla::sspi::AuthenticationProtocol;
 use num_enum::TryFromPrimitive;
 use std::convert::TryFrom;
+use std::io::{Read, Write};
+use std::option::{Option};
 
 #[repr(u8)]
 #[derive(Copy, Clone, TryFromPrimitive)]

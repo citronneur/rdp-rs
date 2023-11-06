@@ -1,9 +1,7 @@
-extern crate native_tls;
-
-use model::error::{RdpResult, Error, RdpError, RdpErrorKind};
+use crate::model::data::{Message};
+use crate::model::error::{RdpResult, Error, RdpError, RdpErrorKind};
+use native_tls::{TlsConnector, TlsStream, Certificate};
 use std::io::{Cursor, Read, Write};
-use self::native_tls::{TlsConnector, TlsStream, Certificate};
-use model::data::{Message};
 
 /// This a wrapper to work equals
 /// for a stream and a TLS stream

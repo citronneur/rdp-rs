@@ -1,13 +1,13 @@
-use core::x224;
-use core::tpkt;
-use model::error::{RdpResult, Error, RdpError, RdpErrorKind};
-use core::gcc::{KeyboardLayout, client_core_data, ClientData, ServerData, client_security_data, client_network_data, block_header, write_conference_create_request, MessageType, read_conference_create_response, Version};
-use model::data::{Trame, to_vec, Message, DataType, U16};
-use nla::asn1::{Sequence, ImplicitTag, OctetString, Enumerate, ASN1Type, Integer, to_der, from_ber};
-use yasna::{Tag};
-use std::io::{Write, Read, BufRead, Cursor};
-use core::per;
+use crate::core::gcc::{KeyboardLayout, client_core_data, ClientData, ServerData, client_security_data, client_network_data, block_header, write_conference_create_request, MessageType, read_conference_create_response, Version};
+use crate::core::per;
+use crate::core::tpkt;
+use crate::core::x224;
+use crate::model::data::{Trame, to_vec, Message, DataType, U16};
+use crate::model::error::{RdpResult, Error, RdpError, RdpErrorKind};
+use crate::nla::asn1::{Sequence, ImplicitTag, OctetString, Enumerate, ASN1Type, Integer, to_der, from_ber};
 use std::collections::HashMap;
+use std::io::{Write, Read, BufRead, Cursor};
+use yasna::{Tag};
 
 #[allow(dead_code)]
 #[repr(u8)]

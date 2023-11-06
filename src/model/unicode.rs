@@ -1,4 +1,4 @@
-use model::data::{Message, U16};
+use crate::model::data::{Message, U16};
 use std::io::Cursor;
 
 /// Use to to_unicode function for String

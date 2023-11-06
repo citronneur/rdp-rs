@@ -1,6 +1,6 @@
-use model::error::{RdpResult, Error, RdpError, RdpErrorKind};
-use std::io::{Cursor, Read};
+use crate::model::error::{RdpResult, Error, RdpError, RdpErrorKind};
 use byteorder::{ReadBytesExt, LittleEndian};
+use std::io::{Cursor, Read};
 
 /// All this uncompress code
 /// Are directly inspired from the source code

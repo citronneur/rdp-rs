@@ -1,9 +1,9 @@
-use model::link::{Link};
-use model::data::{Message, U16, Component, Trame};
-use model::error::{RdpResult, RdpError, RdpErrorKind, Error};
+use crate::model::data::{Message, U16, Component, Trame};
+use crate::model::error::{RdpResult, RdpError, RdpErrorKind, Error};
+use crate::model::link::{Link};
+use crate::nla::cssp::cssp_connect;
+use crate::nla::sspi::AuthenticationProtocol;
 use std::io::{Cursor, Write, Read};
-use nla::cssp::cssp_connect;
-use nla::sspi::AuthenticationProtocol;
 
 /// TPKT must implement this two kind of payload
 pub enum Payload {

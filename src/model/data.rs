@@ -1,8 +1,8 @@
-use std::io::{Write, Read, Cursor};
-use model::error::{RdpResult, RdpErrorKind, RdpError, Error};
 use byteorder::{WriteBytesExt, ReadBytesExt, LittleEndian, BigEndian};
+use crate::model::error::{RdpResult, RdpErrorKind, RdpError, Error};
 use indexmap::IndexMap;
 use std::collections::{HashSet, HashMap};
+use std::io::{Write, Read, Cursor};
 
 
 /// All data type used

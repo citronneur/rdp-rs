@@ -1,10 +1,8 @@
-extern crate native_tls;
-
 use std::io::{Read, Write};
 use std::io::Error as IoError;
 use std::string::String;
-use self::native_tls::HandshakeError;
-use self::native_tls::Error as SslError;
+use native_tls::HandshakeError;
+use native_tls::Error as SslError;
 use yasna::ASN1Error;
 use num_enum::{TryFromPrimitive, TryFromPrimitiveError};
 

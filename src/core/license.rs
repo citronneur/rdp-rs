@@ -1,8 +1,8 @@
-use model::data::{Component, Check, DynOption, U16, MessageOption, U32, DataType, Message};
-use model::error::{RdpResult, Error, RdpError, RdpErrorKind};
-use std::io::{Cursor, Read};
+use crate::model::data::{Component, Check, DynOption, U16, MessageOption, U32, DataType, Message};
+use crate::model::error::{RdpResult, Error, RdpError, RdpErrorKind};
 use num_enum::TryFromPrimitive;
 use std::convert::TryFrom;
+use std::io::{Cursor, Read};
 
 pub enum LicenseMessage {
     NewLicense,
