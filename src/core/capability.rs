@@ -9,7 +9,7 @@ use std::io::Cursor;
 /// between client and server
 /// This is done by the global channel
 #[repr(u16)]
-#[derive(Eq, PartialEq, Hash, Debug, TryFromPrimitive)]
+#[derive(Eq, PartialEq, Hash, Copy, Clone, Debug, TryFromPrimitive)]
 pub enum CapabilitySetType {
     General = 0x0001,
     Bitmap = 0x0002,
@@ -128,32 +128,35 @@ pub fn capability_set(capability: Option<Capability>) -> Component {
 
 #[repr(u16)]
 #[allow(dead_code)]
-enum MajorType {
-    OsmajortypeUnspecified = 0x0000,
-    OsmajortypeWindows = 0x0001,
-    OsmajortypeOs2 = 0x0002,
-    OsmajortypeMacintosh = 0x0003,
-    OsmajortypeUnix = 0x0004,
-    OsmajortypeIos = 0x0005,
-    OsmajortypeOsx = 0x0006,
-    OsmajortypeAndroid = 0x0007
+#[derive(Debug, Copy, Clone)]
+enum OsMajorType {
+    Unspecified = 0x0000,
+    Windows = 0x0001,
+    Os2 = 0x0002,
+    Macintosh = 0x0003,
+    Unix = 0x0004,
+    Ios = 0x0005,
+    Osx = 0x0006,
+    Android = 0x0007
 }
 
 #[allow(dead_code)]
-enum MinorType {
-    OsminortypeUnspecified = 0x0000,
-    OsminortypeWindows31x = 0x0001,
-    OsminortypeWindows95 = 0x0002,
-    OsminortypeWindowsNt = 0x0003,
-    OsminortypeOs2V21 = 0x0004,
-    OsminortypePowerPc = 0x0005,
-    OsminortypeMacintosh = 0x0006,
-    OsminortypeNativeXserver = 0x0007,
-    OsminortypePseudoXserver = 0x0008,
-    OsminortypeWindowsRt = 0x0009
+#[derive(Debug, Copy, Clone)]
+enum OsMinorType {
+    Unspecified = 0x0000,
+    Windows31x = 0x0001,
+    Windows95 = 0x0002,
+    WindowsNt = 0x0003,
+    Os2V21 = 0x0004,
+    PowerPc = 0x0005,
+    Macintosh = 0x0006,
+    NativeXserver = 0x0007,
+    PseudoXserver = 0x0008,
+    WindowsRt = 0x0009
 }
 
 #[repr(u16)]
+#[derive(Debug, Copy, Clone)]
 pub enum GeneralExtraFlag {
     FastpathOutputSupported = 0x0001,
     NoBitmapCompressionHdr = 0x0400,
@@ -178,8 +181,8 @@ pub fn ts_general_capability_set(extra_flags: Option<u16>) -> Capability {
     Capability {
         cap_type: CapabilitySetType::General,
         message: component![
-            "osMajorType" => U16::LE(MajorType::OsmajortypeWindows as u16),
-            "osMinorType" => U16::LE(MinorType::OsminortypeWindowsNt as u16),
+            "osMajorType" => U16::LE(OsMajorType::Windows as u16),
+            "osMinorType" => U16::LE(OsMinorType::WindowsNt as u16),
             "protocolVersion" => Check::new(U16::LE(0x0200)),
             "pad2octetsA" => U16::LE(0),
             "generalCompressionTypes" => Check::new(U16::LE(0)),
@@ -229,6 +232,7 @@ pub fn ts_bitmap_capability_set(preferred_bits_per_pixel: Option<u16>, desktop_w
 
 #[repr(u16)]
 #[allow(dead_code)]
+#[derive(Debug, Copy, Clone)]
 pub enum OrderFlag {
     NEGOTIATEORDERSUPPORT = 0x0002,
     ZEROBOUNDSDELTASSUPPORT = 0x0008,
@@ -328,6 +332,7 @@ pub fn ts_pointer_capability_set() -> Capability {
 }
 
 #[repr(u16)]
+#[derive(Debug, Copy, Clone)]
 pub enum InputFlags {
     /// Raw Keyboard scancode
     /// This is the most convenient way to send keyboard event
