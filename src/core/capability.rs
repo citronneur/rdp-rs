@@ -11,34 +11,34 @@ use std::io::Cursor;
 #[repr(u16)]
 #[derive(Eq, PartialEq, Hash, Debug, TryFromPrimitive)]
 pub enum CapabilitySetType {
-    CapstypeGeneral = 0x0001,
-    CapstypeBitmap = 0x0002,
-    CapstypeOrder = 0x0003,
-    CapstypeBitmapcache = 0x0004,
-    CapstypeControl = 0x0005,
-    CapstypeActivation = 0x0007,
-    CapstypePointer = 0x0008,
-    CapstypeShare = 0x0009,
-    CapstypeColorcache = 0x000A,
-    CapstypeSound = 0x000C,
-    CapstypeInput = 0x000D,
-    CapstypeFont = 0x000E,
-    CapstypeBrush = 0x000F,
-    CapstypeGlyphcache = 0x0010,
-    CapstypeOffscreencache = 0x0011,
-    CapstypeBitmapcacheHostsupport = 0x0012,
-    CapstypeBitmapcacheRev2 = 0x0013,
-    CapstypeVirtualchannel = 0x0014,
-    CapstypeDrawninegridcache = 0x0015,
-    CapstypeDrawgdiplus = 0x0016,
-    CapstypeRail = 0x0017,
-    CapstypeWindow = 0x0018,
-    CapsettypeCompdesk = 0x0019,
-    CapsettypeMultifragmentupdate = 0x001A,
-    CapsettypeLargePointer = 0x001B,
-    CapsettypeSurfaceCommands = 0x001C,
-    CapsettypeBitmapCodecs = 0x001D,
-    CapssettypeFrameAcknowledge = 0x001E
+    General = 0x0001,
+    Bitmap = 0x0002,
+    Order = 0x0003,
+    Bitmapcache = 0x0004,
+    Control = 0x0005,
+    Activation = 0x0007,
+    Pointer = 0x0008,
+    Share = 0x0009,
+    Colorcache = 0x000A,
+    Sound = 0x000C,
+    Input = 0x000D,
+    Font = 0x000E,
+    Brush = 0x000F,
+    Glyphcache = 0x0010,
+    Offscreencache = 0x0011,
+    BitmapcacheHostsupport = 0x0012,
+    BitmapcacheRev2 = 0x0013,
+    Virtualchannel = 0x0014,
+    Drawninegridcache = 0x0015,
+    Drawgdiplus = 0x0016,
+    Rail = 0x0017,
+    Window = 0x0018,
+    Compdesk = 0x0019,
+    Multifragmentupdate = 0x001A,
+    LargePointer = 0x001B,
+    SurfaceCommands = 0x001C,
+    BitmapCodecs = 0x001D,
+    FrameAcknowledge = 0x001E
 }
 
 /// A capability
@@ -49,7 +49,7 @@ pub enum CapabilitySetType {
 /// ```rust, ignore
 /// use rdp::core::capability::{Capability, CapabilitySetType};
 /// let capability = Capability {
-///     cap_type: CapabilitySetType::CapstypePointer,
+///     cap_type: CapabilitySetType::Pointer,
 ///     message: component![
 ///         "colorPointerFlag" => U16::LE(0),
 ///         "colorPointerCacheSize" => U16::LE(20)
@@ -80,18 +80,18 @@ impl Capability {
     pub fn from_capability_set(capability_set: &Component) -> RdpResult<Capability> {
         let cap_type = CapabilitySetType::try_from(cast!(DataType::U16, capability_set["capabilitySetType"])?)?;
         let mut capability = match cap_type {
-            CapabilitySetType::CapstypeGeneral => ts_general_capability_set(None),
-            CapabilitySetType::CapstypeBitmap => ts_bitmap_capability_set(None, None, None),
-            CapabilitySetType::CapstypeOrder => ts_order_capability_set(None),
-            CapabilitySetType::CapstypeBitmapcache => ts_bitmap_cache_capability_set(),
-            CapabilitySetType::CapstypePointer => ts_pointer_capability_set(),
-            CapabilitySetType::CapstypeInput => ts_input_capability_set(None, None),
-            CapabilitySetType::CapstypeBrush => ts_brush_capability_set(),
-            CapabilitySetType::CapstypeGlyphcache => ts_glyph_capability_set(),
-            CapabilitySetType::CapstypeOffscreencache => ts_offscreen_capability_set(),
-            CapabilitySetType::CapstypeVirtualchannel => ts_virtualchannel_capability_set(),
-            CapabilitySetType::CapstypeSound => ts_sound_capability_set(),
-            CapabilitySetType::CapsettypeMultifragmentupdate => ts_multifragment_update_capability_ts(),
+            CapabilitySetType::General => ts_general_capability_set(None),
+            CapabilitySetType::Bitmap => ts_bitmap_capability_set(None, None, None),
+            CapabilitySetType::Order => ts_order_capability_set(None),
+            CapabilitySetType::Bitmapcache => ts_bitmap_cache_capability_set(),
+            CapabilitySetType::Pointer => ts_pointer_capability_set(),
+            CapabilitySetType::Input => ts_input_capability_set(None, None),
+            CapabilitySetType::Brush => ts_brush_capability_set(),
+            CapabilitySetType::Glyphcache => ts_glyph_capability_set(),
+            CapabilitySetType::Offscreencache => ts_offscreen_capability_set(),
+            CapabilitySetType::Virtualchannel => ts_virtualchannel_capability_set(),
+            CapabilitySetType::Sound => ts_sound_capability_set(),
+            CapabilitySetType::Multifragmentupdate => ts_multifragment_update_capability_ts(),
             _ => {
                 return Err(Error::RdpError(RdpError::new(RdpErrorKind::Unknown, &format!("CAPABILITY: Unknown capability {:?}", cap_type))))
             }
@@ -114,11 +114,11 @@ impl Capability {
 /// fn main() {
 ///     use rdp::core::capability::{capability_set, ts_general_capability_set, CapabilitySetType};
 ///     let capability_set = capability_set(Some(ts_general_capability_set(Some(2))));
-///     assert_eq!(cast!(DataType::U16, capability_set["capabilitySetType"]).unwrap(), CapabilitySetType::CapstypeGeneral as u16)
+///     assert_eq!(cast!(DataType::U16, capability_set["capabilitySetType"]).unwrap(), CapabilitySetType::General as u16)
 /// }
 /// ```
 pub fn capability_set(capability: Option<Capability>) -> Component {
-    let default_capability = capability.unwrap_or(Capability{ cap_type: CapabilitySetType::CapstypeGeneral, message: component![]});
+    let default_capability = capability.unwrap_or(Capability{ cap_type: CapabilitySetType::General, message: component![]});
     component![
         "capabilitySetType" => U16::LE(default_capability.cap_type as u16),
         "lengthCapability" => DynOption::new(U16::LE(default_capability.message.length() as u16 + 4), |length| MessageOption::Size("capabilitySet".to_string(), length.inner() as usize - 4)),
@@ -176,7 +176,7 @@ pub enum GeneralExtraFlag {
 /// ```
 pub fn ts_general_capability_set(extra_flags: Option<u16>) -> Capability {
     Capability {
-        cap_type: CapabilitySetType::CapstypeGeneral,
+        cap_type: CapabilitySetType::General,
         message: component![
             "osMajorType" => U16::LE(MajorType::OsmajortypeWindows as u16),
             "osMinorType" => U16::LE(MinorType::OsminortypeWindowsNt as u16),
@@ -208,7 +208,7 @@ pub fn ts_general_capability_set(extra_flags: Option<u16>) -> Capability {
 /// ```
 pub fn ts_bitmap_capability_set(preferred_bits_per_pixel: Option<u16>, desktop_width: Option<u16>, desktop_height: Option<u16>) -> Capability {
     Capability {
-        cap_type: CapabilitySetType::CapstypeBitmap,
+        cap_type: CapabilitySetType::Bitmap,
         message: component![
             "preferredBitsPerPixel" => U16::LE(preferred_bits_per_pixel.unwrap_or(0)),
             "receive1BitPerPixel" => Check::new(U16::LE(0x0001)),
@@ -251,7 +251,7 @@ pub enum OrderFlag {
 /// ```
 pub fn ts_order_capability_set(order_flags: Option<u16>) -> Capability {
     Capability {
-        cap_type: CapabilitySetType::CapstypeOrder,
+        cap_type: CapabilitySetType::Order,
         message: component![
             "terminalDescriptor" => vec![0_u8; 16],
             "pad4octetsA" => U32::LE(0),
@@ -287,7 +287,7 @@ pub fn ts_order_capability_set(order_flags: Option<u16>) -> Capability {
 /// ```
 pub fn ts_bitmap_cache_capability_set() -> Capability {
     Capability {
-        cap_type: CapabilitySetType::CapstypeBitmapcache,
+        cap_type: CapabilitySetType::Bitmapcache,
         message: component![
             "pad1" => U32::LE(0),
             "pad2" => U32::LE(0),
@@ -319,7 +319,7 @@ pub fn ts_bitmap_cache_capability_set() -> Capability {
 /// ```
 pub fn ts_pointer_capability_set() -> Capability {
     Capability {
-        cap_type: CapabilitySetType::CapstypePointer,
+        cap_type: CapabilitySetType::Pointer,
         message: component![
             "colorPointerFlag" => U16::LE(0),
             "colorPointerCacheSize" => U16::LE(20)
@@ -367,7 +367,7 @@ pub enum InputFlags {
 /// ```
 pub fn ts_input_capability_set(input_flags: Option<u16>, keyboard_layout: Option<KeyboardLayout>) -> Capability {
     Capability {
-        cap_type: CapabilitySetType::CapstypeInput,
+        cap_type: CapabilitySetType::Input,
         message: component![
             "inputFlags" => U16::LE(input_flags.unwrap_or(0)),
             "pad2octetsA" => U16::LE(0),
@@ -394,7 +394,7 @@ pub fn ts_input_capability_set(input_flags: Option<u16>, keyboard_layout: Option
 /// ```
 pub fn ts_brush_capability_set() -> Capability {
     Capability {
-        cap_type: CapabilitySetType::CapstypeBrush,
+        cap_type: CapabilitySetType::Brush,
         message: component![
             "brushSupportLevel" => U32::LE(0)
         ]
@@ -427,7 +427,7 @@ fn cache_entry() -> Component {
 /// ```
 pub fn ts_glyph_capability_set() -> Capability {
     Capability {
-        cap_type: CapabilitySetType::CapstypeGlyphcache,
+        cap_type: CapabilitySetType::Glyphcache,
         message: component![
             "glyphCache" => trame![
                 cache_entry(), cache_entry(), cache_entry(), cache_entry(), cache_entry(),
@@ -455,7 +455,7 @@ pub fn ts_glyph_capability_set() -> Capability {
 /// ```
 pub fn ts_offscreen_capability_set() -> Capability {
     Capability {
-        cap_type: CapabilitySetType::CapstypeOffscreencache,
+        cap_type: CapabilitySetType::Offscreencache,
         message: component![
             "offscreenSupportLevel" => U32::LE(0),
             "offscreenCacheSize" => U16::LE(0),
@@ -479,7 +479,7 @@ pub fn ts_offscreen_capability_set() -> Capability {
 /// ```
 pub fn ts_virtualchannel_capability_set() -> Capability {
     Capability {
-        cap_type: CapabilitySetType::CapstypeVirtualchannel,
+        cap_type: CapabilitySetType::Virtualchannel,
         message: component![
             "flags" => U32::LE(0),
             "VCChunkSize" => Some(U32::LE(0))
@@ -502,7 +502,7 @@ pub fn ts_virtualchannel_capability_set() -> Capability {
 /// ```
 pub fn ts_sound_capability_set() -> Capability {
     Capability {
-        cap_type: CapabilitySetType::CapstypeSound,
+        cap_type: CapabilitySetType::Sound,
         message: component![
             "soundFlags" => U16::LE(0),
             "pad2octetsA" => U16::LE(0)
@@ -525,7 +525,7 @@ pub fn ts_sound_capability_set() -> Capability {
 /// ```
 pub fn ts_multifragment_update_capability_ts() -> Capability {
     Capability {
-        cap_type: CapabilitySetType::CapsettypeMultifragmentupdate,
+        cap_type: CapabilitySetType::Multifragmentupdate,
         message: component![
             "MaxRequestSize" => U32::LE(0)
         ]
