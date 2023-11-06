@@ -1,8 +1,9 @@
-### 0.1.2 (unreleased)
+### Unreleased
 #### Maintenance
 * Update code to Rust 2021 edition.
 * Bump a number of dependencies to current versions.
 * Apply `clippy` fixes.
+* Simplify `mstsc-rs` command-line parsing.
 #### Bug fixes
 * Fix potential truncated read in `core::per::read_padding`.
 * Fix potential truncated write in `<Vec<u8> as Message>::write`.
