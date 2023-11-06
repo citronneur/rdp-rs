@@ -8,13 +8,13 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
-      - run: cargo build
+      - run: cargo build --all-features
   test:
     name: Unit tests
     needs: build
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
-      - run: cargo test --features integration
+      - run: cargo test --all-features
 
 
