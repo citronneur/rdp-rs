@@ -223,8 +223,8 @@ impl<S: Read + Write> Client<S> {
 mod test {
     use super::*;
     use std::io::Cursor;
-    use model::data::{U32, DataType};
-    use model::link::Stream;
+    use crate::model::data::{U32, DataType};
+    use crate::model::link::Stream;
 
     /// Test the tpkt header type in write context
     #[test]
