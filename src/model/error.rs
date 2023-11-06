@@ -5,47 +5,79 @@ use native_tls::HandshakeError;
 use native_tls::Error as SslError;
 use yasna::ASN1Error;
 use num_enum::{TryFromPrimitive, TryFromPrimitiveError};
+use thiserror::Error;
 
-#[derive(Debug, Copy, Clone, Eq, PartialEq)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Error)]
 pub enum RdpErrorKind {
     /// Unexpected data
+    #[error("Invalid data")]
     InvalidData,
+
     /// Respond from server or client is not valid
+    #[error("Invalid response from server or client")]
     InvalidRespond,
+
     /// Features not implemented
+    #[error("Feature not implemented")]
     NotImplemented,
+
     /// During connection sequence
     /// A security level is negotiated
     /// If no level can be defined a ProtocolNegFailure is emitted
+    #[error("Protocol negotiation failure")]
     ProtocolNegFailure,
+
     /// Protocol automata transition is not expected
+    #[error("Invalid state-transition in protocol automata")]
     InvalidAutomata,
+
     /// A security protocol
     /// selected was not handled by rdp-rs
+    #[error("Invalid security protocol")]
     InvalidProtocol,
+
     /// All messages in rdp-rs
     /// are based on Message trait
     /// To retrieve the original data we used
     /// a visitor pattern. If the expected
     /// type is not found an InvalidCast error is emited
+    #[error("Invalid message cast")]
     InvalidCast,
+
     /// If an expected value is not equal
+    #[error("Inconsistency detected in message serialization")]
     InvalidConst,
+
     /// During security exchange some
     /// checksum are computed
+    #[error("Invalid checksum")]
     InvalidChecksum,
+
+    #[error("Invalid optional field")]
     InvalidOptionalField,
+
+    #[error("Invalid size")]
     InvalidSize,
+
     /// A possible Man In The Middle attack
     /// detected during NLA Authentication
+    #[error("Possible man-in-the-middle attack detected")]
     PossibleMITM,
+
     /// Some channel or user can be rejected
     /// by server during connection step
+    #[error("Server rejected channel or user")]
     RejectedByServer,
+
     /// Disconnect receive from server
+    #[error("Server disconnected")]
     Disconnect,
+
     /// Indicate an unknown field
+    #[error("Unknown field")]
     Unknown,
+
+    #[error("Unexpected type")]
     UnexpectedType
 }
 
@@ -56,6 +88,14 @@ pub struct RdpError {
     /// Associated message of the context
     message: String
 }
+
+impl std::fmt::Display for RdpError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> Result<(), std::fmt::Error> {
+        write!(formatter, "{}: {}", self.kind, self.message)
+    }
+}
+
+impl std::error::Error for RdpError {}
 
 impl RdpError {
     /// create a new RDP error
@@ -84,38 +124,32 @@ impl RdpError {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, thiserror::Error)]
 pub enum Error {
     /// RDP error
+    #[error("RDP error: {0}")]
     RdpError(RdpError),
-    /// All kind of IO error
-    Io(IoError),
-    /// SSL handshake error
-    SslHandshakeError,
-    /// SSL error
-    SslError(SslError),
-    /// ASN1 parser error
-    ASN1Error(ASN1Error),
-    /// try error
-    TryError(String)
-}
 
-/// From IO Error
-impl From<IoError> for Error {
-    fn from(e: IoError) -> Self {
-        Error::Io(e)
-    }
+    /// All kind of IO error
+    #[error("IO error: {0}")]
+    Io(#[from] IoError),
+
+    /// SSL handshake error
+    #[error("SSL handshake error")]
+    SslHandshakeError,
+
+    /// SSL error
+    #[error("SSL error")]
+    SslError(#[from] SslError),
+
+    /// ASN1 parser error
+    #[error("ASN1 parser error: {0}")]
+    ASN1Error(ASN1Error),
 }
 
 impl<S: Read + Write> From<HandshakeError<S>> for Error {
     fn from(_: HandshakeError<S>) -> Error {
         Error::SslHandshakeError
-    }
-}
-
-impl From<SslError> for Error {
-    fn from(e: SslError) -> Error {
-        Error::SslError(e)
     }
 }
 
