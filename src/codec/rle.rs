@@ -1,13 +1,13 @@
 use crate::model::error::{RdpResult, Error, RdpError, RdpErrorKind};
 use byteorder::{ReadBytesExt, LittleEndian};
-use std::io::{Cursor, Read};
+use std::io::Cursor;
 
 /// All this uncompress code
 /// Are directly inspired from the source code
 /// of rdesktop and diretly port to rust
 /// Need a little bit of refactoring for rust
 
-fn process_plane(input: &mut dyn Read, width: u32, height: u32, output: &mut [u8]) -> RdpResult<()> {
+fn process_plane(input: &mut Cursor<&[u8]>, width: u32, height: u32, output: &mut [u8]) -> RdpResult<()> {
     let mut indexw;
 	let mut indexh= 0;
 	let mut code ;
