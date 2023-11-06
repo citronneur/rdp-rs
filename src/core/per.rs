@@ -380,7 +380,7 @@ pub fn write_numeric_string(string: &[u8], minimum: usize,  s: &mut dyn Write) -
 /// Read exactly a number of bytes
 pub fn read_padding(length: usize, s: &mut dyn Read) -> RdpResult<()> {
     let mut padding = vec![0; length];
-    s.read(&mut padding)?;
+    s.read_exact(&mut padding)?;
     Ok(())
 }
 
