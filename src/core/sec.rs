@@ -32,25 +32,25 @@ enum SecurityFlag {
 /// https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-rdpbcgr/732394f5-e2b5-4ac5-8a0a-35345386b0d1?redirectedfrom=MSDN
 #[allow(dead_code)]
 enum InfoFlag {
-    InfoMouse = 0x00000001,
-    InfoDisablectrlaltdel = 0x00000002,
-    InfoAutologon = 0x00000008,
-    InfoUnicode = 0x00000010,
-    InfoMaximizeshell = 0x00000020,
-    InfoLogonnotify = 0x00000040,
-    InfoCompression = 0x00000080,
-    InfoEnablewindowskey = 0x00000100,
-    InfoRemoteconsoleaudio = 0x00002000,
-    InfoForceEncryptedCsPdu = 0x00004000,
-    InfoRail = 0x00008000,
-    InfoLogonerrors = 0x00010000,
-    InfoMouseHasWheel = 0x00020000,
-    InfoPasswordIsScPin = 0x00040000,
-    InfoNoaudioplayback = 0x00080000,
-    InfoUsingSavedCreds = 0x00100000,
-    InfoAudiocapture = 0x00200000,
-    InfoVideoDisable = 0x00400000,
-    InfoCompressionTypeMask = 0x00001E00
+    Mouse = 0x00000001,
+    Disablectrlaltdel = 0x00000002,
+    Autologon = 0x00000008,
+    Unicode = 0x00000010,
+    Maximizeshell = 0x00000020,
+    Logonnotify = 0x00000040,
+    Compression = 0x00000080,
+    Enablewindowskey = 0x00000100,
+    Remoteconsoleaudio = 0x00002000,
+    ForceEncryptedCsPdu = 0x00004000,
+    Rail = 0x00008000,
+    Logonerrors = 0x00010000,
+    MouseHasWheel = 0x00020000,
+    PasswordIsScPin = 0x00040000,
+    Noaudioplayback = 0x00080000,
+    UsingSavedCreds = 0x00100000,
+    Audiocapture = 0x00200000,
+    VideoDisable = 0x00400000,
+    CompressionTypeMask = 0x00001E00
 }
 
 #[allow(dead_code)]
@@ -93,13 +93,13 @@ fn rdp_infos(is_extended_info: bool, domain: &String, username: &String, passwor
     component![
         "codePage" => U32::LE(0),
         "flag" => U32::LE(
-            InfoFlag::InfoMouse as u32 |
-            InfoFlag::InfoUnicode as u32 |
-            InfoFlag::InfoLogonnotify as u32 |
-            InfoFlag::InfoLogonerrors as u32 |
-            InfoFlag::InfoDisablectrlaltdel as u32 |
-            InfoFlag::InfoEnablewindowskey as u32 |
-            if auto_logon { InfoFlag::InfoAutologon as u32 } else { 0 }
+            InfoFlag::Mouse as u32 |
+            InfoFlag::Unicode as u32 |
+            InfoFlag::Logonnotify as u32 |
+            InfoFlag::Logonerrors as u32 |
+            InfoFlag::Disablectrlaltdel as u32 |
+            InfoFlag::Enablewindowskey as u32 |
+            if auto_logon { InfoFlag::Autologon as u32 } else { 0 }
         ),
         "cbDomain" => U16::LE((domain_format.len() - 2) as u16),
         "cbUserName" => U16::LE((username_format.len() - 2) as u16),

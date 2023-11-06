@@ -185,6 +185,7 @@ impl Connector {
     ///     .screen(800, 600)
     ///     .credentials("domain".to_string(), "username".to_string(), "password".to_string());
     /// ```
+    #[allow(clippy::new_without_default)]
     pub fn new() -> Self {
         Connector {
             width: 800,

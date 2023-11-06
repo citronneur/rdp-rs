@@ -31,7 +31,7 @@ fn process_plane(input: &mut dyn Read, width: u32, height: u32, output: &mut [u8
 				replen = code & 0xf;
 				collen = (code >> 4) & 0xf;
 				revcode = (replen << 4) | collen;
-				if (revcode <= 47) && (revcode >= 16) {
+				if (16..=47).contains(&revcode) {
 					replen = revcode;
 					collen = 0;
 				}
@@ -57,20 +57,20 @@ fn process_plane(input: &mut dyn Read, width: u32, height: u32, output: &mut [u8
 				replen = code & 0xf;
 				collen = (code >> 4) & 0xf;
 				revcode = (replen << 4) | collen;
-				if (revcode <= 47) && (revcode >= 16) {
+				if (16..=47).contains(&revcode) {
 					replen = revcode;
 					collen = 0;
 				}
 				while collen > 0 {
 					x = input.read_u8()?;
 					if x & 1 != 0{
-						x = x >> 1;
-						x = x + 1;
+						x >>= 1;
+						x += 1;
 						color = -(x as i32) as i8;
 					}
 					else
 					{
-						x = x >> 1;
+						x >>= 1;
 						color = x as i8;
 					}
 					x = (output[(last_line + (indexw * 4)) as usize] as i32 + color as i32) as u8;
@@ -157,7 +157,7 @@ pub fn rle_16_decompress(input: &[u8], width: usize, mut height: usize, output: 
 		opcode = code >> 4;
 
 		match opcode {
-			0xC | 0xD | 0xE => {
+			0xC..=0xE => {
 				opcode -= 6;
 				count = (code & 0xf) as u16;
 				offset = 16;
@@ -195,7 +195,7 @@ pub fn rle_16_decompress(input: &[u8], width: usize, mut height: usize, output: 
 
 		match opcode {
 			0 => {
-				if lastopcode == opcode && !(x == width && prevline == None) {
+				if lastopcode == opcode && !(x == width && prevline.is_none()) {
 					insertmix = true;
 				}
 			},
@@ -227,7 +227,7 @@ pub fn rle_16_decompress(input: &[u8], width: usize, mut height: usize, output: 
 
 		while count > 0 {
 			if x >= width {
-				if height <= 0 {
+				if height == 0 {
 					return Err(Error::RdpError(RdpError::new(RdpErrorKind::InvalidData, "error during decompress")))
 				}
 				x = 0;
@@ -331,10 +331,10 @@ pub fn rle_16_decompress(input: &[u8], width: usize, mut height: usize, output: 
 
 
 pub fn rgb565torgb32(input: &[u16], width: usize, height: usize) -> Vec<u8> {
-	let mut result_32_bpp = vec![0 as u8; width as usize * height as usize * 4];
+	let mut result_32_bpp = vec![0_u8; width * height * 4];
 	for i in 0..height {
 		for j in 0..width {
-			let index = (i * width + j) as usize;
+			let index = i * width + j;
 			let v = input[index];
 			result_32_bpp[index * 4 + 3] = 0xff;
 			result_32_bpp[index * 4 + 2] = (((((v >> 11) & 0x1f) * 527) + 23) >> 6) as u8;

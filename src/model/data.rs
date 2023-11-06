@@ -241,9 +241,12 @@ pub type Trame = Vec<Box<dyn Message>>;
 macro_rules! trame {
     () => { Trame::new() };
     ($( $val: expr ),*) => {{
-         let mut vec = Trame::new();
-         $( vec.push(Box::new($val)); )*
-         vec
+         #[allow(clippy::vec_init_then_push)]
+         {
+             let mut vec = Trame::new();
+             $( vec.push(Box::new($val)); )*
+             vec
+         }
     }}
 }
 /// Trame is a Message too
@@ -543,7 +546,7 @@ impl<Type: Copy + PartialEq> Value<Type> {
 impl<Type: Copy + PartialEq> PartialEq for Value<Type> {
     /// Equality between all type
     fn eq(&self, other: &Self) -> bool {
-        return self.inner() == other.inner()
+        self.inner() == other.inner()
     }
 }
 
@@ -810,7 +813,7 @@ impl Message for Vec<u8> {
     }
 
     fn read(&mut self, reader: &mut dyn Read) -> RdpResult<()> {
-        if self.len() == 0 {
+        if self.is_empty() {
             reader.read_to_end(self)?;
         }
         else {
@@ -993,9 +996,10 @@ impl<T: Message> Message for Option<T> {
     /// assert_eq!(s2.into_inner(), [])
     /// ```
     fn write(&self, writer: &mut dyn Write) -> RdpResult<()> {
-        Ok(if let Some(value) = self {
+        if let Some(value) = self {
             value.write(writer)?
-        })
+        }
+        Ok(())
     }
 
     /// Read an optional field
@@ -1210,7 +1214,7 @@ mod test {
     #[test]
     fn test_data_u8_write() {
         let mut stream = Cursor::new(Vec::<u8>::new());
-        let x = 1 as u8;
+        let x = 1_u8;
         x.write(&mut stream).unwrap();
         assert_eq!(stream.get_ref().as_slice(), [1])
     }

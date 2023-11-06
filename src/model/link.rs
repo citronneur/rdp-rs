@@ -76,10 +76,10 @@ impl<S: Read + Write> Stream<S> {
     /// Shutdown the stream
     /// Only works when stream is a SSL stream
     pub fn shutdown(&mut self) -> RdpResult<()> {
-        Ok(match self {
-            Stream::Ssl(e) => e.shutdown()?,
-            _ => ()
-        })
+        if let Stream::Ssl(e) = self {
+            e.shutdown()?;
+        }
+        Ok(())
     }
 }
 

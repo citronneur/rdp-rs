@@ -89,6 +89,7 @@ pub enum KeyboardType {
 
 #[repr(u16)]
 #[allow(dead_code)]
+#[allow(clippy::enum_variant_names)]
 enum HighColor {
     HighColor4BPP = 0x0004,
     HighColor8BPP = 0x0008,
@@ -103,10 +104,10 @@ enum HighColor {
 #[repr(u16)]
 #[allow(dead_code)]
 enum Support {
-    RnsUd24BPPSupport = 0x0001,
-    RnsUd16BPPSupport = 0x0002,
-    RnsUd15BPPSupport = 0x0004,
-    RnsUd32BPPSupport = 0x0008
+    RnsUd24BPP = 0x0001,
+    RnsUd16BPP = 0x0002,
+    RnsUd15BPP = 0x0004,
+    RnsUd32BPP = 0x0008
 }
 
 /// Negotiation of some capability for pdu layer
@@ -210,7 +211,7 @@ pub fn client_core_data(parameter: Option<ClientData>) -> Component {
         });
 
     let client_name = if client_parameter.name.len() >= 16 {
-        (&client_parameter.name[0..16]).to_string()
+        client_parameter.name[0..16].to_string()
     } else {
         client_parameter.name.clone() + &"\x00".repeat(16 - client_parameter.name.len())
     };
@@ -227,21 +228,21 @@ pub fn client_core_data(parameter: Option<ClientData>) -> Component {
         "keyboardType" => U32::LE(KeyboardType::Ibm101102Keys as u32),
         "keyboardSubType" => U32::LE(0),
         "keyboardFnKeys" => U32::LE(12),
-        "imeFileName" => vec![0 as u8; 64],
+        "imeFileName" => vec![0_u8; 64],
         "postBeta2ColorDepth" => U16::LE(ColorDepth::RnsUdColor8BPP as u16),
         "clientProductId" => U16::LE(1),
         "serialNumber" => U32::LE(0),
         "highColorDepth" => U16::LE(HighColor::HighColor24BPP as u16),
         "supportedColorDepths" => U16::LE(
-            //Support::RnsUd15BPPSupport as u16 |
-            Support::RnsUd16BPPSupport as u16 |
-            //Support::RnsUd24BPPSupport as u16 |
-            Support::RnsUd32BPPSupport as u16
+            //Support::RnsUd15BPP as u16 |
+            Support::RnsUd16BPP as u16 |
+            //Support::RnsUd24BPP as u16 |
+            Support::RnsUd32BPP as u16
             ),
         "earlyCapabilityFlags" => U16::LE(CapabilityFlag::RnsUdCsSupportErrinfoPDU as u16),
         "clientDigProductId" => vec![0; 64],
-        "connectionType" => 0 as u8,
-        "pad1octet" => 0 as u8,
+        "connectionType" => 0_u8,
+        "pad1octet" => 0_u8,
         "serverSelectedProtocol" => U32::LE(client_parameter.server_selected_protocol)
     ]
 }
@@ -303,7 +304,7 @@ pub fn server_network_data() -> Component {
 pub fn block_header(data_type: Option<MessageType>, length: Option<u16>) -> Component {
     component![
         "type" => U16::LE(data_type.unwrap_or(MessageType::CsCore) as u16),
-        "length" => U16::LE(length.unwrap_or(0) as u16 + 4)
+        "length" => U16::LE(length.unwrap_or(0) + 4)
     ]
 }
 
@@ -352,7 +353,7 @@ pub fn read_conference_create_response(cc_response: &mut dyn Read) -> RdpResult<
             break;
         }
 
-        let mut buffer = vec![0 as u8; (cast!(DataType::U16, header["length"])? - header.length() as u16) as usize];
+        let mut buffer = vec![0_u8; (cast!(DataType::U16, header["length"])? - header.length() as u16) as usize];
         sub.read_exact(&mut buffer)?;
 
         match MessageType::from(cast!(DataType::U16, header["type"])?) {
@@ -377,7 +378,7 @@ pub fn read_conference_create_response(cc_response: &mut dyn Read) -> RdpResult<
 
     // All section are important
     Ok(ServerData{
-        channel_ids: cast!(DataType::Trame, result[&MessageType::ScNet]["channelIdArray"])?.into_iter().map(|x| cast!(DataType::U16, x).unwrap()).collect(),
+        channel_ids: cast!(DataType::Trame, result[&MessageType::ScNet]["channelIdArray"])?.iter().map(|x| cast!(DataType::U16, x).unwrap()).collect(),
         rdp_version: Version::from(cast!(DataType::U32, result[&MessageType::ScCore]["rdpVersion"])?)
     })
 }

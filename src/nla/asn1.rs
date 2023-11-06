@@ -34,6 +34,7 @@ pub trait ASN1 {
 
 /// A sequence of is dynamically build
 /// using a callback factory
+#[derive(Default)]
 pub struct SequenceOf {
     /// The inner vector of ASN1 node
     pub inner: Vec<Box<dyn ASN1>>,
@@ -42,20 +43,6 @@ pub struct SequenceOf {
 }
 
 impl SequenceOf {
-    /// Create an empty sequenceof
-    ///
-    /// # Example
-    /// ```no_run
-    /// use rdp::nla::asn1::SequenceOf;
-    /// let so = SequenceOf::new();
-    /// ```
-    pub fn new() -> Self{
-        SequenceOf {
-            inner: Vec::new(),
-            factory : None
-        }
-    }
-
     /// Build a sequence_of from a reader perspective
     ///
     /// # Example
@@ -153,7 +140,7 @@ impl ASN1 for SequenceOf {
 #[macro_export]
 macro_rules! sequence_of {
     ($( $val: expr ),*) => {{
-         let mut map = SequenceOf::new();
+         let mut map = SequenceOf::default();
          $( map.inner.push(Box::new($val)); )*
          map
     }}

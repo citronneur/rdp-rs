@@ -26,7 +26,7 @@ pub enum Action {
 fn tpkt_header(size: u16) -> Component {
     component![
         "action" => Action::FastPathActionX224 as u8,
-        "flag" => 0 as u8,
+        "flag" => 0_u8,
         "size" => U16::BE(size + 4)
     ]
 }
@@ -161,12 +161,10 @@ impl<S: Read + Write> Client<S> {
                     Ok(Payload::FastPath(sec_flag, Cursor::new(self.transport.read(length as usize - 3)?)))
                 }
             }
-            else {
-                if short_length < 2 {
-                    Err(Error::RdpError(RdpError::new(RdpErrorKind::InvalidSize, "Invalid minimal size for TPKT")))
-                } else {
-                    Ok(Payload::FastPath(sec_flag, Cursor::new(self.transport.read(short_length as usize - 2)?)))
-                }
+            else if short_length < 2 {
+                Err(Error::RdpError(RdpError::new(RdpErrorKind::InvalidSize, "Invalid minimal size for TPKT")))
+            } else {
+                Ok(Payload::FastPath(sec_flag, Cursor::new(self.transport.read(short_length as usize - 2)?)))
             }
          }
     }
