@@ -112,7 +112,7 @@ impl<S: Read + Write> RdpClient<S> {
             RdpEvent::Key(key) => {
                 let mut flags: u16 = 0;
                 if !key.down {
-                    flags |= KeyboardFlag::KbdflagsRelease as u16;
+                    flags |= KeyboardFlag::Release as u16;
                 }
                 self.global.write_input_event(ts_keyboard_event(Some(flags), Some(key.code)), &mut self.mcs)
             }

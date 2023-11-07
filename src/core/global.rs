@@ -355,9 +355,9 @@ pub fn ts_pointer_event(flags: Option<u16>, x: Option<u16>, y: Option<u16>) -> T
 #[repr(u16)]
 #[derive(Clone, Copy, Debug)]
 pub enum KeyboardFlag {
-    KbdflagsExtended = 0x0100,
-    KbdflagsDown = 0x4000,
-    KbdflagsRelease = 0x8000
+    Extended = 0x0100,
+    Down = 0x4000,
+    Release = 0x8000
 }
 
 /// Raw input keyboard event
