@@ -968,9 +968,9 @@ impl<T: Message> Message for DynOption<T> {
 
 /// Serialize a message into Vector
 pub fn to_vec(message: &dyn Message) -> Vec<u8> {
-    let mut stream = Cursor::new(Vec::new());
+    let mut stream = Vec::new();
     message.write(&mut stream).unwrap();
-    stream.into_inner()
+    stream
 }
 
 
