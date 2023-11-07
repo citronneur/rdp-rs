@@ -160,6 +160,42 @@ fn create_ts_authinfo(auth_info: Vec<u8>) -> Vec<u8> {
     to_der(&ts_authinfo)
 }
 
+/// Reads an ASN.1 tag-length-value
+fn read_asn1_tlv<R: Read>(reader: &mut R) -> RdpResult<Vec<u8>> {
+    let mut buffer = vec![0u8; 2];
+    reader.read_exact(&mut buffer)?;
+    let length = {
+        let length_octet = buffer[1];
+        if length_octet <= 0x7f {
+            // Short form length
+            usize::from(length_octet)
+        } else {
+            // Long form length
+            let octets_to_read = usize::from(length_octet & 0x7f);
+            let length_octets = {
+                let old_buffer_len = buffer.len();
+                buffer.resize(old_buffer_len + octets_to_read, 0u8);
+                reader.read_exact(&mut buffer[old_buffer_len..])?;
+                &buffer[old_buffer_len..]
+            };
+            let high_bits = usize::from(u8::MAX) << (usize::BITS - u8::BITS);
+            let mut length = 0;
+            for octet in length_octets.iter().copied() {
+                if length & high_bits != 0 {
+                    return Err(RdpError::new(RdpErrorKind::InvalidSize, "ASN.1 message too large for usize").into());
+                }
+                length <<= u8::BITS;
+                length |= usize::from(octet);
+            }
+            length
+        }
+    };
+    let old_buffer_len = buffer.len();
+    buffer.resize(old_buffer_len + length, 0u8);
+    reader.read_exact(&mut buffer[old_buffer_len..])?;
+    Ok(buffer)
+}
+
 /// This the main function for CSSP protocol
 /// It will use the raw link layer and the selected authenticate protocol
 /// to perform the NLA authenticate
@@ -169,7 +205,10 @@ pub fn cssp_connect<S: Read + Write>(link: &mut Link<S>, authentication_protocol
     link.write_msg(&negotiate_message)?;
 
     // now receive server challenge
-    let server_challenge = read_ts_server_challenge(&(link.read_exact_to_vec(0)?))?;
+    let server_challenge = {
+        let message = read_asn1_tlv(link)?;
+        read_ts_server_challenge(&message)?
+    };
 
     // now ask for to authenticate protocol
     let client_challenge = authentication_protocol.read_challenge_message(&server_challenge)?;
@@ -186,7 +225,10 @@ pub fn cssp_connect<S: Read + Write>(link: &mut Link<S>, authentication_protocol
     link.write_msg(&challenge)?;
 
     // now server respond normally with the original public key incremented by one
-    let inc_pub_key = security_interface.gss_unwrapex(&(read_ts_validate(&(link.read_exact_to_vec(0)?))?))?;
+    let inc_pub_key = {
+        let message = read_asn1_tlv(link)?;
+        security_interface.gss_unwrapex(&(read_ts_validate(&message)?))?
+    };
 
     // Check possible man in the middle using cssp
     if BigUint::from_bytes_le(&inc_pub_key) != BigUint::from_bytes_le(certificate.tbs_certificate.subject_pki.subject_public_key.data.as_ref()) + BigUint::new(vec![1]) {

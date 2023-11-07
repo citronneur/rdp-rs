@@ -117,17 +117,9 @@ impl<S: Read + Write> Link<S> {
     /// assert_eq!(link.read_exact_to_vec(2).unwrap(), [0, 1])
     /// ```
     pub fn read_exact_to_vec(&mut self, expected_size: usize) -> RdpResult<Vec<u8>> {
-        if expected_size == 0 {
-            let mut buffer = vec![0; 1500];
-            let size = self.stream.read(&mut buffer)?;
-            buffer.resize(size, 0);
-            Ok(buffer)
-        }
-        else {
-            let mut buffer = vec![0; expected_size];
-            self.stream.read_exact(&mut buffer)?;
-            Ok(buffer)
-        }
+        let mut buffer = vec![0; expected_size];
+        self.stream.read_exact(&mut buffer)?;
+        Ok(buffer)
     }
 
     /// Start a ssl connection from a raw stream
@@ -183,5 +175,11 @@ impl<S: Read + Write> Link<S> {
     #[cfg(feature = "integration")]
     pub fn get_stream(self) -> Stream<S> {
         self.stream
+    }
+}
+
+impl<S> Read for Link<S> where Stream<S>: Read {
+    fn read(&mut self, buffer: &mut [u8]) -> Result<usize, std::io::Error> {
+        self.stream.read(buffer)
     }
 }

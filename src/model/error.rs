@@ -128,7 +128,7 @@ impl RdpError {
 pub enum Error {
     /// RDP error
     #[error("RDP error: {0}")]
-    RdpError(RdpError),
+    RdpError(#[from] RdpError),
 
     /// All kind of IO error
     #[error("IO error: {0}")]
