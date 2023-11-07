@@ -1,7 +1,7 @@
 use crate::model::data::{Message};
 use crate::model::error::{RdpResult, Error, RdpError, RdpErrorKind};
 use native_tls::{TlsConnector, TlsStream, Certificate};
-use std::io::{Cursor, Read, Write};
+use std::io::{Read, Write};
 
 /// This a wrapper to work equals
 /// for a stream and a TLS stream
@@ -59,7 +59,7 @@ impl<S: Read + Write> Stream<S> {
     /// use std::io::Cursor;
     /// let mut s = Stream::Raw(Cursor::new(vec![]));
     /// let result = [1, 2, 3, 4];
-    /// s.write(&result).unwrap();
+    /// s.write_all(&result).unwrap();
     /// if let Stream::Raw(r) = s {
     ///     assert_eq!(r.into_inner(), [1, 2, 3, 4])
     /// }
@@ -67,10 +67,10 @@ impl<S: Read + Write> Stream<S> {
     ///     panic!("invalid")
     /// }
     /// ```
-    pub fn write(&mut self, buffer: &[u8]) -> RdpResult<usize> {
+    pub fn write_all(&mut self, buffer: &[u8]) -> RdpResult<()> {
         Ok(match self {
-            Stream::Raw(e) => e.write(buffer)?,
-            Stream::Ssl(e) => e.write(buffer)?
+            Stream::Raw(e) => e.write_all(buffer)?,
+            Stream::Ssl(e) => e.write_all(buffer)?
         })
     }
 
@@ -134,9 +134,9 @@ impl<S: Read + Write> Link<S> {
     /// # }
     /// ```
     pub fn write(&mut self, message: &dyn Message) -> RdpResult<()> {
-        let mut buffer = Cursor::new(Vec::new());
+        let mut buffer = Vec::new();
         message.write(&mut buffer)?;
-        self.stream.write(buffer.into_inner().as_slice())?;
+        self.stream.write_all(&buffer)?;
         Ok(())
     }
 

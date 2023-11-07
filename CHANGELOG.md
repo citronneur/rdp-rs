@@ -9,6 +9,7 @@
 #### Bug fixes
 * Fix potential truncated read in `core::per::read_padding`.
 * Fix potential truncated write in `<Vec<u8> as Message>::write`.
+* Fix potential truncated write in `model::link::Stream::write` (now renamed).
 
 ### 0.1.1 (2020-04-11)
 #### Features
