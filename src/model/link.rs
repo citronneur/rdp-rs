@@ -53,7 +53,8 @@ impl<S: Read + Write> Stream<S> {
 /// It can swicth from TCP to SSL
 #[derive(Debug)]
 pub struct Link<S> {
-    stream: Stream<S>
+    stream: Stream<S>,
+    serialization_buffer: Vec<u8>,
 }
 
 impl<S: Read + Write> Link<S> {
@@ -70,7 +71,8 @@ impl<S: Read + Write> Link<S> {
     /// ```
     pub fn new(stream: Stream<S>) -> Self {
         Link {
-            stream
+            stream,
+            serialization_buffer: Vec::new(),
         }
     }
 
@@ -99,9 +101,9 @@ impl<S: Read + Write> Link<S> {
     /// # }
     /// ```
     pub fn write_msg(&mut self, message: &dyn Message) -> RdpResult<()> {
-        let mut buffer = Vec::new();
-        message.write(&mut buffer)?;
-        self.stream.write_all(&buffer)?;
+        self.serialization_buffer.clear();
+        message.write(&mut self.serialization_buffer)?;
+        self.stream.write_all(&self.serialization_buffer)?;
         Ok(())
     }
 
