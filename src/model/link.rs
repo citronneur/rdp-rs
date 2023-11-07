@@ -13,70 +13,35 @@ pub enum Stream<S> {
     Ssl(TlsStream<S>)
 }
 
-impl<S: Read + Write> Stream<S> {
-    /// Read exactly the number of bytes present in buffer
-    ///
-    /// # Example
-    /// ```
-    /// use rdp::model::link::Stream;
-    /// use std::io::Cursor;
-    /// let mut s = Stream::Raw(Cursor::new(vec![1, 2, 3]));
-    /// let mut result = [0, 0];
-    /// s.read_exact(&mut result).unwrap();
-    /// assert_eq!(result, [1, 2])
-    /// ```
-    pub fn read_exact(&mut self, buf: &mut[u8]) -> RdpResult<()> {
+impl<S> Write for Stream<S> where S: Write, TlsStream<S>: Write {
+    fn write(&mut self, buffer: &[u8]) -> std::io::Result<usize> {
         match self {
-            Stream::Raw(e) => e.read_exact(buf)?,
-            Stream::Ssl(e) => e.read_exact(buf)?
-        };
-        Ok(())
-    }
-
-    /// Read all available buffer
-    ///
-    /// # Example
-    /// ```
-    /// use rdp::model::link::Stream;
-    /// use std::io::Cursor;
-    /// let mut s = Stream::Raw(Cursor::new(vec![1, 2, 3]));
-    /// let mut result = [0, 0, 0, 0];
-    /// s.read(&mut result).unwrap();
-    /// assert_eq!(result, [1, 2, 3, 0])
-    /// ```
-    pub fn read(&mut self, buf: &mut[u8]) -> RdpResult<usize> {
-        match self {
-            Stream::Raw(e) => Ok(e.read(buf)?),
-            Stream::Ssl(e) => Ok(e.read(buf)?)
+            Stream::Raw(e) => e.write(buffer),
+            Stream::Ssl(e) => e.write(buffer)
         }
     }
 
-    /// Write all buffer to the stream
-    ///
-    /// # Example
-    /// ```
-    /// use rdp::model::link::Stream;
-    /// use std::io::Cursor;
-    /// let mut s = Stream::Raw(Cursor::new(vec![]));
-    /// let result = [1, 2, 3, 4];
-    /// s.write_all(&result).unwrap();
-    /// if let Stream::Raw(r) = s {
-    ///     assert_eq!(r.into_inner(), [1, 2, 3, 4])
-    /// }
-    /// else {
-    ///     panic!("invalid")
-    /// }
-    /// ```
-    pub fn write_all(&mut self, buffer: &[u8]) -> RdpResult<()> {
-        Ok(match self {
-            Stream::Raw(e) => e.write_all(buffer)?,
-            Stream::Ssl(e) => e.write_all(buffer)?
-        })
+    fn flush(&mut self) -> std::io::Result<()> {
+        match self {
+            Stream::Raw(e) => e.flush(),
+            Stream::Ssl(e) => e.flush(),
+        }
     }
+}
 
+impl<S> Read for Stream<S> where S: Read, TlsStream<S>: Read {
+    fn read(&mut self, buf: &mut[u8]) -> std::io::Result<usize> {
+        match self {
+            Stream::Raw(e) => e.read(buf),
+            Stream::Ssl(e) => e.read(buf)
+        }
+    }
+}
+
+impl<S: Read + Write> Stream<S> {
     /// Shutdown the stream
     /// Only works when stream is a SSL stream
-    pub fn shutdown(&mut self) -> RdpResult<()> {
+    pub fn shutdown(&mut self) -> std::io::Result<()> {
         if let Stream::Ssl(e) = self {
             e.shutdown()?;
         }
@@ -210,7 +175,7 @@ impl<S: Read + Write> Link<S> {
     /// Close the stream
     /// Only works on SSL Stream
     pub fn shutdown(&mut self) -> RdpResult<()> {
-        self.stream.shutdown()
+        Ok(self.stream.shutdown()?)
     }
 
     #[cfg(feature = "integration")]
