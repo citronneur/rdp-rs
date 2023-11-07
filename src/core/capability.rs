@@ -235,11 +235,11 @@ pub fn ts_bitmap_capability_set(preferred_bits_per_pixel: Option<u16>, desktop_w
 #[allow(dead_code)]
 #[derive(Debug, Copy, Clone)]
 pub enum OrderFlag {
-    NEGOTIATEORDERSUPPORT = 0x0002,
-    ZEROBOUNDSDELTASSUPPORT = 0x0008,
-    COLORINDEXSUPPORT = 0x0020,
-    SOLIDPATTERNBRUSHONLY = 0x0040,
-    OrderflagsExtraFlags = 0x0080
+    NegotiateOrderSupport = 0x0002,
+    ZeroBoundsDeltasSupport = 0x0008,
+    ColorIndexSupport = 0x0020,
+    SolidPatternBrushOnly = 0x0040,
+    OrderFlagsExtraFlags = 0x0080
 }
 
 /// Order capability
@@ -265,7 +265,7 @@ pub fn ts_order_capability_set(order_flags: Option<u16>) -> Capability {
             "pad2octetsA" => U16::LE(0),
             "maximumOrderLevel" => U16::LE(1),
             "numberFonts" => U16::LE(0),
-            "orderFlags" => U16::LE(order_flags.unwrap_or(OrderFlag::NEGOTIATEORDERSUPPORT as u16)),
+            "orderFlags" => U16::LE(order_flags.unwrap_or(OrderFlag::NegotiateOrderSupport as u16)),
             "orderSupport" => vec![0_u8; 32],
             "textFlags" => U16::LE(0),
             "orderSupportExFlags" => U16::LE(0),

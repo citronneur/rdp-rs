@@ -751,7 +751,7 @@ impl Client {
             trame![
                 capability_set(Some(capability::ts_general_capability_set(Some(capability::GeneralExtraFlag::LongCredentialsSupported as u16 | capability::GeneralExtraFlag::NoBitmapCompressionHdr as u16 | capability::GeneralExtraFlag::EncSaltedChecksum as u16 | capability::GeneralExtraFlag::FastpathOutputSupported as u16)))),
                 capability_set(Some(capability::ts_bitmap_capability_set(Some(0x0018), Some(self.width), Some(self.height)))),
-                capability_set(Some(capability::ts_order_capability_set(Some(capability::OrderFlag::NEGOTIATEORDERSUPPORT as u16 | capability::OrderFlag::ZEROBOUNDSDELTASSUPPORT as u16)))),
+                capability_set(Some(capability::ts_order_capability_set(Some(capability::OrderFlag::NegotiateOrderSupport as u16 | capability::OrderFlag::ZeroBoundsDeltasSupport as u16)))),
                 capability_set(Some(capability::ts_bitmap_cache_capability_set())),
                 capability_set(Some(capability::ts_pointer_capability_set())),
                 capability_set(Some(capability::ts_sound_capability_set())),
