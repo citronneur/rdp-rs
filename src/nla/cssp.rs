@@ -169,7 +169,7 @@ pub fn cssp_connect<S: Read + Write>(link: &mut Link<S>, authentication_protocol
     link.write_msg(&negotiate_message)?;
 
     // now receive server challenge
-    let server_challenge = read_ts_server_challenge(&(link.read(0)?))?;
+    let server_challenge = read_ts_server_challenge(&(link.read_exact_to_vec(0)?))?;
 
     // now ask for to authenticate protocol
     let client_challenge = authentication_protocol.read_challenge_message(&server_challenge)?;
@@ -186,7 +186,7 @@ pub fn cssp_connect<S: Read + Write>(link: &mut Link<S>, authentication_protocol
     link.write_msg(&challenge)?;
 
     // now server respond normally with the original public key incremented by one
-    let inc_pub_key = security_interface.gss_unwrapex(&(read_ts_validate(&(link.read(0)?))?))?;
+    let inc_pub_key = security_interface.gss_unwrapex(&(read_ts_validate(&(link.read_exact_to_vec(0)?))?))?;
 
     // Check possible man in the middle using cssp
     if BigUint::from_bytes_le(&inc_pub_key) != BigUint::from_bytes_le(certificate.tbs_certificate.subject_pki.subject_public_key.data.as_ref()) + BigUint::new(vec![1]) {

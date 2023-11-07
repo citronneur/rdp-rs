@@ -124,7 +124,7 @@ impl<S: Read + Write> Client<S> {
     /// }
     /// ```
     pub fn read(&mut self) -> RdpResult<Payload> {
-        let mut buffer = Cursor::new(self.transport.read(2)?);
+        let mut buffer = Cursor::new(self.transport.read_exact_to_vec(2)?);
         let mut action: u8 = 0;
         action.read(&mut buffer)?;
         if action == Action::FastPathActionX224 as u8 {
@@ -133,7 +133,7 @@ impl<S: Read + Write> Client<S> {
             let mut padding: u8 = 0;
             padding.read(&mut buffer)?;
             // now wait extended header
-            buffer = Cursor::new(self.transport.read(2)?);
+            buffer = Cursor::new(self.transport.read_exact_to_vec(2)?);
 
             let mut size = U16::BE(0);
             size.read(&mut buffer)?;
@@ -145,7 +145,7 @@ impl<S: Read + Write> Client<S> {
             }
             else {
                 // now wait for body
-                Ok(Payload::Raw(Cursor::new(self.transport.read(size.inner() as usize - 4)?)))
+                Ok(Payload::Raw(Cursor::new(self.transport.read_exact_to_vec(size.inner() as usize - 4)?)))
             }
         } else {
             // fast path
@@ -154,19 +154,19 @@ impl<S: Read + Write> Client<S> {
             short_length.read(&mut buffer)?;
             if short_length & 0x80 != 0 {
                 let mut hi_length: u8 = 0;
-                hi_length.read(&mut Cursor::new(self.transport.read(1)?))?;
+                hi_length.read(&mut Cursor::new(self.transport.read_exact_to_vec(1)?))?;
                 let length: u16 = u16::from(short_length & !0x80) << 8;
                 let length = length | u16::from(hi_length);
                 if length < 3 {
                     Err(Error::RdpError(RdpError::new(RdpErrorKind::InvalidSize, "Invalid minimal size for TPKT")))
                 } else {
-                    Ok(Payload::FastPath(sec_flag, Cursor::new(self.transport.read(length as usize - 3)?)))
+                    Ok(Payload::FastPath(sec_flag, Cursor::new(self.transport.read_exact_to_vec(length as usize - 3)?)))
                 }
             }
             else if short_length < 2 {
                 Err(Error::RdpError(RdpError::new(RdpErrorKind::InvalidSize, "Invalid minimal size for TPKT")))
             } else {
-                Ok(Payload::FastPath(sec_flag, Cursor::new(self.transport.read(short_length as usize - 2)?)))
+                Ok(Payload::FastPath(sec_flag, Cursor::new(self.transport.read_exact_to_vec(short_length as usize - 2)?)))
             }
          }
     }

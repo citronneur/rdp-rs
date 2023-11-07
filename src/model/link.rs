@@ -112,9 +112,9 @@ impl<S: Read + Write> Link<S> {
     /// use rdp::model::link::{Link, Stream};
     /// use std::io::Cursor;
     /// let mut link = Link::new(Stream::Raw(Cursor::new(vec![0, 1, 2])));
-    /// assert_eq!(link.read(2).unwrap(), [0, 1])
+    /// assert_eq!(link.read_exact_to_vec(2).unwrap(), [0, 1])
     /// ```
-    pub fn read(&mut self, expected_size: usize) -> RdpResult<Vec<u8>> {
+    pub fn read_exact_to_vec(&mut self, expected_size: usize) -> RdpResult<Vec<u8>> {
         if expected_size == 0 {
             let mut buffer = vec![0; 1500];
             let size = self.stream.read(&mut buffer)?;
