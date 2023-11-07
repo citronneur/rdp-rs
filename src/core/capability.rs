@@ -56,6 +56,7 @@ pub enum CapabilitySetType {
 ///     ]
 /// };
 /// ```
+#[derive(Debug)]
 pub struct Capability {
     pub cap_type: CapabilitySetType,
     pub message: Component

@@ -13,6 +13,7 @@ pub enum LicenseMessage {
 /// https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-rdpbcgr/73170ca2-5f82-4a2d-9d1b-b439f3d8dadc
 #[repr(u8)]
 #[allow(dead_code)]
+#[derive(Clone, Copy, Debug)]
 enum Preambule {
     PreambleVersion20 = 0x2,
     PreambleVersion30 = 0x3,
@@ -23,7 +24,7 @@ enum Preambule {
 /// which can follow a license preamble
 /// https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-rdpbcgr/73170ca2-5f82-4a2d-9d1b-b439f3d8dadc
 #[repr(u8)]
-#[derive(TryFromPrimitive)]
+#[derive(Clone, Copy, Debug, TryFromPrimitive)]
 pub enum MessageType {
     LicenseRequest = 0x01,
     PlatformChallenge = 0x02,
@@ -38,7 +39,7 @@ pub enum MessageType {
 /// Error code of the license automata
 /// https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-rdpbcgr/f18b6c9f-f3d8-4a0e-8398-f9b153233dca?redirectedfrom=MSDN
 #[repr(u32)]
-#[derive(PartialEq, Eq, TryFromPrimitive)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, TryFromPrimitive)]
 pub enum ErrorCode {
     ErrInvalidServerCertificate = 0x0000_0001,
     ErrNoLicense = 0x0000_0002,
@@ -55,7 +56,7 @@ pub enum ErrorCode {
 /// for license automata
 /// https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-rdpbcgr/f18b6c9f-f3d8-4a0e-8398-f9b153233dca
 #[repr(u32)]
-#[derive(PartialEq, Eq, TryFromPrimitive)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, TryFromPrimitive)]
 pub enum StateTransition {
     StTotalAbort = 0x0000_0001,
     StNoTransition = 0x0000_0002,
@@ -119,7 +120,6 @@ fn parse_payload(payload: &Component) -> RdpResult<LicenseMessage> {
 /// ```
 /// ```
 pub fn client_connect(s: &mut dyn Read) -> RdpResult<()> {
-
     let mut license_message = preamble();
     license_message.read(s)?;
 

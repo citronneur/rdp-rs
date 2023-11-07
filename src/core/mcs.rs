@@ -11,6 +11,7 @@ use yasna::{Tag};
 
 #[allow(dead_code)]
 #[repr(u8)]
+#[derive(Clone, Copy, Debug)]
 enum DomainMCSPDU {
     ErectDomainRequest = 1,
     DisconnectProviderUltimatum = 8,
@@ -157,6 +158,7 @@ fn read_channel_join_confirm(user_id: u16, channel_id: u16, buffer: &mut dyn Rea
 }
 
 /// MCS client channel
+#[derive(Debug)]
 pub struct Client<S> {
     /// X224 transport layer
     x224: x224::Client<S>,

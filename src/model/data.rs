@@ -79,6 +79,7 @@ macro_rules! cast {
 /// by providing some type depend fields
 ///
 /// This is control by the options function of Message Trait
+#[derive(Clone, Debug)]
 pub enum MessageOption {
     /// You ask to skip a field
     /// during reading operation
@@ -94,7 +95,7 @@ pub enum MessageOption {
 ///
 /// A message can be Read or Write from a Stream
 ///
-pub trait Message : Send {
+pub trait Message : Send + std::fmt::Debug {
     /// Write node to the Stream
     ///
     /// Write current element into a writable stream
@@ -519,7 +520,7 @@ impl Message for Component {
     }
 }
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug)]
 pub enum Value<Type> {
     /// Big Endianness
     BE(Type),
@@ -718,6 +719,7 @@ impl Message for U32 {
 
 /// This is a wrapper around
 /// a copyable message to check constness
+#[derive(Debug)]
 pub struct Check<T> {
     value: T
 }
@@ -867,8 +869,12 @@ impl Message for Vec<u8> {
 /// }
 /// ```
 pub type DynOptionFnSend<T> = dyn Fn(&T) -> MessageOption + Send;
+
+#[derive(derivative::Derivative)]
+#[derivative(Debug)]
 pub struct DynOption<T> {
     inner: T,
+    #[derivative(Debug="ignore")]
     filter: Box<DynOptionFnSend<T>>
 }
 
@@ -1088,10 +1094,14 @@ impl<T: Message> Message for Option<T> {
 /// Means during read operation it will call
 /// A factory callback to fill the result trame
 pub type ArrayFnSend<T> = dyn Fn() -> T + Send;
+
+#[derive(derivative::Derivative)]
+#[derivative(Debug)]
 pub struct Array<T> {
     /// This is the inner trame
     inner: Trame,
     /// function call to build each element of the array
+    #[derivative(Debug="ignore")]
     factory: Box<ArrayFnSend<T>>
 }
 

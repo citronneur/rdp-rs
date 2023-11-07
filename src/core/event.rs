@@ -8,6 +8,7 @@ use num_enum::TryFromPrimitive;
 ///
 /// If bitmap is compress you can use the
 /// decompress function to handle it
+#[derive(Debug, Clone)]
 pub struct BitmapEvent {
     /// Pixel position from left of the left top angle
     pub dest_left: u16,
@@ -100,7 +101,7 @@ impl BitmapEvent {
 }
 
 #[repr(u8)]
-#[derive(Eq, PartialEq, TryFromPrimitive, Copy, Clone)]
+#[derive(Debug, Eq, PartialEq, TryFromPrimitive, Copy, Clone)]
 pub enum PointerButton {
     /// No button but a move
     None = 0,
@@ -113,6 +114,7 @@ pub enum PointerButton {
 }
 
 /// A mouse pointer event
+#[derive(Debug, Clone, Copy)]
 pub struct PointerEvent {
     /// horizontal position from top left angle of the window
     pub x: u16,
@@ -127,6 +129,7 @@ pub struct PointerEvent {
 /// Keyboard event
 /// It's a raw event using Scancode
 /// to inform which key is pressed
+#[derive(Debug, Clone, Copy)]
 pub struct KeyboardEvent {
     /// Scancode of the key
     pub code: u16,
@@ -135,6 +138,7 @@ pub struct KeyboardEvent {
 }
 
 /// All event handle by RDP protocol implemented by rdp-rs
+#[derive(Debug, Clone)]
 pub enum RdpEvent {
     /// Classic bitmap event
     Bitmap(BitmapEvent),

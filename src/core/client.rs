@@ -20,6 +20,7 @@ impl From<&str> for KeyboardLayout {
     }
 }
 
+#[derive(Debug)]
 pub struct RdpClient<S> {
     /// Multi channel
     /// This is the main switch layer of the protocol
@@ -140,6 +141,7 @@ impl<S: Read + Write> RdpClient<S> {
     }
 }
 
+#[derive(Debug)]
 pub struct Connector {
     /// Screen width
     width: u16,

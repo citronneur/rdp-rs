@@ -8,7 +8,7 @@ use std::io::{Read, Write};
 use std::option::{Option};
 
 #[repr(u8)]
-#[derive(Copy, Clone, TryFromPrimitive)]
+#[derive(Copy, Clone, Debug, TryFromPrimitive)]
 pub enum NegotiationType {
     /// Negotiation Request
     /// Send from client to server
@@ -36,7 +36,7 @@ pub enum Protocols {
     ProtocolHybridEx = 0x08
 }
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug)]
 pub enum MessageType {
     X224TPDUConnectionRequest = 0xE0,
     X224TPDUConnectionConfirm = 0xD0,
@@ -47,6 +47,7 @@ pub enum MessageType {
 
 /// Credential mode
 #[repr(u8)]
+#[derive(Copy, Clone, Debug)]
 pub enum RequestMode {
     /// Restricted admin mode
     /// Use to auth only with NLA mode
@@ -110,6 +111,7 @@ fn x224_header() -> Component {
 }
 
 /// x224 client
+#[derive(Debug)]
 pub struct Client<S> {
     /// Transport layer, x224 use a tpkt
     transport: tpkt::Client<S>,

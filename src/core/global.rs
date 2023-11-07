@@ -25,6 +25,7 @@ enum PduType {
 /// PDU type available
 /// Most of them are used for initial handshake
 /// Then once connected only Data are send and received
+#[derive(Debug)]
 struct Pdu {
     pub pdu_type: PduType,
     pub message: Component
@@ -121,7 +122,7 @@ fn share_data_header(share_id: Option<u32>, pdu_type_2: Option<PduType2>, messag
             "pad1" => 0_u8,
             "streamId" => 1_u8,
             "uncompressedLength" => DynOption::new(U16::LE(default_message.length() as u16 + 18), | size | MessageOption::Size("payload".to_string(), size.inner() as usize - 18)),
-            "pduType2" => pdu_type_2.unwrap_or(PduType2::Pdutype2ArcStatusPdu) as u8,
+            "pduType2" => pdu_type_2.unwrap_or(PduType2::ArcStatusPdu) as u8,
             "compressedType" => 0_u8,
             "compressedLength" => U16::LE(0),
             "payload" => default_message
@@ -145,34 +146,35 @@ fn share_control_header(pdu_type: Option<PduType>, pdu_source: Option<u16>, mess
 #[derive(Debug, TryFromPrimitive, Copy, Clone, Eq, PartialEq)]
 #[repr(u8)]
 enum PduType2 {
-    Pdutype2Update = 0x02,
-    Pdutype2Control = 0x14,
-    Pdutype2Pointer = 0x1B,
-    Pdutype2Input = 0x1C,
-    Pdutype2Synchronize = 0x1F,
-    Pdutype2RefreshRect = 0x21,
-    Pdutype2PlaySound = 0x22,
-    Pdutype2SuppressOutput = 0x23,
-    Pdutype2ShutdownRequest = 0x24,
-    Pdutype2ShutdownDenied = 0x25,
-    Pdutype2SaveSessionInfo = 0x26,
-    Pdutype2Fontlist = 0x27,
-    Pdutype2Fontmap = 0x28,
-    Pdutype2SetKeyboardIndicators = 0x29,
-    Pdutype2BitmapcachePersistentList = 0x2B,
-    Pdutype2BitmapcacheErrorPdu = 0x2C,
-    Pdutype2SetKeyboardImeStatus = 0x2D,
-    Pdutype2OffscrcacheErrorPdu = 0x2E,
-    Pdutype2SetErrorInfoPdu = 0x2F,
-    Pdutype2DrawninegridErrorPdu = 0x30,
-    Pdutype2DrawgdiplusErrorPdu = 0x31,
-    Pdutype2ArcStatusPdu = 0x32,
-    Pdutype2StatusInfoPdu = 0x36,
-    Pdutype2MonitorLayoutPdu = 0x37,
+    Update = 0x02,
+    Control = 0x14,
+    Pointer = 0x1B,
+    Input = 0x1C,
+    Synchronize = 0x1F,
+    RefreshRect = 0x21,
+    PlaySound = 0x22,
+    SuppressOutput = 0x23,
+    ShutdownRequest = 0x24,
+    ShutdownDenied = 0x25,
+    SaveSessionInfo = 0x26,
+    Fontlist = 0x27,
+    Fontmap = 0x28,
+    SetKeyboardIndicators = 0x29,
+    BitmapcachePersistentList = 0x2B,
+    BitmapcacheErrorPdu = 0x2C,
+    SetKeyboardImeStatus = 0x2D,
+    OffscrcacheErrorPdu = 0x2E,
+    SetErrorInfoPdu = 0x2F,
+    DrawninegridErrorPdu = 0x30,
+    DrawgdiplusErrorPdu = 0x31,
+    ArcStatusPdu = 0x32,
+    StatusInfoPdu = 0x36,
+    MonitorLayoutPdu = 0x37,
     Unknown
 }
 
 /// Data PDU container
+#[derive(Debug)]
 struct DataPdu {
     pdu_type: PduType2,
     message: Component
@@ -185,11 +187,11 @@ impl DataPdu {
     pub fn from_pdu(data_pdu: &Pdu) -> RdpResult<DataPdu> {
         let pdu_type = PduType2::try_from(cast!(DataType::U8, data_pdu.message["pduType2"])?)?;
         let mut result = match pdu_type {
-            PduType2::Pdutype2Synchronize => ts_synchronize_pdu(None),
-            PduType2::Pdutype2Control => ts_control_pdu(None),
-            PduType2::Pdutype2Fontlist => ts_font_list_pdu(),
-            PduType2::Pdutype2Fontmap => ts_font_map_pdu(),
-            PduType2::Pdutype2SetErrorInfoPdu => ts_set_error_info_pdu(),
+            PduType2::Synchronize => ts_synchronize_pdu(None),
+            PduType2::Control => ts_control_pdu(None),
+            PduType2::Fontlist => ts_font_list_pdu(),
+            PduType2::Fontmap => ts_font_map_pdu(),
+            PduType2::SetErrorInfoPdu => ts_set_error_info_pdu(),
             _ => return Err(Error::RdpError(RdpError::new(RdpErrorKind::NotImplemented, &format!("GLOBAL: Data PDU parsing not implemented {:?}", pdu_type))))
         };
         result.message.read(&mut Cursor::new(cast!(DataType::Slice, data_pdu.message["payload"])?))?;
@@ -202,7 +204,7 @@ impl DataPdu {
 /// https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-rdpbcgr/3fb4c95e-ad2d-43d1-a46f-5bd49418da49
 fn ts_synchronize_pdu(target_user: Option<u16>) -> DataPdu {
     DataPdu {
-        pdu_type: PduType2::Pdutype2Synchronize,
+        pdu_type: PduType2::Synchronize,
         message: component![
             "messageType" => Check::new(U16::LE(1)),
             "targetUser" => Some(U16::LE(target_user.unwrap_or(0)))
@@ -215,7 +217,7 @@ fn ts_synchronize_pdu(target_user: Option<u16>) -> DataPdu {
 /// https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-rdpbcgr/e373575a-01e2-43a7-a6d8-e1952b83e787
 fn ts_font_list_pdu() -> DataPdu {
     DataPdu {
-        pdu_type: PduType2::Pdutype2Fontlist,
+        pdu_type: PduType2::Fontlist,
         message: component![
             "numberFonts" => U16::LE(0),
             "totalNumFonts" => U16::LE(0),
@@ -230,7 +232,7 @@ fn ts_font_list_pdu() -> DataPdu {
 /// https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-rdpbcgr/a21a1bd9-2303-49c1-90ec-3932435c248c
 fn ts_set_error_info_pdu() -> DataPdu {
     DataPdu {
-        pdu_type: PduType2::Pdutype2SetErrorInfoPdu,
+        pdu_type: PduType2::SetErrorInfoPdu,
         message: component![
             "errorInfo" => U32::LE(0)
         ]
@@ -239,6 +241,7 @@ fn ts_set_error_info_pdu() -> DataPdu {
 
 #[repr(u16)]
 #[allow(dead_code)]
+#[derive(Clone, Copy, Debug)]
 enum Action {
     RequestControl = 0x0001,
     GrantedControl = 0x0002,
@@ -251,7 +254,7 @@ enum Action {
 /// https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-rdpbcgr/0448f397-aa11-455d-81b1-f1265085239d
 fn ts_control_pdu(action: Option<Action>) -> DataPdu {
     DataPdu {
-        pdu_type: PduType2::Pdutype2Control,
+        pdu_type: PduType2::Control,
         message: component![
             "action" => U16::LE(action.unwrap_or(Action::Cooperate) as u16),
             "grantId" => U16::LE(0),
@@ -265,7 +268,7 @@ fn ts_control_pdu(action: Option<Action>) -> DataPdu {
 /// https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-rdpbcgr/b4e557f3-7540-46fc-815d-0c12299cf1ee
 fn ts_font_map_pdu() -> DataPdu {
     DataPdu {
-        pdu_type: PduType2::Pdutype2Fontmap,
+        pdu_type: PduType2::Fontmap,
         message: component![
             "numberEntries" => U16::LE(0),
             "totalNumEntries" => U16::LE(0),
@@ -279,7 +282,7 @@ fn ts_font_map_pdu() -> DataPdu {
 fn ts_input_pdu_data(events: Option<Array<Component>>) -> DataPdu {
     let default_events = events.unwrap_or(Array::new(|| ts_input_event(None, None)));
     DataPdu {
-        pdu_type: PduType2::Pdutype2Input,
+        pdu_type: PduType2::Input,
         message: component![
             "numEvents" => U16::LE(default_events.inner().len() as u16),
             "pad2Octets" => U16::LE(0),
@@ -301,6 +304,7 @@ fn ts_input_event(message_type: Option<InputEventType>, data: Option<Vec<u8>>) -
 ///
 /// https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-rdpbcgr/a9a26b3d-84a2-495f-83fc-9edd6601f33b
 #[repr(u16)]
+#[derive(Clone, Copy, Debug)]
 pub enum InputEventType {
     InputEventSync = 0x0000,
     InputEventUnused = 0x0002,
@@ -311,6 +315,7 @@ pub enum InputEventType {
 }
 
 /// All Terminal Service Slow Path Input Event
+#[derive(Debug)]
 pub struct TSInputEvent {
     event_type: InputEventType,
     message: Component
@@ -320,6 +325,7 @@ pub struct TSInputEvent {
 ///
 /// https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-rdpbcgr/2c1ced34-340a-46cd-be6e-fc8cab7c3b17
 #[repr(u16)]
+#[derive(Clone, Copy, Debug)]
 pub enum PointerFlag {
     PtrflagsHwheel = 0x0400,
     PtrflagsWheel = 0x0200,
@@ -347,6 +353,7 @@ pub fn ts_pointer_event(flags: Option<u16>, x: Option<u16>, y: Option<u16>) -> T
 }
 
 #[repr(u16)]
+#[derive(Clone, Copy, Debug)]
 pub enum KeyboardFlag {
     KbdflagsExtended = 0x0100,
     KbdflagsDown = 0x4000,
@@ -403,6 +410,7 @@ enum FastPathUpdateType {
     Unknown
 }
 
+#[derive(Debug)]
 struct FastPathUpdate{
     fp_type: FastPathUpdateType,
     message: Component
@@ -434,6 +442,7 @@ fn ts_cd_header() -> Component {
 }
 
 #[repr(u16)]
+#[derive(Clone, Copy, Debug)]
 enum BitmapFlag {
     BitmapCompression = 0x0001,
     NoBitmapCompressionHdr = 0x0400,
@@ -514,6 +523,7 @@ fn ts_fp_systempointerhiddenattribute() -> FastPathUpdate {
     }
 }
 
+#[derive(Clone, Copy, Debug)]
 enum ClientState {
     /// Wait for demand active pdu from server
     DemandActivePDU,
@@ -530,6 +540,7 @@ enum ClientState {
     Data
 }
 
+#[derive(Debug)]
 pub struct Client {
     /// Current state of the connection sequence
     state: ClientState,
@@ -614,7 +625,7 @@ impl Client {
         if pdu.pdu_type != PduType::Datapdu {
             return Ok(false)
         }
-        if DataPdu::from_pdu(&pdu)?.pdu_type != PduType2::Pdutype2Synchronize {
+        if DataPdu::from_pdu(&pdu)?.pdu_type != PduType2::Synchronize {
             return Ok(false)
         }
         Ok(true)
@@ -630,7 +641,7 @@ impl Client {
         }
 
         let data_pdu = DataPdu::from_pdu(&pdu)?;
-        if data_pdu.pdu_type != PduType2::Pdutype2Control {
+        if data_pdu.pdu_type != PduType2::Control {
             return Ok(false)
         }
 
@@ -649,7 +660,7 @@ impl Client {
         if pdu.pdu_type != PduType::Datapdu {
             return Ok(false)
         }
-        if DataPdu::from_pdu(&pdu)?.pdu_type != PduType2::Pdutype2Fontmap {
+        if DataPdu::from_pdu(&pdu)?.pdu_type != PduType2::Fontmap {
             return Ok(false)
         }
         Ok(true)
@@ -680,7 +691,7 @@ impl Client {
             match DataPdu::from_pdu(&pdu) {
                 Ok(data_pdu) => {
                     match data_pdu.pdu_type {
-                        PduType2::Pdutype2SetErrorInfoPdu => println!("GLOBAL: Receive error PDU from server {:?}", cast!(DataType::U32, data_pdu.message["errorInfo"])?),
+                        PduType2::SetErrorInfoPdu => println!("GLOBAL: Receive error PDU from server {:?}", cast!(DataType::U32, data_pdu.message["errorInfo"])?),
                         _ => println!("GLOBAL: Data PDU not handle {:?}", data_pdu.pdu_type)
                     }
                 },

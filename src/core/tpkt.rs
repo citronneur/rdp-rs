@@ -6,6 +6,7 @@ use crate::nla::sspi::AuthenticationProtocol;
 use std::io::{Cursor, Write, Read};
 
 /// TPKT must implement this two kind of payload
+#[derive(Clone, Debug)]
 pub enum Payload {
     Raw(Cursor<Vec<u8>>),
     FastPath(u8, Cursor<Vec<u8>>)
@@ -14,7 +15,7 @@ pub enum Payload {
 /// TPKT action header
 /// # see : https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-rdpbcgr/b8e7c588-51cb-455b-bb73-92d480903133
 /// # see : https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-rdpbcgr/68b5ee54-d0d5-4d65-8d81-e1c4025f7597
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug)]
 pub enum Action {
     FastPathActionFastPath = 0x0,
     FastPathActionX224 = 0x3
@@ -41,6 +42,7 @@ fn tpkt_header(size: u16) -> Component {
 /// let mut stream = Cursor::new(vec![]);
 /// let tpkt_client = Client::new(Link::new(Stream::Raw(stream)));
 /// ```
+#[derive(Debug)]
 pub struct Client<S> {
     transport: Link<S>
 }

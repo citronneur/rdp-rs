@@ -10,6 +10,7 @@ use std::io::{Write, Read};
 /// https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-rdpbcgr/e13405c5-668b-4716-94b2-1c2654ca1ad4?redirectedfrom=MSDN
 #[repr(u16)]
 #[allow(dead_code)]
+#[derive(Clone, Copy, Debug)]
 enum SecurityFlag {
     SecExchangePkt = 0x0001,
     SecTransportReq = 0x0002,
@@ -31,6 +32,7 @@ enum SecurityFlag {
 /// RDP option someone links to capabilities
 /// https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-rdpbcgr/732394f5-e2b5-4ac5-8a0a-35345386b0d1?redirectedfrom=MSDN
 #[allow(dead_code)]
+#[derive(Clone, Copy, Debug)]
 enum InfoFlag {
     Mouse = 0x0000_0001,
     Disablectrlaltdel = 0x0000_0002,
@@ -54,6 +56,7 @@ enum InfoFlag {
 }
 
 #[allow(dead_code)]
+#[derive(Clone, Copy, Debug)]
 enum AfInet {
     AfInet = 0x00002,
     AfInet6 = 0x0017

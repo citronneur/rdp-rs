@@ -5,6 +5,7 @@ use std::io::{Cursor, Read, Write};
 
 /// This a wrapper to work equals
 /// for a stream and a TLS stream
+#[derive(Debug)]
 pub enum Stream<S> {
     /// Raw stream that implement Read + Write
     Raw(S),
@@ -85,6 +86,7 @@ impl<S: Read + Write> Stream<S> {
 
 /// Link layer is a wrapper around TCP or SSL stream
 /// It can swicth from TCP to SSL
+#[derive(Debug)]
 pub struct Link<S> {
     stream: Stream<S>
 }

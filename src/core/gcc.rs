@@ -13,7 +13,7 @@ const H221_SC_KEY: [u8; 4] = *b"McDn";
 /// https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-rdpbcgr/00f1da4a-ee9c-421a-852f-c19f92343d73?redirectedfrom=MSDN
 #[repr(u32)]
 #[allow(dead_code)]
-#[derive(Copy, Clone, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Version {
     RdpVersion = 0x0008_0001,
     RdpVersion5plus = 0x0008_0004,
@@ -35,6 +35,7 @@ impl From<u32> for Version {
 /// https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-rdpbcgr/00f1da4a-ee9c-421a-852f-c19f92343d73?redirectedfrom=MSDN
 #[repr(u16)]
 #[allow(dead_code)]
+#[derive(Clone, Copy, Debug)]
 enum ColorDepth {
     RnsUdColor8BPP = 0xCA01,
     RnsUdColor16BPP555 = 0xCA02,
@@ -43,6 +44,7 @@ enum ColorDepth {
 }
 
 #[repr(u16)]
+#[derive(Clone, Copy, Debug)]
 enum Sequence {
     RnsUdSasDel = 0xAA03
 }
@@ -50,7 +52,7 @@ enum Sequence {
 /// Keyboard layout
 /// https://docs.microsoft.com/en-us/previous-versions/windows/it-pro/windows-vista/cc766503(v=ws.10)?redirectedfrom=MSDN
 #[repr(u32)]
-#[derive(Copy, Clone, Debug)]
+#[derive(Clone, Copy, Debug)]
 pub enum KeyboardLayout {
     Arabic = 0x0000_0401,
     Bulgarian = 0x0000_0402,
@@ -77,6 +79,7 @@ pub enum KeyboardLayout {
 /// `Ibm101102Keys` is the most common keyboard type
 #[repr(u32)]
 #[allow(dead_code)]
+#[derive(Clone, Copy, Debug)]
 pub enum KeyboardType {
     IbmPcXt83Key  = 0x0000_0001,
     Olivetti  = 0x0000_0002,
@@ -90,6 +93,7 @@ pub enum KeyboardType {
 #[repr(u16)]
 #[allow(dead_code)]
 #[allow(clippy::enum_variant_names)]
+#[derive(Clone, Copy, Debug)]
 enum HighColor {
     HighColor4BPP = 0x0004,
     HighColor8BPP = 0x0008,
@@ -98,11 +102,11 @@ enum HighColor {
     HighColor24BPP = 0x0018
 }
 
-
 /// Supported color depth
 /// https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-rdpbcgr/00f1da4a-ee9c-421a-852f-c19f92343d73?redirectedfrom=MSDN
 #[repr(u16)]
 #[allow(dead_code)]
+#[derive(Clone, Copy, Debug)]
 enum Support {
     RnsUd24BPP = 0x0001,
     RnsUd16BPP = 0x0002,
@@ -114,6 +118,7 @@ enum Support {
 /// https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-rdpbcgr/00f1da4a-ee9c-421a-852f-c19f92343d73?redirectedfrom=MSDN
 #[repr(u16)]
 #[allow(dead_code)]
+#[derive(Clone, Copy, Debug)]
 enum CapabilityFlag {
     RnsUdCsSupportErrinfoPDU = 0x0001,
     RnsUdCsWant32BPPSession = 0x0002,
@@ -132,6 +137,7 @@ enum CapabilityFlag {
 /// https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-rdpbcgr/6b58e11e-a32b-4903-b736-339f3cfe46ec?redirectedfrom=MSDN
 #[repr(u32)]
 #[allow(dead_code)]
+#[derive(Clone, Copy, Debug)]
 enum EncryptionMethod {
     EncryptionFlag40bit = 0x0000_0001,
     EncryptionFlag128bit = 0x0000_0002,
@@ -142,6 +148,7 @@ enum EncryptionMethod {
 /// Encryption level
 /// https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-rdpbcgr/3e86b68d-3e2e-4433-b486-878875778f4b?redirectedfrom=MSDN
 #[allow(dead_code)]
+#[derive(Clone, Copy, Debug)]
 enum EncryptionLevel {
     None = 0x0000_0000,
     Low = 0x0000_0001,
@@ -151,7 +158,7 @@ enum EncryptionLevel {
 }
 
 #[repr(u16)]
-#[derive(Eq, PartialEq, Hash)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
 pub enum MessageType  {
     //server -> client
     ScCore = 0x0C01,
@@ -184,7 +191,7 @@ impl From<u16> for MessageType {
 
 /// In case of client
 /// This is all mandatory fields need by client core data
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct ClientData {
     pub width: u16,
     pub height: u16,
@@ -324,6 +331,7 @@ pub fn write_conference_create_request(user_data: &[u8]) ->RdpResult<Vec<u8>> {
     Ok(result.into_inner())
 }
 
+#[derive(Clone, Debug)]
 pub struct ServerData {
     pub channel_ids: Vec<u16>,
     pub rdp_version : Version
