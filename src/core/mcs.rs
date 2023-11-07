@@ -4,10 +4,9 @@ use crate::core::tpkt;
 use crate::core::x224;
 use crate::model::data::{Trame, to_vec, Message, DataType, U16};
 use crate::model::error::{RdpResult, Error, RdpError, RdpErrorKind};
-use crate::nla::asn1::{Sequence, ImplicitTag, OctetString, Enumerate, ASN1Type, Integer, to_der, from_ber};
 use std::collections::HashMap;
 use std::io::{Write, Read, BufRead, Cursor};
-use yasna::{Tag};
+use rasn::{AsnType, types::OctetString};
 
 #[allow(dead_code)]
 #[repr(u8)]
@@ -26,46 +25,114 @@ enum DomainMCSPDU {
 /// ASN1 structure use by mcs layer
 /// to inform on conference capability
 #[allow(clippy::too_many_arguments)]
-fn domain_parameters(max_channel_ids: u32, maw_user_ids: u32, max_token_ids: u32,
-                     num_priorities: u32, min_thoughput: u32, max_height: u32,
-                     max_mcs_pdu_size: u32, protocol_version: u32) -> Sequence {
-    sequence![
-        "maxChannelIds" => max_channel_ids,
-        "maxUserIds" => maw_user_ids,
-        "maxTokenIds" => max_token_ids,
-        "numPriorities" => num_priorities,
-        "minThoughput" => min_thoughput,
-        "maxHeight" => max_height,
-        "maxMCSPDUsize" => max_mcs_pdu_size,
-        "protocolVersion" => protocol_version
-    ]
+fn domain_parameters(max_channel_ids: u32, max_user_ids: u32, max_token_ids: u32,
+                     num_priorities: u32, min_throughput: u32, max_height: u32,
+                     max_mcs_pdu_size: u32, protocol_version: u32) -> DomainParameters {
+    DomainParameters {
+        max_channel_ids,
+        max_user_ids,
+        max_token_ids,
+        num_priorities,
+        min_throughput,
+        max_height,
+        max_mcs_pdu_size,
+        protocol_version,
+    }
+}
+
+#[derive(Debug, Copy, Clone, AsnType, rasn::Encode, rasn::Decode)]
+struct DomainParameters {
+    max_channel_ids: u32,
+    max_user_ids: u32,
+    max_token_ids: u32,
+    num_priorities: u32,
+    min_throughput: u32,
+    max_height: u32,
+    max_mcs_pdu_size: u32,
+    protocol_version: u32,
+}
+
+#[derive(Debug, AsnType, rasn::Encode)]
+#[rasn(tag(application, 101))]
+struct ConnectInitial {
+    calling_domain_selector: OctetString,
+    called_domain_selector: OctetString,
+    upward_flag: bool,
+    target_params: DomainParameters,
+    min_params: DomainParameters,
+    max_params: DomainParameters,
+    user_data: OctetString,
+}
+
+#[derive(Debug, AsnType, rasn::Encode, rasn::Decode)]
+#[rasn(tag(application, 102))]
+struct ConnectResponse {
+    result: ResultCode,
+    called_connect_id: rasn::types::Integer,
+    domain_parameters: DomainParameters,
+    user_data: OctetString,
+}
+
+#[derive(Debug, Copy, Clone, PartialEq, AsnType, rasn::Encode, rasn::Decode)]
+#[rasn(enumerated)]
+enum ResultCode {
+    Successful,
+    DomainMerging,
+    DomainNotHierarchical,
+    NoSuchChannel,
+    NoSuchDomain,
+    NoSuchUser,
+    NotAdmitted,
+    OtherUserId,
+    ParametersUnacceptable,
+    TokenNotAvailable,
+    TokenNotPossessed,
+    TooManyChannels,
+    TooManyTokens,
+    TooManyUsers,
+    UnspecifiedFailure,
+    UserRejected,
+}
+
+fn to_der<E: rasn::Encode + std::fmt::Debug>(v: &E) -> RdpResult<Vec<u8>> {
+    Ok(rasn::der::encode(v).map_err(|e| RdpError::new(
+        RdpErrorKind::Asn1Encoding,
+        &e.to_string()
+    ))?)
+}
+
+fn from_ber<D: rasn::Decode>(value: &mut D, data: &[u8]) -> RdpResult<()> {
+    *value = rasn::ber::decode(data).map_err(|e| RdpError::new(
+        RdpErrorKind::Asn1Decoding,
+        &e.to_string()
+    ))?;
+    Ok(())
 }
 
 /// First MCS payload send from client to server
 /// Payload send from client to server
 ///
 /// http://www.itu.int/rec/T-REC-T.125-199802-I/en page 25
-fn connect_initial(user_data: Option<OctetString>) -> ImplicitTag<Sequence> {
-    ImplicitTag::new(Tag::application(101), sequence![
-        "callingDomainSelector" => vec![1_u8] as OctetString,
-        "calledDomainSelector" => vec![1_u8] as OctetString,
-        "upwardFlag" => true,
-        "targetParameters" => domain_parameters(34, 2, 0, 1, 0, 1, 0xffff, 2),
-        "minimumParameters" => domain_parameters(1, 1, 1, 1, 0, 1, 0x420, 2),
-        "maximumParameters" => domain_parameters(0xffff, 0xfc17, 0xffff, 1, 0, 1, 0xffff, 2),
-        "userData" => user_data.unwrap_or_default()
-    ])
+fn connect_initial(user_data: Option<Vec<u8>>) -> ConnectInitial {
+    ConnectInitial {
+        calling_domain_selector: vec![1_u8].into(),
+        called_domain_selector: vec![1_u8].into(),
+        upward_flag: true,
+        target_params: domain_parameters(34, 2, 0, 1, 0, 1, 0xffff, 2),
+        min_params: domain_parameters(1, 1, 1, 1, 0, 1, 0x420, 2),
+        max_params: domain_parameters(0xffff, 0xfc17, 0xffff, 1, 0, 1, 0xffff, 2),
+        user_data: user_data.unwrap_or_default().into(),
+    }
 }
 
 /// Server response with channel capacity
-fn connect_response(user_data: Option<OctetString>) -> ImplicitTag<Sequence> {
-    ImplicitTag::new(Tag::application(102),
-sequence![
-        "result" => 0 as Enumerate,
-        "calledConnectId" => 0 as Integer,
-        "domainParameters" => domain_parameters(22, 3, 0, 1, 0, 1,0xfff8, 2),
-        "userData" => user_data.unwrap_or_default()
-    ])
+fn connect_response(user_data: Option<Vec<u8>>) -> ConnectResponse {
+    ConnectResponse {
+        result: ResultCode::Successful,
+        called_connect_id: 0.into(),
+        domain_parameters: domain_parameters(22, 3, 0, 1, 0, 1,0xfff8, 2),
+        user_data: user_data.unwrap_or_default().into(),
+    }
 }
 
 /// Create a basic MCS PDU header
@@ -200,7 +267,7 @@ impl<S: Read + Write> Client<S> {
             trame![block_header(Some(MessageType::CsNet), Some(client_network_data.length() as u16)), client_network_data]
         ]);
         let conference = write_conference_create_request(&user_data)?;
-        self.x224.write(to_der(&connect_initial(Some(conference))))
+        self.x224.write(to_der(&connect_initial(Some(conference)))?)
     }
 
     /// Read a connect response comming from server to client
@@ -212,7 +279,7 @@ impl<S: Read + Write> Client<S> {
 
         // Get server data
         // Read conference create response
-        let cc_response = cast!(ASN1Type::OctetString, connect_response.inner["userData"])?;
+        let cc_response = connect_response.user_data;
         self.server_data = Some(read_conference_create_response(&mut Cursor::new(cc_response))?);
         Ok(())
     }
@@ -377,21 +444,21 @@ mod test {
     /// Test domain parameters format
     #[test]
     fn test_domain_parameters() {
-        let result = to_der(&domain_parameters(1,2,3,4, 5, 6, 7, 8));
+        let result = to_der(&domain_parameters(1,2,3,4, 5, 6, 7, 8)).expect("DER encoding failed");
         assert_eq!(result, vec![48, 24, 2, 1, 1, 2, 1, 2, 2, 1, 3, 2, 1, 4, 2, 1, 5, 2, 1, 6, 2, 1, 7, 2, 1, 8]);
     }
 
     /// Test connect initial
     #[test]
     fn test_connect_initial() {
-        let result = to_der(&connect_initial(Some(vec![1, 2, 3])));
+        let result = to_der(&connect_initial(Some(vec![1, 2, 3]))).expect("DER encoding failed");
         assert_eq!(result, vec![127, 101, 103, 4, 1, 1, 4, 1, 1, 1, 1, 255, 48, 26, 2, 1, 34, 2, 1, 2, 2, 1, 0, 2, 1, 1, 2, 1, 0, 2, 1, 1, 2, 3, 0, 255, 255, 2, 1, 2, 48, 25, 2, 1, 1, 2, 1, 1, 2, 1, 1, 2, 1, 1, 2, 1, 0, 2, 1, 1, 2, 2, 4, 32, 2, 1, 2, 48, 32, 2, 3, 0, 255, 255, 2, 3, 0, 252, 23, 2, 3, 0, 255, 255, 2, 1, 1, 2, 1, 0, 2, 1, 1, 2, 3, 0, 255, 255, 2, 1, 2, 4, 3, 1, 2, 3]);
     }
 
     /// Test connect response
     #[test]
     fn test_connect_response() {
-        let result = to_der(&connect_response(Some(vec![1, 2, 3])));
+        let result = to_der(&connect_response(Some(vec![1, 2, 3]))).expect("DER encoding failed");
         assert_eq!(result, vec![127, 102, 39, 10, 1, 0, 2, 1, 0, 48, 26, 2, 1, 22, 2, 1, 3, 2, 1, 0, 2, 1, 1, 2, 1, 0, 2, 1, 1, 2, 3, 0, 255, 248, 2, 1, 2, 4, 3, 1, 2, 3]);
     }
 }

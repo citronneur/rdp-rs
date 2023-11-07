@@ -78,7 +78,13 @@ pub enum RdpErrorKind {
     Unknown,
 
     #[error("Unexpected type")]
-    UnexpectedType
+    UnexpectedType,
+
+    #[error("ASN.1 decoding error")]
+    Asn1Decoding,
+
+    #[error("ASN.1 encoding error")]
+    Asn1Encoding,
 }
 
 #[derive(Debug)]
