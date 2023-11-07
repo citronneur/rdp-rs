@@ -86,7 +86,7 @@ impl<S: Read + Write> Link<S> {
     /// # use std::io::Cursor;
     /// # fn main() {
     ///     let mut link = Link::new(Stream::Raw(Cursor::new(vec![])));
-    ///     link.write(&component![
+    ///     link.write_msg(&component![
     ///         "foo" => U32::LE(1)
     ///     ]).unwrap();
     ///
@@ -98,7 +98,7 @@ impl<S: Read + Write> Link<S> {
     ///     }
     /// # }
     /// ```
-    pub fn write(&mut self, message: &dyn Message) -> RdpResult<()> {
+    pub fn write_msg(&mut self, message: &dyn Message) -> RdpResult<()> {
         let mut buffer = Vec::new();
         message.write(&mut buffer)?;
         self.stream.write_all(&buffer)?;

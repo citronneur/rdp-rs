@@ -82,7 +82,7 @@ impl<S: Read + Write> Client<S> {
     /// ```
     pub fn write<T: 'static>(&mut self, message: T) -> RdpResult<()>
     where T: Message {
-        self.transport.write(
+        self.transport.write_msg(
             &trame![
                 tpkt_header(message.length() as u16),
                 message
