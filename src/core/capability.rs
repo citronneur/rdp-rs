@@ -338,25 +338,26 @@ pub enum InputFlags {
     /// Raw Keyboard scancode
     /// This is the most convenient way to send keyboard event
     /// This fearture is supported by rdp-rs
-    InputFlagScancodes = 0x0001,
+    Scancodes = 0x0001,
     /// This is the extended mouse event
     /// with more button code
     /// This feature is supported by rdp-rs
-    InputFlagMousex = 0x0004,
+    Mousex = 0x0004,
     /// The capability to send fastpath input
     /// This feature is NOT supported by rdp-rs
-    InputFlagFastpathInput = 0x0008,
+    FastpathInput = 0x0008,
     /// In order to send keyboard scancode
     /// We can send directly UNICODE code of char
     /// Usefull if we want to send script
     /// This feature is supported by rdp-rs
-    InputFlagUnicode = 0x0010,
-    InputFlagFastpathInput2 = 0x0020,
-    InputFlagUnused1 = 0x0040,
-    InputFlagUnused2 = 0x0080,
+    Unicode = 0x0010,
+    FastpathInput2 = 0x0020,
+    Unused1 = 0x0040,
+    MouseRelative = 0x0080,
     /// Support of the mouse wheel
     /// This feature is supported by rdp-rs
-    TsInputFlagMouseHwheel = 0x0100
+    MouseHwheel = 0x0100,
+    QoeTimestamps = 0x0200
 }
 
 /// Send input capability
@@ -368,7 +369,7 @@ pub enum InputFlags {
 /// use rdp::core::capability::{capability_set, ts_input_capability_set, InputFlags};
 /// use rdp::model::data::to_vec;
 /// use rdp::core::gcc::KeyboardLayout;
-/// let capability_set = capability_set(Some(ts_input_capability_set(Some(InputFlags::InputFlagScancodes as u16), Some(KeyboardLayout::French))));
+/// let capability_set = capability_set(Some(ts_input_capability_set(Some(InputFlags::Scancodes as u16), Some(KeyboardLayout::French))));
 /// assert_eq!(to_vec(&capability_set), vec![13, 0, 88, 0, 1, 0, 0, 0, 12, 4, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 12, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0])
 /// ```
 pub fn ts_input_capability_set(input_flags: Option<u16>, keyboard_layout: Option<KeyboardLayout>) -> Capability {

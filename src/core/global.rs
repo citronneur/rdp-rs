@@ -295,7 +295,7 @@ fn ts_input_pdu_data(events: Option<Array<Component>>) -> DataPdu {
 fn ts_input_event(message_type: Option<InputEventType>, data: Option<Vec<u8>>) -> Component {
     component![
         "eventTime" => U32::LE(0),
-        "messageType" => U16::LE(message_type.unwrap_or(InputEventType::InputEventMouse) as u16),
+        "messageType" => U16::LE(message_type.unwrap_or(InputEventType::Mouse) as u16),
         "slowPathInputData" => data.unwrap_or_default()
     ]
 }
@@ -306,12 +306,12 @@ fn ts_input_event(message_type: Option<InputEventType>, data: Option<Vec<u8>>) -
 #[repr(u16)]
 #[derive(Clone, Copy, Debug)]
 pub enum InputEventType {
-    InputEventSync = 0x0000,
-    InputEventUnused = 0x0002,
-    InputEventScancode = 0x0004,
-    InputEventUnicode = 0x0005,
-    InputEventMouse = 0x8001,
-    InputEventMousex = 0x8002
+    Sync = 0x0000,
+    Unused = 0x0002,
+    Scancode = 0x0004,
+    Unicode = 0x0005,
+    Mouse = 0x8001,
+    Mousex = 0x8002
 }
 
 /// All Terminal Service Slow Path Input Event
@@ -327,15 +327,15 @@ pub struct TSInputEvent {
 #[repr(u16)]
 #[derive(Clone, Copy, Debug)]
 pub enum PointerFlag {
-    PtrflagsHwheel = 0x0400,
-    PtrflagsWheel = 0x0200,
-    PtrflagsWheelNegative = 0x0100,
-    WheelRotationMask = 0x01FF,
-    PtrflagsMove = 0x0800,
-    PtrflagsDown = 0x8000,
-    PtrflagsButton1 = 0x1000,
-    PtrflagsButton2 = 0x2000,
-    PtrflagsButton3 = 0x4000
+    WheelH = 0x0400,
+    WheelV = 0x0200,
+    WheelNegative = 0x0100,
+    RotationMask = 0x01FF,
+    Move = 0x0800,
+    Down = 0x8000,
+    Button1 = 0x1000,
+    Button2 = 0x2000,
+    Button3 = 0x4000
 }
 
 /// A pointer event
@@ -343,7 +343,7 @@ pub enum PointerFlag {
 /// https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-rdpbcgr/2c1ced34-340a-46cd-be6e-fc8cab7c3b17
 pub fn ts_pointer_event(flags: Option<u16>, x: Option<u16>, y: Option<u16>) -> TSInputEvent {
     TSInputEvent {
-        event_type: InputEventType::InputEventMouse,
+        event_type: InputEventType::Mouse,
         message : component![
             "pointerFlags" => U16::LE(flags.unwrap_or(0)),
             "xPos" => U16::LE(x.unwrap_or(0)),
@@ -364,7 +364,7 @@ pub enum KeyboardFlag {
 /// Use to send scancode directly
 pub fn ts_keyboard_event(flags: Option<u16>, key_code: Option<u16>) -> TSInputEvent {
     TSInputEvent {
-        event_type: InputEventType::InputEventScancode,
+        event_type: InputEventType::Scancode,
         message: component![
             "keyboardFlags" => U16::LE(flags.unwrap_or(0)),
             "keyCode" => U16::LE(key_code.unwrap_or(0)),
@@ -396,18 +396,18 @@ fn ts_fp_update() -> Component {
 #[repr(u8)]
 #[derive(Debug, TryFromPrimitive, Copy, Clone, Eq, PartialEq)]
 enum FastPathUpdateType {
-    FastpathUpdatetypeOrders = 0x0,
-    FastpathUpdatetypeBitmap = 0x1,
-    FastpathUpdatetypePalette = 0x2,
-    FastpathUpdatetypeSynchronize = 0x3,
-    FastpathUpdatetypeSurfcmds = 0x4,
-    FastpathUpdatetypePtrNull = 0x5,
-    FastpathUpdatetypePtrDefault = 0x6,
-    FastpathUpdatetypePtrPosition = 0x8,
-    FastpathUpdatetypeColor = 0x9,
-    FastpathUpdatetypeCached = 0xA,
-    FastpathUpdatetypePointer = 0xB,
-    Unknown
+    Orders = 0x0,
+    Bitmap = 0x1,
+    Palette = 0x2,
+    Synchronize = 0x3,
+    Surfcmds = 0x4,
+    PtrNull = 0x5,
+    PtrDefault = 0x6,
+    PtrPosition = 0x8,
+    Color = 0x9,
+    Cached = 0xA,
+    Pointer = 0xB,
+    LargePointer = 0xC,
 }
 
 #[derive(Debug)]
@@ -421,10 +421,10 @@ impl FastPathUpdate {
     fn from_fp(fast_path: &Component) -> RdpResult<FastPathUpdate> {
         let fp_update_type = FastPathUpdateType::try_from(cast!(DataType::U8, fast_path["updateHeader"])? & 0xf)?;
         let mut result = match fp_update_type {
-            FastPathUpdateType::FastpathUpdatetypeBitmap => ts_fp_update_bitmap(),
-            FastPathUpdateType::FastpathUpdatetypeColor => ts_colorpointerattribute(),
-            FastPathUpdateType::FastpathUpdatetypeSynchronize => ts_fp_update_synchronize(),
-            FastPathUpdateType::FastpathUpdatetypePtrNull => ts_fp_systempointerhiddenattribute(),
+            FastPathUpdateType::Bitmap => ts_fp_update_bitmap(),
+            FastPathUpdateType::Color => ts_colorpointerattribute(),
+            FastPathUpdateType::Synchronize => ts_fp_update_synchronize(),
+            FastPathUpdateType::PtrNull => ts_fp_systempointerhiddenattribute(),
             _ => return Err(Error::RdpError(RdpError::new(RdpErrorKind::NotImplemented, &format!("GLOBAL: Fast Path parsing not implemented {:?}", fp_update_type))))
         };
         result.message.read(&mut Cursor::new(cast!(DataType::Slice, fast_path["updateData"])?))?;
@@ -474,9 +474,9 @@ fn ts_bitmap_data() -> Component {
 /// Fast Path bitmap update
 fn ts_fp_update_bitmap() -> FastPathUpdate {
     FastPathUpdate {
-        fp_type: FastPathUpdateType::FastpathUpdatetypeBitmap,
+        fp_type: FastPathUpdateType::Bitmap,
         message: component![
-            "header" => Check::new(U16::LE(FastPathUpdateType::FastpathUpdatetypeBitmap as u16)),
+            "header" => Check::new(U16::LE(FastPathUpdateType::Bitmap as u16)),
             "numberRectangles" => U16::LE(0),
             "rectangles" => Array::new(ts_bitmap_data)
         ]
@@ -488,7 +488,7 @@ fn ts_fp_update_bitmap() -> FastPathUpdate {
 /// https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-rdpbcgr/71fad4fc-6ad4-4c7f-8103-a442bebaf7d2
 fn ts_colorpointerattribute() -> FastPathUpdate {
     FastPathUpdate {
-        fp_type: FastPathUpdateType::FastpathUpdatetypeColor,
+        fp_type: FastPathUpdateType::Color,
         message: component![
             "cacheIndex " => U16::LE(0),
             "hotSpot " => U32::LE(0),
@@ -508,7 +508,7 @@ fn ts_colorpointerattribute() -> FastPathUpdate {
 /// https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-rdpbcgr/406dc477-c516-41cb-a8a0-ab4cc7119621
 fn ts_fp_update_synchronize() -> FastPathUpdate {
     FastPathUpdate {
-        fp_type: FastPathUpdateType::FastpathUpdatetypeSynchronize,
+        fp_type: FastPathUpdateType::Synchronize,
         message: component![]
     }
 }
@@ -518,7 +518,7 @@ fn ts_fp_update_synchronize() -> FastPathUpdate {
 /// https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-rdpbcgr/406dc477-c516-41cb-a8a0-ab4cc7119621
 fn ts_fp_systempointerhiddenattribute() -> FastPathUpdate {
     FastPathUpdate {
-        fp_type: FastPathUpdateType::FastpathUpdatetypePtrNull,
+        fp_type: FastPathUpdateType::PtrNull,
         message: component![]
     }
 }
@@ -714,7 +714,7 @@ impl Client {
             match FastPathUpdate::from_fp(cast!(DataType::Component, fp_message)?) {
                 Ok(order) => {
                     match order.fp_type {
-                        FastPathUpdateType::FastpathUpdatetypeBitmap => {
+                        FastPathUpdateType::Bitmap => {
                             for rectangle in cast!(DataType::Trame, order.message["rectangles"])? {
                                 let bitmap = cast!(DataType::Component, rectangle)?;
                                 callback(RdpEvent::Bitmap(
@@ -733,7 +733,7 @@ impl Client {
                             }
                         },
                         // do nothing
-                        FastPathUpdateType::FastpathUpdatetypeColor | FastPathUpdateType::FastpathUpdatetypePtrNull | FastPathUpdateType::FastpathUpdatetypeSynchronize => (),
+                        FastPathUpdateType::Color | FastPathUpdateType::PtrNull | FastPathUpdateType::Synchronize => (),
                         _ => println!("GLOBAL: Fast Path order not handled {:?}", order.fp_type)
                     }
                 },
@@ -755,7 +755,7 @@ impl Client {
                 capability_set(Some(capability::ts_bitmap_cache_capability_set())),
                 capability_set(Some(capability::ts_pointer_capability_set())),
                 capability_set(Some(capability::ts_sound_capability_set())),
-                capability_set(Some(capability::ts_input_capability_set(Some(capability::InputFlags::InputFlagScancodes as u16 | capability::InputFlags::InputFlagMousex as u16 | capability::InputFlags::InputFlagUnicode as u16), Some(self.layout)))),
+                capability_set(Some(capability::ts_input_capability_set(Some(capability::InputFlags::Scancodes as u16 | capability::InputFlags::Mousex as u16 | capability::InputFlags::Unicode as u16), Some(self.layout)))),
                 capability_set(Some(capability::ts_brush_capability_set())),
                 capability_set(Some(capability::ts_glyph_capability_set())),
                 capability_set(Some(capability::ts_offscreen_capability_set())),

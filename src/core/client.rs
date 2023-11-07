@@ -96,14 +96,14 @@ impl<S: Read + Write> RdpClient<S> {
                 // Compute flags
                 let mut flags: u16 = 0;
                 match pointer.button {
-                    PointerButton::Left => flags |= PointerFlag::PtrflagsButton1 as u16,
-                    PointerButton::Right => flags |= PointerFlag::PtrflagsButton2 as u16,
-                    PointerButton::Middle => flags |= PointerFlag::PtrflagsButton3 as u16,
-                    _ => flags |= PointerFlag::PtrflagsMove as u16,
+                    PointerButton::Left => flags |= PointerFlag::Button1 as u16,
+                    PointerButton::Right => flags |= PointerFlag::Button2 as u16,
+                    PointerButton::Middle => flags |= PointerFlag::Button3 as u16,
+                    _ => flags |= PointerFlag::Move as u16,
                 }
 
                 if pointer.down {
-                    flags |= PointerFlag::PtrflagsDown as u16;
+                    flags |= PointerFlag::Down as u16;
                 }
 
                 self.global.write_input_event(ts_pointer_event(Some(flags), Some(pointer.x), Some(pointer.y)), &mut self.mcs)

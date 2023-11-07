@@ -4,20 +4,20 @@ use num_enum::TryFromPrimitive;
 use std::convert::TryFrom;
 use std::io::{Cursor, Read};
 
+#[derive(Debug)]
 pub enum LicenseMessage {
     NewLicense,
     ErrorAlert(Component)
 }
 
-/// License preambule
+/// License preamble
 /// https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-rdpbcgr/73170ca2-5f82-4a2d-9d1b-b439f3d8dadc
 #[repr(u8)]
 #[allow(dead_code)]
 #[derive(Clone, Copy, Debug)]
-enum Preambule {
-    PreambleVersion20 = 0x2,
-    PreambleVersion30 = 0x3,
-    ExtendedErrorMsgSupported = 0x80
+enum Preamble {
+    Version20 = 0x2,
+    Version30 = 0x3,
 }
 
 /// All type of message
@@ -58,10 +58,10 @@ pub enum ErrorCode {
 #[repr(u32)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, TryFromPrimitive)]
 pub enum StateTransition {
-    StTotalAbort = 0x0000_0001,
-    StNoTransition = 0x0000_0002,
-    StResetPhaseToStart = 0x0000_0003,
-    StResendLastMessage = 0x0000_0004
+    TotalAbort = 0x0000_0001,
+    NoTransition = 0x0000_0002,
+    ResetPhaseToStart = 0x0000_0003,
+    ResendLastMessage = 0x0000_0004
 }
 
 /// This a license preamble
@@ -70,7 +70,7 @@ pub enum StateTransition {
 fn preamble() -> Component {
     component![
         "bMsgtype" => 0_u8,
-        "flag" => Check::new(Preambule::PreambleVersion30 as u8),
+        "flag" => Check::new(Preamble::Version30 as u8),
         "wMsgSize" => DynOption::new(U16::LE(0), |size| MessageOption::Size("message".to_string(), size.inner() as usize - 4)),
         "message" => Vec::<u8>::new()
     ]
@@ -127,7 +127,7 @@ pub fn client_connect(s: &mut dyn Read) -> RdpResult<()> {
         LicenseMessage::NewLicense => Ok(()),
         LicenseMessage::ErrorAlert(blob) => {
             if ErrorCode::try_from(cast!(DataType::U32, blob["dwErrorCode"])?)? == ErrorCode::StatusValidClient &&
-                StateTransition::try_from(cast!(DataType::U32, blob["dwStateTransition"])?)? == StateTransition::StNoTransition {
+                StateTransition::try_from(cast!(DataType::U32, blob["dwStateTransition"])?)? == StateTransition::NoTransition {
                 Ok(())
             } else {
                 Err(Error::RdpError(RdpError::new(RdpErrorKind::InvalidRespond, "Server reject license, Actually license nego is not implemented")))

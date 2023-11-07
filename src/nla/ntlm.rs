@@ -14,58 +14,62 @@ use std::io::{Cursor};
 
 #[repr(u32)]
 #[allow(dead_code)]
-enum Negotiate {
-    NtlmsspNegociate56 = 0x8000_0000,
-    NtlmsspNegociateKeyExch = 0x4000_0000,
-    NtlmsspNegociate128 = 0x2000_0000,
-    NtlmsspNegociateVersion = 0x0200_0000,
-    NtlmsspNegociateTargetInfo = 0x0080_0000,
-    NtlmsspRequestNonNTSessionKey = 0x0040_0000,
-    NtlmsspNegociateIdentify = 0x0010_0000,
-    NtlmsspNegociateExtendedSessionSecurity = 0x0008_0000,
-    NtlmsspTargetTypeServer = 0x0002_0000,
-    NtlmsspTargetTypeDomain = 0x0001_0000,
-    NtlmsspNegociateAlwaysSign = 0x0000_8000,
-    NtlmsspNegociateOEMWorkstationSupplied = 0x0000_2000,
-    NtlmsspNegociateOEMDomainSupplied = 0x0000_1000,
-    NtlmsspNegociateNTLM = 0x0000_0200,
-    NtlmsspNegociateLMKey = 0x0000_0080,
-    NtlmsspNegociateDatagram = 0x0000_0040,
-    NtlmsspNegociateSeal = 0x0000_0020,
-    NtlmsspNegociateSign = 0x0000_0010,
-    NtlmsspRequestTarget = 0x0000_0004,
-    NtlmNegotiateOEM = 0x0000_0002,
-    NtlmsspNegociateUnicode = 0x0000_0001
+#[derive(Clone, Copy, Debug)]
+enum NegotiateFlags {
+    SessionKey56Bit = 0x8000_0000,
+    KeyExch = 0x4000_0000,
+    SessionKey128Bit = 0x2000_0000,
+    Version = 0x0200_0000,
+    TargetInfo = 0x0080_0000,
+    RequestNonNtSessionKey = 0x0040_0000,
+    Identify = 0x0010_0000,
+    ExtendedSessionSecurity = 0x0008_0000,
+    TargetTypeServer = 0x0002_0000,
+    TargetTypeDomain = 0x0001_0000,
+    AlwaysSign = 0x0000_8000,
+    OemWorkstationSupplied = 0x0000_2000,
+    OemDomainSupplied = 0x0000_1000,
+    Ntlm = 0x0000_0200,
+    LmKey = 0x0000_0080,
+    Datagram = 0x0000_0040,
+    Seal = 0x0000_0020,
+    Sign = 0x0000_0010,
+    RequestTarget = 0x0000_0004,
+    Oem = 0x0000_0002,
+    Unicode = 0x0000_0001
 }
 
 #[repr(u8)]
 #[allow(dead_code)]
-enum MajorVersion {
-    WindowsMajorVersion5 = 0x05,
-    WindowsMajorVersion6 = 0x06
+#[derive(Clone, Copy, Debug)]
+enum WindowsMajorVersion {
+    V5 = 0x05,
+    V6 = 0x06
 }
 
 #[repr(u8)]
 #[allow(dead_code)]
-enum MinorVersion {
-    WindowsMinorVersion0 = 0x00,
-    WindowsMinorVersion1 = 0x01,
-    WindowsMinorVersion2 = 0x02,
-    WindowsMinorVersion3 = 0x03
+#[derive(Clone, Copy, Debug)]
+enum WindowsMinorVersion {
+    V0 = 0x00,
+    V1 = 0x01,
+    V2 = 0x02,
+    V3 = 0x03
 }
 
 #[repr(u8)]
-enum NTLMRevision {
-    NtlmSspRevisionW2K3 = 0x0F
+#[derive(Clone, Copy, Debug)]
+enum NtlmSspRevision {
+    W2K3 = 0x0F
 }
 
 fn version() -> Component {
     component!(
-        "ProductMajorVersion" => MajorVersion::WindowsMajorVersion6 as u8,
-        "ProductMinorVersion" => MinorVersion::WindowsMinorVersion0 as u8,
+        "ProductMajorVersion" => WindowsMajorVersion::V6 as u8,
+        "ProductMinorVersion" => WindowsMinorVersion::V0 as u8,
         "ProductBuild" => U16::LE(6002),
         "Reserved" => trame![U16::LE(0), 0_u8],
-        "NTLMRevisionCurrent" => NTLMRevision::NtlmSspRevisionW2K3 as u8
+        "NTLMRevisionCurrent" => NtlmSspRevision::W2K3 as u8
     )
 }
 
@@ -76,7 +80,7 @@ fn negotiate_message(flags: u32) -> Component {
         "Signature" => b"NTLMSSP\x00".to_vec(),
         "MessageType" => U32::LE(0x0000_0001),
         "NegotiateFlags" => DynOption::new(U32::LE(flags), |node| {
-            if node.inner() & (Negotiate::NtlmsspNegociateVersion as u32) == 0 {
+            if node.inner() & (NegotiateFlags::Version as u32) == 0 {
                 return MessageOption::SkipField("Version".to_string())
             }
             MessageOption::None
@@ -102,7 +106,7 @@ fn challenge_message() -> Component {
         "TargetNameLenMax" => U16::LE(0),
         "TargetNameBufferOffset" => U32::LE(0),
         "NegotiateFlags" => DynOption::new(U32::LE(0), |node| {
-            if node.inner() & (Negotiate::NtlmsspNegociateVersion as u32) == 0 {
+            if node.inner() & (NegotiateFlags::Version as u32) == 0 {
                 return MessageOption::SkipField("Version".to_string())
             }
             MessageOption::None
@@ -123,7 +127,7 @@ fn challenge_message() -> Component {
 /// separatly the packet and the payload
 fn authenticate_message(lm_challenge_response: &[u8], nt_challenge_response:&[u8], domain: &[u8], user: &[u8], workstation: &[u8], encrypted_random_session_key: &[u8], flags: u32) -> (Component, Vec<u8>) {
     let payload = [lm_challenge_response.to_vec(), nt_challenge_response.to_vec(), domain.to_vec(), user.to_vec(), workstation.to_vec(), encrypted_random_session_key.to_vec()].concat();
-    let offset = if flags & (Negotiate::NtlmsspNegociateVersion as u32) == 0 {
+    let offset = if flags & (NegotiateFlags::Version as u32) == 0 {
         80
     } else {
         88
@@ -151,7 +155,7 @@ fn authenticate_message(lm_challenge_response: &[u8], nt_challenge_response:&[u8
         "EncryptedRandomSessionMaxLen" => U16::LE(encrypted_random_session_key.len() as u16),
         "EncryptedRandomSessionBufferOffset" => U32::LE(offset + (lm_challenge_response.len() + nt_challenge_response.len() + domain.len() + user.len() + workstation.len()) as u32),
         "NegotiateFlags" => DynOption::new(U32::LE(flags), |node| {
-            if node.inner() & (Negotiate::NtlmsspNegociateVersion as u32) == 0 {
+            if node.inner() & (NegotiateFlags::Version as u32) == 0 {
                 return MessageOption::SkipField("Version".to_string())
             }
             MessageOption::None
@@ -512,15 +516,15 @@ impl AuthenticationProtocol  for Ntlm {
     /// about the capabilities of the client
     fn create_negotiate_message(&mut self) -> RdpResult<Vec<u8>> {
         let buffer = to_vec(&negotiate_message(
-            Negotiate::NtlmsspNegociateKeyExch as u32 |
-                Negotiate::NtlmsspNegociate128 as u32 |
-                Negotiate::NtlmsspNegociateExtendedSessionSecurity as u32 |
-                Negotiate::NtlmsspNegociateAlwaysSign as u32 |
-                Negotiate::NtlmsspNegociateNTLM as u32 |
-                Negotiate::NtlmsspNegociateSeal as u32 |
-                Negotiate::NtlmsspNegociateSign as u32 |
-                Negotiate::NtlmsspRequestTarget as u32 |
-                Negotiate::NtlmsspNegociateUnicode as u32
+            NegotiateFlags::KeyExch as u32 |
+                NegotiateFlags::SessionKey128Bit as u32 |
+                NegotiateFlags::ExtendedSessionSecurity as u32 |
+                NegotiateFlags::AlwaysSign as u32 |
+                NegotiateFlags::Ntlm as u32 |
+                NegotiateFlags::Seal as u32 |
+                NegotiateFlags::Sign as u32 |
+                NegotiateFlags::RequestTarget as u32 |
+                NegotiateFlags::Unicode as u32
         ));
         self.negotiate_message = Some(buffer.clone());
         Ok(buffer)
@@ -569,7 +573,7 @@ impl AuthenticationProtocol  for Ntlm {
 
         let encrypted_random_session_key = rc4k(&key_exchange_key, self.exported_session_key.as_ref().unwrap());
 
-        self.is_unicode = cast!(DataType::U32, result["NegotiateFlags"])? & Negotiate::NtlmsspNegociateUnicode as u32 == 1;
+        self.is_unicode = cast!(DataType::U32, result["NegotiateFlags"])? & NegotiateFlags::Unicode as u32 == 1;
 
         let domain = self.get_domain_name();
         let user = self.get_user_name();

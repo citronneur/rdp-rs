@@ -162,7 +162,7 @@ pub fn read_enumerates(s: &mut dyn Read) -> RdpResult<u8> {
 /// PER write enumerates
 /// This is convenient method
 ///
-/// # Exemple
+/// # Example
 /// ```
 /// use rdp::core::per::write_enumerates;
 /// use rdp::model::data::to_vec;
