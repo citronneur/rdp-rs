@@ -5,7 +5,6 @@ use native_tls::HandshakeError;
 use native_tls::Error as SslError;
 use num_enum::{TryFromPrimitive, TryFromPrimitiveError};
 use thiserror::Error;
-use yasna::ASN1Error;
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Error)]
 pub enum RdpErrorKind {
@@ -142,10 +141,6 @@ pub enum Error {
     #[error("SSL error")]
     SslError(#[from] SslError),
 
-    /// ASN1 parser error
-    #[error("ASN1 parser error: {0}")]
-    ASN1Error(ASN1Error),
-
     /// ASN1 decoding error
     #[error("ASN.1 decoding error: {0}")]
     Asn1Decoding(#[from] rasn::error::DecodeError),
@@ -162,12 +157,6 @@ pub enum Error {
 impl<S: Read + Write> From<HandshakeError<S>> for Error {
     fn from(_: HandshakeError<S>) -> Error {
         Error::SslHandshakeError
-    }
-}
-
-impl From<ASN1Error> for Error {
-    fn from(e: ASN1Error) -> Error {
-        Error::ASN1Error(e)
     }
 }
 

@@ -40,7 +40,6 @@ num_enum = "0.7.1"
 rand = "^0.8"
 rasn = "0.11.1"
 x509-parser = "0.15.1"
-yasna = { version = "^0.5" }
 
 # for mtsc-rs
 clap = { version = "^4.4", optional = true, features = ["derive"] }
