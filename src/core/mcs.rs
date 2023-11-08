@@ -94,21 +94,6 @@ enum ResultCode {
     UserRejected,
 }
 
-fn to_der<E: rasn::Encode + std::fmt::Debug>(v: &E) -> RdpResult<Vec<u8>> {
-    Ok(rasn::der::encode(v).map_err(|e| RdpError::new(
-        RdpErrorKind::Asn1Encoding,
-        &e.to_string()
-    ))?)
-}
-
-fn from_ber<D: rasn::Decode>(value: &mut D, data: &[u8]) -> RdpResult<()> {
-    *value = rasn::ber::decode(data).map_err(|e| RdpError::new(
-        RdpErrorKind::Asn1Decoding,
-        &e.to_string()
-    ))?;
-    Ok(())
-}
-
 /// First MCS payload send from client to server
 /// Payload send from client to server
 ///
@@ -121,16 +106,6 @@ fn connect_initial(user_data: Option<Vec<u8>>) -> ConnectInitial {
         target_params: domain_parameters(34, 2, 0, 1, 0, 1, 0xffff, 2),
         min_params: domain_parameters(1, 1, 1, 1, 0, 1, 0x420, 2),
         max_params: domain_parameters(0xffff, 0xfc17, 0xffff, 1, 0, 1, 0xffff, 2),
-        user_data: user_data.unwrap_or_default().into(),
-    }
-}
-
-/// Server response with channel capacity
-fn connect_response(user_data: Option<Vec<u8>>) -> ConnectResponse {
-    ConnectResponse {
-        result: ResultCode::Successful,
-        called_connect_id: 0.into(),
-        domain_parameters: domain_parameters(22, 3, 0, 1, 0, 1,0xfff8, 2),
         user_data: user_data.unwrap_or_default().into(),
     }
 }
@@ -267,18 +242,18 @@ impl<S: Read + Write> Client<S> {
             trame![block_header(Some(MessageType::CsNet), Some(client_network_data.length() as u16)), client_network_data]
         ]);
         let conference = write_conference_create_request(&user_data)?;
-        self.x224.write(to_der(&connect_initial(Some(conference)))?)
+        let connect_initial = connect_initial(Some(conference));
+        self.x224.write(rasn::der::encode(&connect_initial)?)?;
+        Ok(())
     }
 
     /// Read a connect response comming from server to client
     fn read_connect_response(&mut self) -> RdpResult<()> {
         // Now read response from the server
-        let mut connect_response = connect_response(None);
         let mut payload = try_let!(tpkt::Payload::Raw, self.x224.read()?)?;
-        from_ber(&mut connect_response, payload.fill_buf()?)?;
-
         // Get server data
         // Read conference create response
+        let connect_response: ConnectResponse  = rasn::ber::decode(payload.fill_buf()?)?;
         let cc_response = connect_response.user_data;
         self.server_data = Some(read_conference_create_response(&mut Cursor::new(cc_response))?);
         Ok(())
@@ -417,6 +392,16 @@ impl<S: Read + Write> Client<S> {
 mod test {
     use super::*;
 
+    /// Server response with channel capacity
+    fn connect_response(user_data: Option<Vec<u8>>) -> ConnectResponse {
+        ConnectResponse {
+            result: ResultCode::Successful,
+            called_connect_id: 0.into(),
+            domain_parameters: domain_parameters(22, 3, 0, 1, 0, 1,0xfff8, 2),
+            user_data: user_data.unwrap_or_default().into(),
+        }
+    }
+
     /// Test of read `read_attach_user_confirm`
     #[test]
     fn test_read_attach_user_confirm() {
@@ -444,21 +429,21 @@ mod test {
     /// Test domain parameters format
     #[test]
     fn test_domain_parameters() {
-        let result = to_der(&domain_parameters(1,2,3,4, 5, 6, 7, 8)).expect("DER encoding failed");
+        let result = rasn::der::encode(&domain_parameters(1,2,3,4, 5, 6, 7, 8)).expect("DER encoding failed");
         assert_eq!(result, vec![48, 24, 2, 1, 1, 2, 1, 2, 2, 1, 3, 2, 1, 4, 2, 1, 5, 2, 1, 6, 2, 1, 7, 2, 1, 8]);
     }
 
     /// Test connect initial
     #[test]
     fn test_connect_initial() {
-        let result = to_der(&connect_initial(Some(vec![1, 2, 3]))).expect("DER encoding failed");
+        let result = rasn::der::encode(&connect_initial(Some(vec![1, 2, 3]))).expect("DER encoding failed");
         assert_eq!(result, vec![127, 101, 103, 4, 1, 1, 4, 1, 1, 1, 1, 255, 48, 26, 2, 1, 34, 2, 1, 2, 2, 1, 0, 2, 1, 1, 2, 1, 0, 2, 1, 1, 2, 3, 0, 255, 255, 2, 1, 2, 48, 25, 2, 1, 1, 2, 1, 1, 2, 1, 1, 2, 1, 1, 2, 1, 0, 2, 1, 1, 2, 2, 4, 32, 2, 1, 2, 48, 32, 2, 3, 0, 255, 255, 2, 3, 0, 252, 23, 2, 3, 0, 255, 255, 2, 1, 1, 2, 1, 0, 2, 1, 1, 2, 3, 0, 255, 255, 2, 1, 2, 4, 3, 1, 2, 3]);
     }
 
     /// Test connect response
     #[test]
     fn test_connect_response() {
-        let result = to_der(&connect_response(Some(vec![1, 2, 3]))).expect("DER encoding failed");
+        let result = rasn::der::encode(&connect_response(Some(vec![1, 2, 3]))).expect("DER encoding failed");
         assert_eq!(result, vec![127, 102, 39, 10, 1, 0, 2, 1, 0, 48, 26, 2, 1, 22, 2, 1, 3, 2, 1, 0, 2, 1, 1, 2, 1, 0, 2, 1, 1, 2, 3, 0, 255, 248, 2, 1, 2, 4, 3, 1, 2, 3]);
     }
 }
