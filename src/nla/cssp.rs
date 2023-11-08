@@ -1,11 +1,55 @@
 use crate::model::error::{RdpError, RdpErrorKind, Error, RdpResult};
 use crate::model::link::Link;
-use crate::nla::asn1::{ASN1, Sequence, ExplicitTag, SequenceOf, ASN1Type, OctetString, Integer, to_der};
 use crate::nla::sspi::AuthenticationProtocol;
 use num_bigint::{BigUint};
 use std::io::{Read, Write};
 use x509_parser::{parse_x509_certificate, certificate::X509Certificate};
-use yasna::Tag;
+use rasn::AsnType;
+
+#[derive(Debug, AsnType, rasn::Encode, rasn::Decode)]
+struct NegoDatum {
+    #[rasn(tag(explicit(0)))]
+    nego_token: rasn::types::OctetString,
+}
+
+type NegoData = Vec<NegoDatum>;
+
+#[derive(Debug, AsnType, rasn::Encode, rasn::Decode)]
+struct TsRequest {
+    #[rasn(tag(explicit(0)))]
+    version: u32,
+
+    #[rasn(tag(explicit(1)))]
+    nego_tokens: Option<NegoData>,
+
+    #[rasn(tag(explicit(2)))]
+    auth_info: Option<rasn::types::OctetString>,
+
+    #[rasn(tag(explicit(3)))]
+    pub_key_auth: Option<rasn::types::OctetString>,
+}
+
+
+#[derive(Debug, AsnType, rasn::Encode)]
+struct TsCredentials {
+    #[rasn(tag(explicit(0)))]
+    cred_type: u32,
+
+    #[rasn(tag(explicit(1)))]
+    credentials: rasn::types::OctetString,
+}
+
+#[derive(Debug, AsnType, rasn::Encode)]
+struct TsPasswordCreds {
+    #[rasn(tag(explicit(0)))]
+    domain_name: rasn::types::OctetString,
+
+    #[rasn(tag(explicit(1)))]
+    user_name: rasn::types::OctetString,
+
+    #[rasn(tag(explicit(2)))]
+    password: rasn::types::OctetString,
+}
 
 /// Create a ts request as expected by the specification
 /// https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-cssp/6aac4dea-08ef-47a6-8747-22ea7f6d8685?redirectedfrom=MSDN
@@ -19,16 +63,13 @@ use yasna::Tag;
 /// assert_eq!(payload, [48, 18, 160, 3, 2, 1, 2, 161, 11, 48, 9, 48, 7, 160, 5, 4, 3, 0, 1, 2])
 /// ```
 pub fn create_ts_request(nego: Vec<u8>) -> Vec<u8> {
-    let ts_request = sequence![
-        "version" => ExplicitTag::new(Tag::context(0), 2 as Integer),
-        "negoTokens" => ExplicitTag::new(Tag::context(1),
-            sequence_of![
-                sequence![
-                    "negoToken" => ExplicitTag::new(Tag::context(0), nego)
-                ]
-            ])
-    ];
-    to_der(&ts_request)
+    let ts_request = TsRequest {
+        version: 2,
+        nego_tokens: Some(vec![NegoDatum{ nego_token: nego.into() }]),
+        auth_info: None,
+        pub_key_auth: None,
+    };
+    rasn::der::encode(&ts_request).expect("Failed to encode TsRequest")
 }
 
 /// This is the second step in CSSP handshake
@@ -48,28 +89,13 @@ pub fn create_ts_request(nego: Vec<u8>) -> Vec<u8> {
 /// assert_eq!(payload, [0, 1, 2])
 /// ```
 pub fn read_ts_server_challenge(stream: &[u8]) -> RdpResult<Vec<u8>> {
-    let mut ts_request = sequence![
-        "version" => ExplicitTag::new(Tag::context(0), 2 as Integer),
-        "negoTokens" => ExplicitTag::new(Tag::context(1),
-            SequenceOf::reader(|| {
-                Box::new(sequence![
-                    "negoToken" => ExplicitTag::new(Tag::context(0), OctetString::new())
-                ])
-            })
-         )
-    ];
-
-    yasna::parse_der(stream, |reader| {
-        if let Err(Error::ASN1Error(e)) = ts_request.read_asn1(reader) {
-            return Err(e)
-        }
-        Ok(())
-    })?;
-
-    let nego_tokens = cast!(ASN1Type::SequenceOf, ts_request["negoTokens"]).unwrap();
-    let first_nego_tokens = cast!(ASN1Type::Sequence, nego_tokens.inner[0]).unwrap();
-    let nego_token = cast!(ASN1Type::OctetString, first_nego_tokens["negoToken"]).unwrap();
-    Ok(nego_token.clone())
+    let request: TsRequest = rasn::ber::decode(stream).expect("Failed to decode server challenge");
+    let nego_token: Vec<u8> = request.nego_tokens
+        .expect("negoTokens missing")
+        .first()
+        .expect("No entries in nego_tokens")
+        .nego_token.clone().into();
+    Ok(nego_token)
 }
 
 /// This the third step in CSSP Handshake
@@ -85,18 +111,13 @@ pub fn read_ts_server_challenge(stream: &[u8]) -> RdpResult<Vec<u8>> {
 /// assert_eq!(payload, [48, 25, 160, 3, 2, 1, 2, 161, 11, 48, 9, 48, 7, 160, 5, 4, 3, 0, 1, 2, 163, 5, 4, 3, 0, 1, 2])
 /// ```
 pub fn create_ts_authenticate(nego: Vec<u8>, pub_key_auth: Vec<u8>) -> Vec<u8> {
-    let ts_challenge = sequence![
-        "version" => ExplicitTag::new(Tag::context(0), 2 as Integer),
-        "negoTokens" => ExplicitTag::new(Tag::context(1),
-            sequence_of![
-                sequence![
-                    "negoToken" => ExplicitTag::new(Tag::context(0), nego as OctetString)
-                ]
-            ]),
-        "pubKeyAuth" => ExplicitTag::new(Tag::context(3), pub_key_auth as OctetString)
-    ];
-
-    to_der(&ts_challenge)
+    let ts_authenticate = TsRequest {
+        version: 2,
+        nego_tokens: Some(vec![NegoDatum { nego_token: nego.into() }]),
+        auth_info: None,
+        pub_key_auth: Some(pub_key_auth.into()),
+    };
+    rasn::der::encode(&ts_authenticate).expect("Failed to encode TsRequest")
 }
 
 pub fn read_public_certificate(stream: &[u8]) -> RdpResult<X509Certificate> {
@@ -117,47 +138,33 @@ pub fn read_public_certificate(stream: &[u8]) -> RdpResult<X509Certificate> {
 /// assert_eq!(pub_key, [0, 1, 2])
 /// ```
 pub fn read_ts_validate(request: &[u8]) -> RdpResult<Vec<u8>> {
-    let mut ts_challenge = sequence![
-        "version" => ExplicitTag::new(Tag::context(0), 2 as Integer),
-        "pubKeyAuth" => ExplicitTag::new(Tag::context(3), OctetString::new())
-    ];
-
-    yasna::parse_der(request, |reader| {
-        if let Err(Error::ASN1Error(e)) = ts_challenge.read_asn1(reader) {
-            return Err(e)
-        }
-        Ok(())
-    })?;
-    let pubkey = cast!(ASN1Type::OctetString, ts_challenge["pubKeyAuth"])?;
-    Ok(pubkey.clone())
+    let ts_validate: TsRequest = rasn::ber::decode(request).expect("Failed to decode server challenge");
+    let pub_key: Vec<u8> = ts_validate.pub_key_auth.expect("public key missing").into();
+    Ok(pub_key)
 }
 
 fn create_ts_credentials(domain: Vec<u8>, user: Vec<u8>, password: Vec<u8>) -> Vec<u8> {
-    let ts_password_creds = sequence![
-        "domainName" => ExplicitTag::new(Tag::context(0), domain as OctetString),
-        "userName" => ExplicitTag::new(Tag::context(1), user as OctetString),
-        "password" => ExplicitTag::new(Tag::context(2), password as OctetString)
-    ];
-
-    let ts_password_cred_encoded = yasna::construct_der(|writer| {
-        ts_password_creds.write_asn1(writer).unwrap();
-    });
-
-    let ts_credentials = sequence![
-        "credType" => ExplicitTag::new(Tag::context(0), 1 as Integer),
-        "credentials" => ExplicitTag::new(Tag::context(1), ts_password_cred_encoded as OctetString)
-    ];
-
-    to_der(&ts_credentials)
+    let ts_password_creds = TsPasswordCreds {
+        domain_name: domain.into(),
+        user_name: user.into(),
+        password: password.into(),
+    };
+    let ts_password_creds_encoded = rasn::der::encode(&ts_password_creds).expect("Failed to encode TsPasswordCreds");
+    let ts_credentials = TsCredentials {
+        cred_type: 1,
+        credentials: ts_password_creds_encoded.into(),
+    };
+    rasn::der::encode(&ts_credentials).expect("Failed to encode TsCredentials")
 }
 
 fn create_ts_authinfo(auth_info: Vec<u8>) -> Vec<u8> {
-    let ts_authinfo = sequence![
-        "version" => ExplicitTag::new(Tag::context(0), 2 as Integer),
-        "authInfo" => ExplicitTag::new(Tag::context(2), auth_info)
-    ];
-
-    to_der(&ts_authinfo)
+    let ts_auth_info = TsRequest {
+        version: 2,
+        nego_tokens: None,
+        auth_info: Some(auth_info.into()),
+        pub_key_auth: None,
+    };
+    rasn::der::encode(&ts_auth_info).expect("Failed to encode TsRequest")
 }
 
 /// Reads an ASN.1 tag-length-value
