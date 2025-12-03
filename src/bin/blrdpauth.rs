@@ -26,7 +26,7 @@ fn main() {
                         }
                     }
                 });
-                if nb_event_received > 20 {
+                if nb_event_received > 100 {
                     println!("[*] Received enough graphic events => ticket are now on the machine !");
                     break;
                 }
