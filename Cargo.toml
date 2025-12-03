@@ -19,11 +19,17 @@ name = "mstsc-rs"
 path = "src/bin/mstsc-rs.rs"
 required-features = ["mstsc-rs"]
 
+[[bin]]
+name = "blrdpauth"
+path = "src/bin/blrdpauth.rs"
+required-features = ["blrdpauth"]
+
 [features]
 # The reason we do this is because doctests don't get cfg(test)
 # See: https://github.com/rust-lang/cargo/issues/4669
 integration = []
 mstsc-rs = ["hex", "winapi", "minifb", "clap", "libc"]
+blrdpauth = []
 
 [dependencies]
 native-tls = "^0.2"
